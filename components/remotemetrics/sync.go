@@ -12,8 +12,9 @@ var isTangleTimeSynced atomic.Bool
 
 func checkSynced() {
 	oldTangleTimeSynced := isTangleTimeSynced.Load()
-	tts := deps.Protocol.Engine().IsSynced()
-	if oldTangleTimeSynced != tts {
+	clSnapshot := deps.Protocol.MainEngineInstance().Clock.Snapshot()
+	tts := deps.Protocol.MainEngineInstance().SyncManager.SyncStatus()
+	if oldTangleTimeSynced != tts.NodeSynced {
 		var myID string
 		if deps.Local != nil {
 			myID = deps.Local.ID().String()
@@ -21,12 +22,12 @@ func checkSynced() {
 		syncStatusChangedEvent := &remotemetrics.TangleTimeSyncChangedEvent{
 			Type:           "sync",
 			NodeID:         myID,
-			MetricsLevel:   Parameters.MetricsLevel,
+			MetricsLevel:   ParamsRemoteMetrics.MetricsLevel,
 			Time:           time.Now(),
-			ATT:            deps.Protocol.Engine().Clock.Accepted().Time(),
-			RATT:           deps.Protocol.Engine().Clock.Accepted().RelativeTime(),
-			CTT:            deps.Protocol.Engine().Clock.Confirmed().Time(),
-			RCTT:           deps.Protocol.Engine().Clock.Confirmed().RelativeTime(),
+			ATT:            clSnapshot.AcceptedTime,
+			RATT:           clSnapshot.RelativeAcceptedTime,
+			CTT:            clSnapshot.ConfirmedTime,
+			RCTT:           clSnapshot.RelativeConfirmedTime,
 			CurrentStatus:  tts,
 			PreviousStatus: oldTangleTimeSynced,
 		}
@@ -35,5 +36,5 @@ func checkSynced() {
 }
 
 func sendSyncStatusChangedEvent(syncUpdate *remotemetrics.TangleTimeSyncChangedEvent) {
-	_ = deps.RemoteLogger.Send(syncUpdate)
+	// _ = deps.RemoteLogger.Send(syncUpdate)
 }

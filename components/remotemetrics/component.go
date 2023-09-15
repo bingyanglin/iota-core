@@ -9,30 +9,19 @@ import (
 
 	"go.uber.org/dig"
 
-	"github.com/iotaledger/goshimmer/packages/app/remotemetrics"
-	"github.com/iotaledger/goshimmer/packages/core/shutdown"
-	"github.com/iotaledger/goshimmer/packages/node"
-	"github.com/iotaledger/goshimmer/packages/protocol"
-	"github.com/iotaledger/goshimmer/packages/protocol/congestioncontrol/icca/scheduler"
-	"github.com/iotaledger/goshimmer/packages/protocol/engine/consensus/blockgadget"
-	"github.com/iotaledger/goshimmer/packages/protocol/engine/ledger/mempool/conflictdag"
-	"github.com/iotaledger/goshimmer/packages/protocol/engine/ledger/utxo"
-	"github.com/iotaledger/goshimmer/packages/protocol/engine/tangle/blockdag"
-	"github.com/iotaledger/goshimmer/plugins/remotelog"
-	"github.com/iotaledger/hive.go/app/daemon"
+	"github.com/iotaledger/hive.go/app"
 	"github.com/iotaledger/hive.go/autopeering/peer"
 	"github.com/iotaledger/hive.go/runtime/event"
 	"github.com/iotaledger/hive.go/runtime/timeutil"
+	"github.com/iotaledger/iota-core/pkg/daemon"
+	"github.com/iotaledger/iota-core/pkg/protocol"
+	"github.com/iotaledger/iota-core/pkg/protocol/engine/blocks"
+	iotago "github.com/iotaledger/iota.go/v4"
 )
 
 const (
 	syncUpdateTime           = 500 * time.Millisecond
 	schedulerQueryUpdateTime = 5 * time.Second
-)
-
-const (
-	// PluginName is the name of the faucet plugin.
-	PluginName = "RemoteLogMetrics"
 )
 
 const (
@@ -47,148 +36,157 @@ const (
 )
 
 var (
-	// Plugin is the plugin instance of the remote plugin instance.
-	Plugin *node.Plugin
-	deps   = new(dependencies)
+	Component *app.Component
+	deps      dependencies
 )
 
 type dependencies struct {
 	dig.In
 
-	Local        *peer.Local
-	Protocol     *protocol.Protocol
-	RemoteLogger *remotelog.RemoteLoggerConn `optional:"true"`
+	Local    *peer.Local
+	Protocol *protocol.Protocol
+	// RemoteLogger *remotelog.RemoteLoggerConn `optional:"true"`
 }
 
 // TODO: De-factor the Plugin to be Component
 
 func init() {
-	Plugin = node.NewPlugin(PluginName, deps, node.Enabled, configure, run)
+	Component = &app.Component{
+		Name:      "RemoteLogMetrics",
+		DepsFunc:  func(cDeps dependencies) { deps = cDeps },
+		Params:    params,
+		Configure: configure,
+		Run:       run,
+		IsEnabled: func(c *dig.Container) bool {
+			return ParamsRemoteMetrics.Enabled
+		},
+	}
 }
 
-func configure(plugin *node.Plugin) {
-	// if remotelog plugin is disabled, then remotemetrics should not be started either
-	if node.IsSkipped(remotelog.Plugin) {
-		Plugin.LogInfof("%s is disabled; skipping %s\n", remotelog.Plugin.Name, Plugin.Name)
-		return
-	}
+func configure() error {
+	configureSyncMetrics()
+	configureConflictConfirmationMetrics()
+	configureBlockFinalizedMetrics()
+	configureBlockScheduledMetrics()
+	configureMissingBlockMetrics()
+	configureSchedulerQueryMetrics()
 
-	configureSyncMetrics(plugin)
-	configureConflictConfirmationMetrics(plugin)
-	configureBlockFinalizedMetrics(plugin)
-	configureBlockScheduledMetrics(plugin)
-	configureMissingBlockMetrics(plugin)
-	configureSchedulerQueryMetrics(plugin)
+	return nil
 }
 
-func run(plugin *node.Plugin) {
-	// if remotelog plugin is disabled, then remotemetrics should not be started either
-	if node.IsSkipped(remotelog.Plugin) {
-		return
-	}
+func run() error {
+	Component.LogInfo("Starting RemoteMetrics server ...")
 
 	// create a background worker that update the metrics every second
-	if err := daemon.BackgroundWorker("Node State Logger Updater", func(ctx context.Context) {
+	if err := Component.Daemon().BackgroundWorker("RemoteMetrics", func(ctx context.Context) {
+		Component.LogInfo("Starting RemoteMetrics server ... done")
+
 		measureInitialConflictCounts()
 
 		// Do not block until the Ticker is shutdown because we might want to start multiple Tickers and we can
 		// safely ignore the last execution when shutting down.
 		timeutil.NewTicker(func() { checkSynced() }, syncUpdateTime, ctx)
 		timeutil.NewTicker(func() {
-			remotemetrics.Events.SchedulerQuery.Trigger(&remotemetrics.SchedulerQueryEvent{Time: time.Now()})
+			// remotemetrics.Events.SchedulerQuery.Trigger(&remotemetrics.SchedulerQueryEvent{Time: time.Now()})
 		}, schedulerQueryUpdateTime, ctx)
 
 		// Wait before terminating so we get correct log blocks from the daemon regarding the shutdown order.
 		<-ctx.Done()
-	}, shutdown.PriorityRemoteLog); err != nil {
-		Plugin.Panicf("Failed to start as daemon: %s", err)
+	}, daemon.PriorityRestAPI); err != nil {
+		Component.LogPanicf("Failed to start as daemon: %s", err)
 	}
+
+	return nil
 }
 
-func configureSyncMetrics(plugin *node.Plugin) {
-	if Parameters.MetricsLevel > Info {
+func configureSyncMetrics() {
+	if ParamsRemoteMetrics.MetricsLevel > Info {
 		return
 	}
 
-	remotemetrics.Events.TangleTimeSyncChanged.Hook(func(event *remotemetrics.TangleTimeSyncChangedEvent) {
-		isTangleTimeSynced.Store(event.CurrentStatus)
-	}, event.WithWorkerPool(plugin.WorkerPool))
-	remotemetrics.Events.TangleTimeSyncChanged.Hook(func(event *remotemetrics.TangleTimeSyncChangedEvent) {
-		sendSyncStatusChangedEvent(event)
-	}, event.WithWorkerPool(plugin.WorkerPool))
+	// TODO: we only have event from syncmanager when anything is updated.
+	// deps.Protocol.Events.Engine.SyncManager.UpdatedStatus.Hook(func(event *protocol.SyncStatus) {})
+
+	// deps.Protocol.Events.Engine.SyncManager.Events.TangleTimeSyncChanged.Hook(func(event *remotemetrics.TangleTimeSyncChangedEvent) {
+	// 	isTangleTimeSynced.Store(event.CurrentStatus)
+	// }, event.WithWorkerPool(Component.WorkerPool))
+	// remotemetrics.Events.TangleTimeSyncChanged.Hook(func(event *remotemetrics.TangleTimeSyncChangedEvent) {
+	// 	sendSyncStatusChangedEvent(event)
+	// }, event.WithWorkerPool(Component.WorkerPool))
 }
 
-func configureSchedulerQueryMetrics(plugin *node.Plugin) {
-	if Parameters.MetricsLevel > Info {
+func configureSchedulerQueryMetrics() {
+	if ParamsRemoteMetrics.MetricsLevel > Info {
 		return
 	}
 
-	remotemetrics.Events.SchedulerQuery.Hook(func(event *remotemetrics.SchedulerQueryEvent) { obtainSchedulerStats(event.Time) }, event.WithWorkerPool(plugin.WorkerPool))
+	// remotemetrics.Events.SchedulerQuery.Hook(func(event *remotemetrics.SchedulerQueryEvent) { obtainSchedulerStats(event.Time) }, event.WithWorkerPool(Component.WorkerPool))
 }
 
-func configureConflictConfirmationMetrics(plugin *node.Plugin) {
-	if Parameters.MetricsLevel > Info {
+func configureConflictConfirmationMetrics() {
+	if ParamsRemoteMetrics.MetricsLevel > Info {
 		return
 	}
 
-	deps.Protocol.Events.Engine.Ledger.MemPool.ConflictDAG.ConflictAccepted.Hook(func(conflict *conflictdag.Conflict[utxo.TransactionID, utxo.OutputID]) {
-		onConflictConfirmed(conflict.ID())
-	}, event.WithWorkerPool(plugin.WorkerPool))
+	deps.Protocol.Events.Engine.ConflictDAG.ConflictAccepted.Hook(func(conflictID iotago.Identifier) {
+		onConflictConfirmed(conflictID)
+	}, event.WithWorkerPool(Component.WorkerPool))
 
-	deps.Protocol.Events.Engine.Ledger.MemPool.ConflictDAG.ConflictCreated.Hook(func(conflict *conflictdag.Conflict[utxo.TransactionID, utxo.OutputID]) {
+	deps.Protocol.Events.Engine.ConflictDAG.ConflictCreated.Hook(func(conflictID iotago.Identifier) {
 		activeConflictsMutex.Lock()
 		defer activeConflictsMutex.Unlock()
 
-		if !activeConflicts.Has(conflict.ID()) {
+		if !activeConflicts.Has(conflictID) {
 			conflictTotalCountDB.Inc()
-			activeConflicts.Add(conflict.ID())
+			activeConflicts.Add(conflictID)
 			sendConflictMetrics()
 		}
-	}, event.WithWorkerPool(plugin.WorkerPool))
+	}, event.WithWorkerPool(Component.WorkerPool))
 }
 
-func configureBlockFinalizedMetrics(plugin *node.Plugin) {
-	if Parameters.MetricsLevel > Info {
+func configureBlockFinalizedMetrics() {
+	if ParamsRemoteMetrics.MetricsLevel > Info {
 		return
 	}
 
-	if Parameters.MetricsLevel == Info {
-		deps.Protocol.Events.Engine.Ledger.MemPool.TransactionAccepted.Hook(onTransactionAccepted, event.WithWorkerPool(plugin.WorkerPool))
+	if ParamsRemoteMetrics.MetricsLevel == Info {
+		// noo transaction accepted event now, need to do it like retainer: iota-core/pkg/retainer/retainer/retainer.go
+		// deps.Protocol.Events.Engine.Ledger.TransactionAccepted.Hook(onTransactionAccepted, event.WithWorkerPool(Component.WorkerPool))
 	} else {
-		deps.Protocol.Events.Engine.Consensus.BlockGadget.BlockConfirmed.Hook(func(block *blockgadget.Block) {
-			onBlockFinalized(block.ModelsBlock)
-		}, event.WithWorkerPool(plugin.WorkerPool))
+		deps.Protocol.Events.Engine.BlockGadget.BlockConfirmed.Hook(func(block *blocks.Block) {
+			onBlockFinalized(block.ModelBlock())
+		}, event.WithWorkerPool(Component.WorkerPool))
 	}
 }
 
-func configureBlockScheduledMetrics(plugin *node.Plugin) {
-	if Parameters.MetricsLevel > Info {
+func configureBlockScheduledMetrics() {
+	if ParamsRemoteMetrics.MetricsLevel > Info {
 		return
 	}
 
-	if Parameters.MetricsLevel == Info {
-		deps.Protocol.Events.CongestionControl.Scheduler.BlockDropped.Hook(func(block *scheduler.Block) {
+	if ParamsRemoteMetrics.MetricsLevel == Info {
+		deps.Protocol.Events.Engine.Scheduler.BlockDropped.Hook(func(block *blocks.Block, err error) {
 			sendBlockSchedulerRecord(block, "blockDiscarded")
-		}, event.WithWorkerPool(plugin.WorkerPool))
+		}, event.WithWorkerPool(Component.WorkerPool))
 	} else {
-		deps.Protocol.Events.CongestionControl.Scheduler.BlockScheduled.Hook(func(block *scheduler.Block) {
+		deps.Protocol.Events.Engine.Scheduler.BlockScheduled.Hook(func(block *blocks.Block) {
 			sendBlockSchedulerRecord(block, "blockScheduled")
-		}, event.WithWorkerPool(plugin.WorkerPool))
-		deps.Protocol.Events.CongestionControl.Scheduler.BlockDropped.Hook(func(block *scheduler.Block) {
+		}, event.WithWorkerPool(Component.WorkerPool))
+		deps.Protocol.Events.Engine.Scheduler.BlockDropped.Hook(func(block *blocks.Block, err error) {
 			sendBlockSchedulerRecord(block, "blockDiscarded")
-		}, event.WithWorkerPool(plugin.WorkerPool))
+		}, event.WithWorkerPool(Component.WorkerPool))
 	}
 }
 
-func configureMissingBlockMetrics(plugin *node.Plugin) {
-	if Parameters.MetricsLevel > Info {
+func configureMissingBlockMetrics() {
+	if ParamsRemoteMetrics.MetricsLevel > Info {
 		return
 	}
 
-	deps.Protocol.Events.Engine.Tangle.BlockDAG.BlockMissing.Hook(func(block *blockdag.Block) {
-		sendMissingBlockRecord(block.ModelsBlock, "missingBlock")
-	}, event.WithWorkerPool(plugin.WorkerPool))
-	deps.Protocol.Events.Engine.Tangle.BlockDAG.MissingBlockAttached.Hook(func(block *blockdag.Block) {
-		sendMissingBlockRecord(block.ModelsBlock, "missingBlockStored")
-	}, event.WithWorkerPool(plugin.WorkerPool))
+	deps.Protocol.Events.Engine.BlockDAG.BlockMissing.Hook(func(block *blocks.Block) {
+		sendMissingBlockRecord(block.ModelBlock(), "missingBlock")
+	}, event.WithWorkerPool(Component.WorkerPool))
+	deps.Protocol.Events.Engine.BlockDAG.MissingBlockAttached.Hook(func(block *blocks.Block) {
+		sendMissingBlockRecord(block.ModelBlock(), "missingBlockStored")
+	}, event.WithWorkerPool(Component.WorkerPool))
 }
