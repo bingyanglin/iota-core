@@ -10,7 +10,6 @@ import (
 	"go.uber.org/dig"
 
 	"github.com/iotaledger/hive.go/app"
-	"github.com/iotaledger/hive.go/autopeering/peer"
 	"github.com/iotaledger/hive.go/runtime/event"
 	"github.com/iotaledger/hive.go/runtime/timeutil"
 	"github.com/iotaledger/iota-core/pkg/daemon"
@@ -43,7 +42,6 @@ var (
 type dependencies struct {
 	dig.In
 
-	Local    *peer.Local
 	Protocol *protocol.Protocol
 	// RemoteLogger *remotelog.RemoteLoggerConn `optional:"true"`
 }
