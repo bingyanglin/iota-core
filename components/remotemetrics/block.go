@@ -2,41 +2,34 @@ package remotemetrics
 
 import (
 	"github.com/iotaledger/goshimmer/packages/app/remotemetrics"
-	"github.com/iotaledger/goshimmer/packages/protocol/congestioncontrol/icca/scheduler"
-	"github.com/iotaledger/goshimmer/packages/protocol/engine/ledger/mempool"
-	"github.com/iotaledger/goshimmer/packages/protocol/engine/ledger/utxo"
-	"github.com/iotaledger/goshimmer/packages/protocol/engine/ledger/vm/devnetvm"
-	"github.com/iotaledger/goshimmer/packages/protocol/models"
-	"github.com/iotaledger/hive.go/crypto/identity"
+	"github.com/iotaledger/iota-core/pkg/protocol/engine/blocks"
 )
 
-func sendBlockSchedulerRecord(block *scheduler.Block, recordType string) {
-	if !deps.Protocol.Engine().IsSynced() {
+func sendBlockSchedulerRecord(block *blocks.Block, recordType string) {
+	// if !deps.Protocol.Engine().IsSynced() {
+	if !deps.Protocol.MainEngineInstance().SyncManager.IsNodeSynced() {
 		return
 	}
-	var nodeID string
-	if deps.Local != nil {
-		nodeID = deps.Local.Identity.ID().String()
-	}
+	var nodeID = deps.Host.ID().String()
 
 	record := &remotemetrics.BlockScheduledMetrics{
 		Type:         recordType,
 		NodeID:       nodeID,
-		MetricsLevel: Parameters.MetricsLevel,
-		BlockID:      block.ID().Base58(),
+		MetricsLevel: ParamsRemoteMetrics.MetricsLevel,
+		BlockID:      block.ID().ToHex(),
 	}
 
-	issuerID := identity.NewID(block.IssuerPublicKey())
+	issuerID := block.ModelBlock().ProtocolBlock().IssuerID
 	record.IssuedTimestamp = block.IssuingTime()
 	record.IssuerID = issuerID.String()
 	// TODO: implement when mana is refactored
 	// record.AccessMana = deps.Protocol.Engine().CongestionControl.Scheduler.GetManaFromCache(issuerID)
-	record.StrongEdgeCount = len(block.ParentsByType(models.StrongParentType))
-	if weakParentsCount := len(block.ParentsByType(models.WeakParentType)); weakParentsCount > 0 {
+	record.StrongEdgeCount = len(block.StrongParents())
+	if weakParentsCount := len(block.WeakParents()); weakParentsCount > 0 {
 		record.StrongEdgeCount = weakParentsCount
 	}
-	if likeParentsCount := len(block.ParentsByType(models.ShallowLikeParentType)); likeParentsCount > 0 {
-		record.StrongEdgeCount = len(block.ParentsByType(models.ShallowLikeParentType))
+	if likeParentsCount := len(block.ShallowLikeParents()); likeParentsCount > 0 {
+		record.StrongEdgeCount = likeParentsCount
 	}
 
 	// TODO: implement when retainer plugin is ready
@@ -70,93 +63,90 @@ func sendBlockSchedulerRecord(block *scheduler.Block, recordType string) {
 	// })
 
 	// override block solidification data if block contains a transaction
-	if block.Payload().Type() == devnetvm.TransactionType {
-		transaction := block.Payload().(utxo.Transaction)
-		deps.Protocol.Engine().Ledger.MemPool().Storage().CachedTransactionMetadata(transaction.ID()).Consume(func(transactionMetadata *mempool.TransactionMetadata) {
-			record.SolidTimestamp = transactionMetadata.BookingTime()
-			record.TransactionID = transaction.ID().Base58()
-			record.DeltaSolid = transactionMetadata.BookingTime().Sub(record.IssuedTimestamp).Nanoseconds()
-		})
-	}
+	// if block.ModelBlock().Payload().PayloadType() == iotago.PayloadTransaction {
+	// 	transaction := block.ModelBlock().Payload().(*iotago.Transaction)
+	// 	deps.Protocol.Engine().Ledger.MemPool().Storage().CachedTransactionMetadata(transaction.ID()).Consume(func(transactionMetadata *mempool.TransactionMetadata) {
+	// 		record.SolidTimestamp = transactionMetadata.BookingTime()
+	// 		record.TransactionID = transaction.ID().Base58()
+	// 		record.DeltaSolid = transactionMetadata.BookingTime().Sub(record.IssuedTimestamp).Nanoseconds()
+	// 	})
+	// }
 
-	_ = deps.RemoteLogger.Send(record)
+	// _ = deps.RemoteLogger.Send(record)
 }
 
-func onTransactionAccepted(transactionEvent *mempool.TransactionEvent) {
-	if !deps.Protocol.Engine().IsSynced() {
-		return
-	}
+// func onTransactionAccepted(transactionEvent *mempool.TransactionEvent) {
+// 	// if !deps.Protocol.Engine().IsSynced() {
+// 	if !deps.Protocol.MainEngineInstance().SyncManager.IsNodeSynced() {
+// 		return
+// 	}
 
-	earliestAttachment := deps.Protocol.Engine().Tangle.Booker().GetEarliestAttachment(transactionEvent.Metadata.ID())
+// 	earliestAttachment := deps.Protocol.Engine().Tangle.Booker().GetEarliestAttachment(transactionEvent.Metadata.ID())
 
-	onBlockFinalized(earliestAttachment.ModelsBlock)
-}
+// 	onBlockFinalized(earliestAttachment.ModelsBlock)
+// }
 
-func onBlockFinalized(block *models.Block) {
-	if !deps.Protocol.Engine().IsSynced() {
-		return
-	}
+// func onBlockFinalized(block *models.Block) {
+// 	if !deps.Protocol.Engine().IsSynced() {
+// 		return
+// 	}
 
-	blockID := block.ID()
+// 	blockID := block.ID()
 
-	var nodeID string
-	if deps.Local != nil {
-		nodeID = deps.Local.Identity.ID().String()
-	}
+// 	var nodeID string
+// 	if deps.Local != nil {
+// 		nodeID = deps.Local.Identity.ID().String()
+// 	}
 
-	record := &remotemetrics.BlockFinalizedMetrics{
-		Type:         "blockFinalized",
-		NodeID:       nodeID,
-		MetricsLevel: Parameters.MetricsLevel,
-		BlockID:      blockID.Base58(),
-	}
+// 	record := &remotemetrics.BlockFinalizedMetrics{
+// 		Type:         "blockFinalized",
+// 		NodeID:       nodeID,
+// 		MetricsLevel: Parameters.MetricsLevel,
+// 		BlockID:      blockID.Base58(),
+// 	}
 
-	issuerID := identity.NewID(block.IssuerPublicKey())
-	record.IssuedTimestamp = block.IssuingTime()
-	record.IssuerID = issuerID.String()
-	record.StrongEdgeCount = len(block.ParentsByType(models.StrongParentType))
-	if weakParentsCount := len(block.ParentsByType(models.WeakParentType)); weakParentsCount > 0 {
-		record.WeakEdgeCount = weakParentsCount
-	}
-	if shallowLikeParentsCount := len(block.ParentsByType(models.ShallowLikeParentType)); shallowLikeParentsCount > 0 {
-		record.ShallowLikeEdgeCount = shallowLikeParentsCount
-	}
+// 	issuerID := identity.NewID(block.IssuerPublicKey())
+// 	record.IssuedTimestamp = block.IssuingTime()
+// 	record.IssuerID = issuerID.String()
+// 	record.StrongEdgeCount = len(block.ParentsByType(models.StrongParentType))
+// 	if weakParentsCount := len(block.ParentsByType(models.WeakParentType)); weakParentsCount > 0 {
+// 		record.WeakEdgeCount = weakParentsCount
+// 	}
+// 	if shallowLikeParentsCount := len(block.ParentsByType(models.ShallowLikeParentType)); shallowLikeParentsCount > 0 {
+// 		record.ShallowLikeEdgeCount = shallowLikeParentsCount
+// 	}
 
-	// TODO: implement when retainer plugin is ready
-	// deps.Tangle.Storage.BlockMetadata(blockID).Consume(func(blockMetadata *tangleold.BlockMetadata) {
-	//	record.ScheduledTimestamp = blockMetadata.ScheduledTime()
-	//	record.DeltaScheduled = blockMetadata.ScheduledTime().Sub(record.IssuedTimestamp).Nanoseconds()
-	//	record.BookedTimestamp = blockMetadata.BookedTime()
-	//	record.DeltaBooked = blockMetadata.BookedTime().Sub(record.IssuedTimestamp).Nanoseconds()
-	// })
+// 	// TODO: implement when retainer plugin is ready
+// 	// deps.Tangle.Storage.BlockMetadata(blockID).Consume(func(blockMetadata *tangleold.BlockMetadata) {
+// 	//	record.ScheduledTimestamp = blockMetadata.ScheduledTime()
+// 	//	record.DeltaScheduled = blockMetadata.ScheduledTime().Sub(record.IssuedTimestamp).Nanoseconds()
+// 	//	record.BookedTimestamp = blockMetadata.BookedTime()
+// 	//	record.DeltaBooked = blockMetadata.BookedTime().Sub(record.IssuedTimestamp).Nanoseconds()
+// 	// })
 
-	if block.Payload().Type() == devnetvm.TransactionType {
-		transaction := block.Payload().(utxo.Transaction)
-		deps.Protocol.Engine().Ledger.MemPool().Storage().CachedTransactionMetadata(transaction.ID()).Consume(func(transactionMetadata *mempool.TransactionMetadata) {
-			record.SolidTimestamp = transactionMetadata.BookingTime()
-			record.TransactionID = transaction.ID().Base58()
-			record.DeltaSolid = transactionMetadata.BookingTime().Sub(record.IssuedTimestamp).Nanoseconds()
-		})
-	}
+// 	if block.Payload().Type() == devnetvm.TransactionType {
+// 		transaction := block.Payload().(utxo.Transaction)
+// 		deps.Protocol.Engine().Ledger.MemPool().Storage().CachedTransactionMetadata(transaction.ID()).Consume(func(transactionMetadata *mempool.TransactionMetadata) {
+// 			record.SolidTimestamp = transactionMetadata.BookingTime()
+// 			record.TransactionID = transaction.ID().Base58()
+// 			record.DeltaSolid = transactionMetadata.BookingTime().Sub(record.IssuedTimestamp).Nanoseconds()
+// 		})
+// 	}
 
-	_ = deps.RemoteLogger.Send(record)
-}
+// 	_ = deps.RemoteLogger.Send(record)
+// }
 
-func sendMissingBlockRecord(block *models.Block, recordType string) {
-	if !deps.Protocol.Engine().IsSynced() {
-		return
-	}
+// func sendMissingBlockRecord(block *blocks.Block, recordType string) {
+// 	if !deps.Protocol.MainEngineInstance().SyncManager.IsNodeSynced() {
+// 		return
+// 	}
+// 	var nodeID = deps.Host.ID().String()
 
-	var nodeID string
-	if deps.Local != nil {
-		nodeID = deps.Local.Identity.ID().String()
-	}
-
-	_ = deps.RemoteLogger.Send(&remotemetrics.MissingBlockMetrics{
-		Type:         recordType,
-		NodeID:       nodeID,
-		MetricsLevel: Parameters.MetricsLevel,
-		BlockID:      block.ID().Base58(),
-		IssuerID:     identity.NewID(block.IssuerPublicKey()).String(),
-	})
-}
+// 	_ = deps.RemoteLogger.Send(&remotemetrics.MissingBlockMetrics{
+// 		Type:         recordType,
+// 		NodeID:       nodeID,
+// 		MetricsLevel: Parameters.MetricsLevel,
+// 		BlockID:      block.ID().Base58(),
+// 		IssuerID:     identity.NewID(block.IssuerPublicKey()).String(),
+// 	})
+// }

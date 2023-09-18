@@ -140,6 +140,14 @@ func (b *Block) StrongParents() (parents []iotago.BlockID) {
 	return b.modelBlock.ProtocolBlock().Block.StrongParentIDs()
 }
 
+func (b *Block) WeakParents() (parents []iotago.BlockID) {
+	return b.modelBlock.ProtocolBlock().Block.WeakParentIDs()
+}
+
+func (b *Block) ShallowLikeParents() (parents []iotago.BlockID) {
+	return b.modelBlock.ProtocolBlock().Block.ShallowLikeParentIDs()
+}
+
 // ParentsWithType returns the parents of the block with their type.
 func (b *Block) ParentsWithType() []iotago.Parent {
 	return b.modelBlock.ProtocolBlock().ParentsWithType()

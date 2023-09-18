@@ -16,6 +16,7 @@ import (
 	"github.com/iotaledger/iota-core/pkg/protocol"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/blocks"
 	iotago "github.com/iotaledger/iota.go/v4"
+	"github.com/libp2p/go-libp2p/core/host"
 )
 
 const (
@@ -41,6 +42,7 @@ var (
 
 type dependencies struct {
 	dig.In
+	Host host.Host
 
 	Protocol *protocol.Protocol
 	// RemoteLogger *remotelog.RemoteLoggerConn `optional:"true"`
