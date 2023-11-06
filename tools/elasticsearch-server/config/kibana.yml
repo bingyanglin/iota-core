@@ -2,5 +2,10 @@
 ## https://github.com/elastic/kibana/blob/master/src/dev/build/tasks/os_packages/docker_generator/templates/kibana_yml.template.js
 #
 server.name: kibana
-server.host: "0"
-elasticsearch.hosts: [ "http://elasticsearch:9200" ]
+server.host: "0.0.0.0"
+elasticsearch.hosts: ["http://elasticsearch:9200"]
+
+xpack.reporting.kibanaServer.hostname: localhost # Added for Reporting
+xpack.reporting.encryptionKey: "your_reporting_encryption_key_min_32_characters" # Generate a secure key
+xpack.encryptedSavedObjects.encryptionKey: "your_encrypted_saved_objects_encryption_key" # Generate a secure key
+xpack.security.encryptionKey: "your_security_encryption_key_min_32_characters" # Generate a secure key
