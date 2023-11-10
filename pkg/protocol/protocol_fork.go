@@ -10,6 +10,7 @@ import (
 	"github.com/iotaledger/hive.go/ierrors"
 	"github.com/iotaledger/hive.go/runtime/event"
 	"github.com/iotaledger/hive.go/runtime/timeutil"
+	"github.com/iotaledger/hive.go/runtime/workerpool"
 	"github.com/iotaledger/iota-core/pkg/model"
 	"github.com/iotaledger/iota-core/pkg/protocol/chainmanager"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine"
@@ -20,11 +21,11 @@ import (
 func (p *Protocol) processAttestationsRequest(commitmentID iotago.CommitmentID, src peer.ID) {
 	mainEngine := p.MainEngineInstance()
 
-	if mainEngine.Storage.Settings().LatestCommitment().Index() < commitmentID.Index() {
+	if mainEngine.Storage.Settings().LatestCommitment().Slot() < commitmentID.Slot() {
 		return
 	}
 
-	commitment, err := mainEngine.Storage.Commitments().Load(commitmentID.Index())
+	commitment, err := mainEngine.Storage.Commitments().Load(commitmentID.Slot())
 	if err != nil {
 		p.HandleError(ierrors.Wrapf(err, "failed to load commitment %s", commitmentID))
 		return
@@ -34,18 +35,18 @@ func (p *Protocol) processAttestationsRequest(commitmentID iotago.CommitmentID, 
 		return
 	}
 
-	attestations, err := mainEngine.Attestations.Get(commitmentID.Index())
+	attestations, err := mainEngine.Attestations.Get(commitmentID.Slot())
 	if err != nil {
 		p.HandleError(ierrors.Wrapf(err, "failed to load attestations for commitment %s", commitmentID))
 		return
 	}
 
-	rootsStorage, err := mainEngine.Storage.Roots(commitmentID.Index())
+	rootsStorage, err := mainEngine.Storage.Roots(commitmentID.Slot())
 	if err != nil {
 		p.HandleError(ierrors.Errorf("failed to get roots storage for commitment %s", commitmentID))
 		return
 	}
-	roots, err := rootsStorage.Load(commitmentID)
+	roots, _, err := rootsStorage.Load(commitmentID)
 	if err != nil {
 		p.HandleError(ierrors.Wrapf(err, "failed to load roots for commitment %s", commitmentID))
 		return
@@ -84,8 +85,8 @@ func (p *Protocol) onForkDetected(fork *chainmanager.Fork) {
 	//   1. The candidate engine becomes synced and its chain is heavier than the main chain -> switch to it.
 	//   2. The candidate engine never becomes synced or its chain is not heavier than the main chain -> discard it after a timeout.
 	//   3. The candidate engine is not creating the same commitments as the chain we decided to switch to -> discard it immediately.
-	snapshotTargetIndex := fork.ForkingPoint.Index() - 1
-	candidateEngineInstance, err := p.engineManager.ForkEngineAtSlot(snapshotTargetIndex)
+	snapshotTargetIndex := fork.ForkingPoint.Slot() - 1
+	candidateEngineInstance, err := p.EngineManager.ForkEngineAtSlot(snapshotTargetIndex)
 	if err != nil {
 		p.HandleError(ierrors.Wrap(err, "error creating new candidate engine"))
 		return
@@ -97,7 +98,7 @@ func (p *Protocol) onForkDetected(fork *chainmanager.Fork) {
 	// Attach the engine block requests to the protocol and detach as soon as we switch to that engine
 	detachRequestBlocks := candidateEngineInstance.Events.BlockRequester.Tick.Hook(func(blockID iotago.BlockID) {
 		p.networkProtocol.RequestBlock(blockID)
-	}, event.WithWorkerPool(candidateEngineInstance.Workers.CreatePool("CandidateBlockRequester", 2))).Unhook
+	}, event.WithWorkerPool(candidateEngineInstance.Workers.CreatePool("CandidateBlockRequester", workerpool.WithWorkerCount(2)))).Unhook
 
 	var detachProcessCommitment, detachMainEngineSwitched func()
 	candidateEngineTimeoutTimer := time.NewTimer(10 * time.Minute)
@@ -120,8 +121,8 @@ func (p *Protocol) onForkDetected(fork *chainmanager.Fork) {
 	// Attach slot commitments to the chain manager and detach as soon as we switch to that engine
 	detachProcessCommitment = candidateEngineInstance.Events.Notarization.LatestCommitmentUpdated.Hook(func(commitment *model.Commitment) {
 		// Check whether the commitment produced by syncing the candidate engine is actually part of the forked chain.
-		if fork.ForkedChain.LatestCommitment().ID().Index() >= commitment.Index() {
-			forkedChainCommitmentID := fork.ForkedChain.Commitment(commitment.Index()).ID()
+		if fork.ForkedChain.LatestCommitment().ID().Slot() >= commitment.Slot() {
+			forkedChainCommitmentID := fork.ForkedChain.Commitment(commitment.Slot()).ID()
 			if forkedChainCommitmentID != commitment.ID() {
 				p.HandleError(ierrors.Errorf("candidate engine %s produced a commitment %s that is not part of the forked chain %s", candidateEngineInstance.Name(), commitment.ID(), forkedChainCommitmentID))
 				cleanupFunc()
@@ -136,7 +137,7 @@ func (p *Protocol) onForkDetected(fork *chainmanager.Fork) {
 			commitment.CumulativeWeight() > p.MainEngineInstance().Storage.Settings().LatestCommitment().CumulativeWeight() {
 			p.switchEngines()
 		}
-	}, event.WithWorkerPool(candidateEngineInstance.Workers.CreatePool("ProcessCandidateCommitment", 1))).Unhook
+	}, event.WithWorkerPool(candidateEngineInstance.Workers.CreatePool("ProcessCandidateCommitment", workerpool.WithWorkerCount(1)))).Unhook
 
 	// Clean up events when we switch to the candidate engine.
 	detachMainEngineSwitched = p.Events.MainEngineSwitched.Hook(func(_ *engine.Engine) {
@@ -184,7 +185,7 @@ type commitmentVerificationResult struct {
 	err                    error
 }
 
-func (p *Protocol) processFork(fork *chainmanager.Fork) (anchorBlockIDs iotago.BlockIDs, shouldSwitch, banSource bool, err error) {
+func (p *Protocol) processFork(fork *chainmanager.Fork) (anchorBlockIDs iotago.BlockIDs, shouldSwitch bool, banSource bool, err error) {
 	// Flow:
 	//  1. request attestations starting from forking point + AttestationCommitmentOffset
 	//  2. request 1 by 1
@@ -193,7 +194,11 @@ func (p *Protocol) processFork(fork *chainmanager.Fork) (anchorBlockIDs iotago.B
 	ch := make(chan *commitmentVerificationResult)
 	defer close(ch)
 
-	commitmentVerifier := NewCommitmentVerifier(p.MainEngineInstance(), fork.MainChain.Commitment(fork.ForkingPoint.Index()-1).Commitment())
+	commitmentVerifier, err := NewCommitmentVerifier(p.MainEngineInstance(), fork.MainChain.Commitment(fork.ForkingPoint.Slot()-1).Commitment())
+	if err != nil {
+		return nil, false, true, ierrors.Wrapf(err, "failed to create commitment verifier for %s", fork.MainChain.Commitment(fork.ForkingPoint.Slot()-1).ID())
+	}
+
 	verifyCommitmentFunc := func(commitment *model.Commitment, attestations []*iotago.Attestation, merkleProof *merklehasher.Proof[iotago.Identifier], _ peer.ID) {
 		blockIDs, actualCumulativeWeight, err := commitmentVerifier.verifyCommitment(commitment, attestations, merkleProof)
 
@@ -206,7 +211,7 @@ func (p *Protocol) processFork(fork *chainmanager.Fork) (anchorBlockIDs iotago.B
 		ch <- result
 	}
 
-	wp := p.Workers.CreatePool("AttestationsVerifier", 1)
+	wp := p.Workers.CreatePool("AttestationsVerifier", workerpool.WithWorkerCount(1))
 	unhook := p.Events.Network.AttestationsReceived.Hook(
 		verifyCommitmentFunc,
 		event.WithWorkerPool(wp),
@@ -232,8 +237,8 @@ func (p *Protocol) processFork(fork *chainmanager.Fork) (anchorBlockIDs iotago.B
 	var heavierCount int
 	// We start from the forking point to have all starting blocks for each slot. Even though the chain weight will only
 	// start to diverge at forking point + AttestationCommitmentOffset.
-	start := fork.ForkingPoint.Index()
-	end := fork.ForkedChain.LatestCommitment().ID().Index()
+	start := fork.ForkingPoint.Slot()
+	end := fork.ForkedChain.LatestCommitment().ID().Slot()
 	for i := start; i <= end; i++ {
 		mainChainChainCommitment := fork.MainChain.Commitment(i)
 		if mainChainChainCommitment == nil {
@@ -250,7 +255,7 @@ func (p *Protocol) processFork(fork *chainmanager.Fork) (anchorBlockIDs iotago.B
 
 		result, err := p.requestAttestation(ctx, fork.ForkedChain.Commitment(i).ID(), fork.Source, ch)
 		if err != nil {
-			return nil, false, true, ierrors.Wrapf(err, "failed to verify commitment %s", result.commitment.ID())
+			return nil, false, true, ierrors.Wrapf(err, "failed to verify commitment %s", fork.ForkedChain.Commitment(i).ID())
 		}
 
 		// Count how many consecutive slots are heavier/lighter than the main chain.
@@ -310,7 +315,7 @@ func (p *Protocol) switchEngines() {
 			return false
 		}
 
-		if err := p.engineManager.SetActiveInstance(candidateEngineInstance); err != nil {
+		if err := p.EngineManager.SetActiveInstance(candidateEngineInstance); err != nil {
 			p.HandleError(ierrors.Wrap(err, "error switching engines"))
 
 			return false
@@ -330,8 +335,6 @@ func (p *Protocol) switchEngines() {
 
 	if success {
 		p.Events.MainEngineSwitched.Trigger(p.MainEngineInstance())
-
-		// TODO: copy over old slots from the old engine to the new one
 
 		// Cleanup filesystem
 		if err := oldEngine.RemoveFromFilesystem(); err != nil {

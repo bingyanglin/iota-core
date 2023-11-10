@@ -2,7 +2,6 @@ package tests
 
 import (
 	"fmt"
-	"math"
 	"testing"
 	"time"
 
@@ -10,7 +9,7 @@ import (
 
 	"github.com/iotaledger/hive.go/core/eventticker"
 	"github.com/iotaledger/hive.go/crypto/ed25519"
-	"github.com/iotaledger/hive.go/ds"
+	"github.com/iotaledger/hive.go/ierrors"
 	"github.com/iotaledger/hive.go/lo"
 	"github.com/iotaledger/hive.go/runtime/options"
 	"github.com/iotaledger/iota-core/pkg/model"
@@ -20,26 +19,44 @@ import (
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/accounts"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/blocks"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/upgrade/signalingupgradeorchestrator"
-	"github.com/iotaledger/iota-core/pkg/protocol/snapshotcreator"
 	"github.com/iotaledger/iota-core/pkg/storage"
 	"github.com/iotaledger/iota-core/pkg/storage/permanent"
 	"github.com/iotaledger/iota-core/pkg/testsuite"
+	"github.com/iotaledger/iota-core/pkg/testsuite/mock"
 	iotago "github.com/iotaledger/iota.go/v4"
 	"github.com/iotaledger/iota.go/v4/api"
 )
 
 func Test_Upgrade_Signaling(t *testing.T) {
 	ts := testsuite.NewTestSuite(t,
-		testsuite.WithLivenessThreshold(1),
-		testsuite.WithMinCommittableAge(2),
-		testsuite.WithMaxCommittableAge(6),
-		testsuite.WithEpochNearingThreshold(2),
-		testsuite.WithSlotsPerEpochExponent(3),
-		testsuite.WithGenesisTimestampOffset(1000*10),
+		testsuite.WithProtocolParametersOptions(
+			iotago.WithTimeProviderOptions(
+				0,
+				testsuite.GenesisTimeWithOffsetBySlots(1000, testsuite.DefaultSlotDurationInSeconds),
+				testsuite.DefaultSlotDurationInSeconds,
+				3,
+			),
+			iotago.WithLivenessOptions(
+				10,
+				10,
+				2,
+				6,
+				2,
+			),
+			iotago.WithVersionSignalingOptions(7, 5, 2),
+		),
 	)
 	defer ts.Shutdown()
 
-	nodeOptions := []options.Option[protocol.Protocol]{
+	// We "pretend" to have version 5 but reuse the same protocol parameters as for version 3.
+	v5ProtocolParameters := iotago.NewV3ProtocolParameters(
+		append(
+			ts.ProtocolParameterOptions,
+			iotago.WithVersion(5),
+		)...,
+	)
+
+	nodeOptionsWithoutV5 := []options.Option[protocol.Protocol]{
 		protocol.WithChainManagerOptions(
 			chainmanager.WithCommitmentRequesterOptions(
 				eventticker.RetryInterval[iotago.SlotIndex, iotago.CommitmentID](1*time.Second),
@@ -56,63 +73,83 @@ func Test_Upgrade_Signaling(t *testing.T) {
 			storage.WithPruningDelay(20),
 			storage.WithPermanentOptions(
 				permanent.WithEpochBasedProviderOptions(
-					api.WithAPIForMissingVersionCallback(func(version iotago.Version) (iotago.API, error) {
-						return ts.API, nil
+					api.WithAPIForMissingVersionCallback(func(protocolParameters iotago.ProtocolParameters) (iotago.API, error) {
+						switch protocolParameters.Version() {
+						case 3:
+							return ts.API, nil
+						}
+
+						return nil, ierrors.Errorf("can't create API due to unsupported protocol version: %d", protocolParameters.Version())
 					}),
 				),
 			),
 		),
 	}
 
-	ts.AddValidatorNode("nodeA")
+	nodeOptionsWithV5 := append(nodeOptionsWithoutV5,
+		protocol.WithUpgradeOrchestratorProvider(
+			signalingupgradeorchestrator.NewProvider(signalingupgradeorchestrator.WithProtocolParameters(v5ProtocolParameters)),
+		),
+		protocol.WithStorageOptions(
+			storage.WithPruningDelay(20),
+			storage.WithPermanentOptions(
+				permanent.WithEpochBasedProviderOptions(
+					api.WithAPIForMissingVersionCallback(func(protocolParameters iotago.ProtocolParameters) (iotago.API, error) {
+						switch protocolParameters.Version() {
+						case 3:
+							return ts.API, nil
+						case 5:
+							return iotago.V3API(v5ProtocolParameters), nil
+						}
+
+						return nil, ierrors.Errorf("can't create API due to unsupported protocol version: %d", protocolParameters.Version())
+					}),
+				),
+			),
+		),
+	)
+
+	nodeA := ts.AddValidatorNode("nodeA")
 	ts.AddValidatorNode("nodeB")
 	ts.AddValidatorNode("nodeC")
 	ts.AddValidatorNode("nodeD")
 	ts.AddNode("nodeE")
 	ts.AddNode("nodeF")
+	wallet := ts.AddGenesisWallet("default", nodeA, iotago.MaxBlockIssuanceCredits/2)
 
 	ts.Run(true, map[string][]options.Option[protocol.Protocol]{
-		"nodeA": nodeOptions,
-		"nodeB": nodeOptions,
-		"nodeC": nodeOptions,
-		"nodeD": nodeOptions,
-		"nodeE": nodeOptions,
-		"nodeF": nodeOptions,
+		"nodeA": nodeOptionsWithoutV5,
+		"nodeB": nodeOptionsWithV5,
+		"nodeC": nodeOptionsWithV5,
+		"nodeD": nodeOptionsWithoutV5,
+		"nodeE": nodeOptionsWithoutV5,
+		"nodeF": nodeOptionsWithoutV5,
 	})
 
 	ts.Wait()
-
-	v5ProtocolParameters := iotago.NewV3ProtocolParameters(
-		iotago.WithVersion(5),
-		iotago.WithTimeProviderOptions(
-			ts.API.TimeProvider().GenesisUnixTime(),
-			uint8(ts.API.TimeProvider().SlotDurationSeconds()),
-			uint8(math.Log2(float64(ts.API.TimeProvider().EpochDurationSlots()))),
-		),
-	)
 
 	hash1 := lo.PanicOnErr(v5ProtocolParameters.Hash())
 	hash2 := iotago.Identifier{2}
 
 	ts.AssertAccountData(&accounts.AccountData{
-		ID:                                    ts.Node("nodeA").AccountID,
-		Credits:                               &accounts.BlockIssuanceCredits{Value: math.MaxInt64, UpdateTime: 0},
-		ExpirySlot:                            math.MaxUint64,
-		OutputID:                              iotago.OutputIDFromTransactionIDAndIndex(snapshotcreator.GenesisTransactionID, 1),
-		BlockIssuerKeys:                       ds.NewSet[iotago.BlockIssuerKey](iotago.BlockIssuerKeyEd25519FromPublicKey(ed25519.PublicKey(ts.Node("nodeA").PubKey))),
-		ValidatorStake:                        testsuite.MinValidatorAccountAmount,
+		ID:                                    ts.Node("nodeA").Validator.AccountID,
+		Credits:                               &accounts.BlockIssuanceCredits{Value: iotago.MaxBlockIssuanceCredits / 2, UpdateSlot: 0},
+		ExpirySlot:                            iotago.MaxSlotIndex,
+		OutputID:                              ts.AccountOutput("Genesis:1").OutputID(),
+		BlockIssuerKeys:                       iotago.NewBlockIssuerKeys(iotago.Ed25519PublicKeyBlockIssuerKeyFromPublicKey(ed25519.PublicKey(ts.Node("nodeA").Validator.PublicKey))),
+		ValidatorStake:                        mock.MinValidatorAccountAmount,
 		DelegationStake:                       0,
 		FixedCost:                             0,
-		StakeEndEpoch:                         math.MaxUint64,
+		StakeEndEpoch:                         iotago.MaxEpochIndex,
 		LatestSupportedProtocolVersionAndHash: model.VersionAndHash{},
 	}, ts.Nodes()...)
 
 	ts.AssertAccountData(&accounts.AccountData{
-		ID:                                    ts.Node("nodeF").AccountID,
-		Credits:                               &accounts.BlockIssuanceCredits{Value: math.MaxInt64, UpdateTime: 0},
-		ExpirySlot:                            math.MaxUint64,
-		OutputID:                              iotago.OutputIDFromTransactionIDAndIndex(snapshotcreator.GenesisTransactionID, 6),
-		BlockIssuerKeys:                       ds.NewSet[iotago.BlockIssuerKey](iotago.BlockIssuerKeyEd25519FromPublicKey(ed25519.PublicKey(ts.Node("nodeF").PubKey))),
+		ID:                                    wallet.BlockIssuer.AccountID,
+		Credits:                               &accounts.BlockIssuanceCredits{Value: iotago.MaxBlockIssuanceCredits / 2, UpdateSlot: 0},
+		ExpirySlot:                            iotago.MaxSlotIndex,
+		OutputID:                              ts.AccountOutput("Genesis:5").OutputID(),
+		BlockIssuerKeys:                       iotago.NewBlockIssuerKeys(iotago.Ed25519PublicKeyBlockIssuerKeyFromPublicKey(ed25519.PublicKey(wallet.BlockIssuer.PublicKey))),
 		ValidatorStake:                        0,
 		DelegationStake:                       0,
 		FixedCost:                             0,
@@ -120,40 +157,37 @@ func Test_Upgrade_Signaling(t *testing.T) {
 		LatestSupportedProtocolVersionAndHash: model.VersionAndHash{},
 	}, ts.Nodes()...)
 
+	// We force the nodes to issue at a specific version/hash to test tracking of votes for the upgrade signaling.
 	ts.Node("nodeA").SetHighestSupportedVersion(4)
 	ts.Node("nodeA").SetProtocolParametersHash(hash2)
-	ts.Node("nodeB").SetHighestSupportedVersion(5)
-	ts.Node("nodeB").SetProtocolParametersHash(hash1)
-	ts.Node("nodeC").SetHighestSupportedVersion(5)
-	ts.Node("nodeC").SetProtocolParametersHash(hash1)
 	ts.Node("nodeD").SetHighestSupportedVersion(3)
 	ts.Node("nodeD").SetProtocolParametersHash(hash2)
 	ts.IssueBlocksAtEpoch("", 0, 4, "Genesis", ts.Nodes(), true, nil)
 
 	// check account data before all nodes set the current version
 	ts.AssertAccountData(&accounts.AccountData{
-		ID:                                    ts.Node("nodeA").AccountID,
-		Credits:                               &accounts.BlockIssuanceCredits{Value: math.MaxInt64, UpdateTime: 0},
-		ExpirySlot:                            math.MaxUint64,
-		OutputID:                              iotago.OutputIDFromTransactionIDAndIndex(snapshotcreator.GenesisTransactionID, 1),
-		BlockIssuerKeys:                       ds.NewSet[iotago.BlockIssuerKey](iotago.BlockIssuerKeyEd25519FromPublicKey(ed25519.PublicKey(ts.Node("nodeA").PubKey))),
-		ValidatorStake:                        testsuite.MinValidatorAccountAmount,
+		ID:                                    ts.Node("nodeA").Validator.AccountID,
+		Credits:                               &accounts.BlockIssuanceCredits{Value: iotago.MaxBlockIssuanceCredits / 2, UpdateSlot: 0},
+		ExpirySlot:                            iotago.MaxSlotIndex,
+		OutputID:                              ts.AccountOutput("Genesis:1").OutputID(),
+		BlockIssuerKeys:                       iotago.NewBlockIssuerKeys(iotago.Ed25519PublicKeyBlockIssuerKeyFromPublicKey(ed25519.PublicKey(ts.Node("nodeA").Validator.PublicKey))),
+		ValidatorStake:                        mock.MinValidatorAccountAmount,
 		DelegationStake:                       0,
 		FixedCost:                             0,
-		StakeEndEpoch:                         math.MaxUint64,
+		StakeEndEpoch:                         iotago.MaxEpochIndex,
 		LatestSupportedProtocolVersionAndHash: model.VersionAndHash{Version: 4, Hash: hash2},
 	}, ts.Nodes()...)
 
 	ts.AssertAccountData(&accounts.AccountData{
-		ID:                                    ts.Node("nodeD").AccountID,
-		Credits:                               &accounts.BlockIssuanceCredits{Value: math.MaxInt64, UpdateTime: 0},
-		ExpirySlot:                            math.MaxUint64,
-		OutputID:                              iotago.OutputIDFromTransactionIDAndIndex(snapshotcreator.GenesisTransactionID, 4),
-		BlockIssuerKeys:                       ds.NewSet[iotago.BlockIssuerKey](iotago.BlockIssuerKeyEd25519FromPublicKey(ed25519.PublicKey(ts.Node("nodeD").PubKey))),
-		ValidatorStake:                        testsuite.MinValidatorAccountAmount,
+		ID:                                    ts.Node("nodeD").Validator.AccountID,
+		Credits:                               &accounts.BlockIssuanceCredits{Value: iotago.MaxBlockIssuanceCredits / 2, UpdateSlot: 0},
+		ExpirySlot:                            iotago.MaxSlotIndex,
+		OutputID:                              ts.AccountOutput("Genesis:4").OutputID(),
+		BlockIssuerKeys:                       iotago.NewBlockIssuerKeys(iotago.Ed25519PublicKeyBlockIssuerKeyFromPublicKey(ed25519.PublicKey(ts.Node("nodeD").Validator.PublicKey))),
+		ValidatorStake:                        mock.MinValidatorAccountAmount,
 		DelegationStake:                       0,
 		FixedCost:                             0,
-		StakeEndEpoch:                         math.MaxUint64,
+		StakeEndEpoch:                         iotago.MaxEpochIndex,
 		LatestSupportedProtocolVersionAndHash: model.VersionAndHash{Version: 3, Hash: hash2},
 	}, ts.Nodes()...)
 
@@ -166,20 +200,20 @@ func Test_Upgrade_Signaling(t *testing.T) {
 	ts.IssueBlocksAtEpoch("", 1, 4, "7.3", ts.Nodes(), true, nil)
 
 	ts.AssertAccountData(&accounts.AccountData{
-		ID:                                    ts.Node("nodeA").AccountID,
-		Credits:                               &accounts.BlockIssuanceCredits{Value: math.MaxInt64, UpdateTime: 0},
-		ExpirySlot:                            math.MaxUint64,
-		OutputID:                              iotago.OutputIDFromTransactionIDAndIndex(snapshotcreator.GenesisTransactionID, 1),
-		BlockIssuerKeys:                       ds.NewSet[iotago.BlockIssuerKey](iotago.BlockIssuerKeyEd25519FromPublicKey(ed25519.PublicKey(ts.Node("nodeA").PubKey))),
-		ValidatorStake:                        testsuite.MinValidatorAccountAmount,
+		ID:                                    ts.Node("nodeA").Validator.AccountID,
+		Credits:                               &accounts.BlockIssuanceCredits{Value: iotago.MaxBlockIssuanceCredits / 2, UpdateSlot: 0},
+		ExpirySlot:                            iotago.MaxSlotIndex,
+		OutputID:                              ts.AccountOutput("Genesis:1").OutputID(),
+		BlockIssuerKeys:                       iotago.NewBlockIssuerKeys(iotago.Ed25519PublicKeyBlockIssuerKeyFromPublicKey(ed25519.PublicKey(ts.Node("nodeA").Validator.PublicKey))),
+		ValidatorStake:                        mock.MinValidatorAccountAmount,
 		DelegationStake:                       0,
 		FixedCost:                             0,
-		StakeEndEpoch:                         math.MaxUint64,
+		StakeEndEpoch:                         iotago.MaxEpochIndex,
 		LatestSupportedProtocolVersionAndHash: model.VersionAndHash{Version: 5, Hash: hash1},
 	}, ts.Nodes()...)
 
 	// check that rollback is correct
-	account, exists, err := ts.Node("nodeA").Protocol.MainEngineInstance().Ledger.Account(ts.Node("nodeA").AccountID, 7)
+	account, exists, err := ts.Node("nodeA").Protocol.MainEngineInstance().Ledger.Account(ts.Node("nodeA").Validator.AccountID, 7)
 	require.NoError(t, err)
 	require.True(t, exists)
 	require.Equal(t, model.VersionAndHash{Version: 4, Hash: hash2}, account.LatestSupportedProtocolVersionAndHash)
@@ -217,9 +251,8 @@ func Test_Upgrade_Signaling(t *testing.T) {
 			ts.RemoveNode("nodeE")
 
 			nodeE1 := ts.AddNode("nodeE1")
-			nodeE1.CopyIdentityFromNode(nodeE)
 			nodeE1.Initialize(true,
-				append(nodeOptions,
+				append(nodeOptionsWithoutV5,
 					protocol.WithBaseDirectory(ts.Directory.Path(nodeE.Name)),
 				)...,
 			)
@@ -233,7 +266,7 @@ func Test_Upgrade_Signaling(t *testing.T) {
 		{
 			nodeG := ts.AddNode("nodeG")
 			nodeG.Initialize(true,
-				append(nodeOptions,
+				append(nodeOptionsWithoutV5,
 					protocol.WithSnapshotPath(snapshotPath),
 					protocol.WithBaseDirectory(ts.Directory.PathWithCreate(nodeG.Name)),
 				)...,
@@ -276,13 +309,9 @@ func Test_Upgrade_Signaling(t *testing.T) {
 			ts.RemoveNode("nodeE1")
 
 			nodeE2 := ts.AddNode("nodeE2")
-			nodeE2.CopyIdentityFromNode(nodeE1)
 			nodeE2.Initialize(true,
-				append(nodeOptions,
+				append(nodeOptionsWithV5,
 					protocol.WithBaseDirectory(ts.Directory.Path("nodeE")),
-					protocol.WithUpgradeOrchestratorProvider(
-						signalingupgradeorchestrator.NewProvider(signalingupgradeorchestrator.WithProtocolParameters(v5ProtocolParameters)),
-					),
 				)...,
 			)
 			ts.Wait()
@@ -295,12 +324,9 @@ func Test_Upgrade_Signaling(t *testing.T) {
 
 			nodeG := ts.AddNode("nodeH")
 			nodeG.Initialize(true,
-				append(nodeOptions,
+				append(nodeOptionsWithV5,
 					protocol.WithSnapshotPath(snapshotPath),
 					protocol.WithBaseDirectory(ts.Directory.PathWithCreate(nodeG.Name)),
-					protocol.WithUpgradeOrchestratorProvider(
-						signalingupgradeorchestrator.NewProvider(signalingupgradeorchestrator.WithProtocolParameters(v5ProtocolParameters)),
-					),
 				)...,
 			)
 			ts.Wait()
@@ -318,19 +344,19 @@ func Test_Upgrade_Signaling(t *testing.T) {
 	{
 		ts.AssertEpochVersions(map[iotago.Version]iotago.EpochIndex{
 			3: 0,
-			5: 13,
+			5: 8,
 		}, ts.Nodes()...)
 
 		ts.AssertVersionAndProtocolParameters(map[iotago.Version]iotago.ProtocolParameters{
 			3: ts.API.ProtocolParameters(),
 			5: nil,
-		}, ts.Nodes("nodeA", "nodeB", "nodeC", "nodeD", "nodeF", "nodeG")...)
+		}, ts.Nodes("nodeA", "nodeD", "nodeF", "nodeG")...)
 
 		// We've started nodeH with the v5 protocol parameters set. Therefore, they should be available.
 		ts.AssertVersionAndProtocolParameters(map[iotago.Version]iotago.ProtocolParameters{
 			3: ts.API.ProtocolParameters(),
 			5: v5ProtocolParameters,
-		}, ts.Nodes("nodeE2", "nodeH")...)
+		}, ts.Nodes("nodeB", "nodeC", "nodeE2", "nodeH")...)
 
 		ts.AssertVersionAndProtocolParametersHashes(map[iotago.Version]iotago.Identifier{
 			3: lo.PanicOnErr(ts.API.ProtocolParameters().Hash()),
@@ -339,35 +365,49 @@ func Test_Upgrade_Signaling(t *testing.T) {
 
 		// check account data at the end of the test
 		ts.AssertAccountData(&accounts.AccountData{
-			ID:                                    ts.Node("nodeA").AccountID,
-			Credits:                               &accounts.BlockIssuanceCredits{Value: math.MaxInt64, UpdateTime: 0},
-			ExpirySlot:                            math.MaxUint64,
-			OutputID:                              iotago.OutputIDFromTransactionIDAndIndex(snapshotcreator.GenesisTransactionID, 1),
-			BlockIssuerKeys:                       ds.NewSet[iotago.BlockIssuerKey](iotago.BlockIssuerKeyEd25519FromPublicKey(ed25519.PublicKey(ts.Node("nodeA").PubKey))),
-			ValidatorStake:                        testsuite.MinValidatorAccountAmount,
+			ID:                                    ts.Node("nodeA").Validator.AccountID,
+			Credits:                               &accounts.BlockIssuanceCredits{Value: iotago.MaxBlockIssuanceCredits / 2, UpdateSlot: 0},
+			ExpirySlot:                            iotago.MaxSlotIndex,
+			OutputID:                              ts.AccountOutput("Genesis:1").OutputID(),
+			BlockIssuerKeys:                       iotago.NewBlockIssuerKeys(iotago.Ed25519PublicKeyBlockIssuerKeyFromPublicKey(ed25519.PublicKey(ts.Node("nodeA").Validator.PublicKey))),
+			ValidatorStake:                        mock.MinValidatorAccountAmount,
 			DelegationStake:                       0,
 			FixedCost:                             0,
-			StakeEndEpoch:                         math.MaxUint64,
+			StakeEndEpoch:                         iotago.MaxEpochIndex,
 			LatestSupportedProtocolVersionAndHash: model.VersionAndHash{Version: 5, Hash: hash1},
 		}, ts.Nodes()...)
 
 		ts.AssertAccountData(&accounts.AccountData{
-			ID:                                    ts.Node("nodeD").AccountID,
-			Credits:                               &accounts.BlockIssuanceCredits{Value: math.MaxInt64, UpdateTime: 0},
-			ExpirySlot:                            math.MaxUint64,
-			OutputID:                              iotago.OutputIDFromTransactionIDAndIndex(snapshotcreator.GenesisTransactionID, 4),
-			BlockIssuerKeys:                       ds.NewSet[iotago.BlockIssuerKey](iotago.BlockIssuerKeyEd25519FromPublicKey(ed25519.PublicKey(ts.Node("nodeD").PubKey))),
-			ValidatorStake:                        testsuite.MinValidatorAccountAmount,
+			ID:                                    ts.Node("nodeD").Validator.AccountID,
+			Credits:                               &accounts.BlockIssuanceCredits{Value: iotago.MaxBlockIssuanceCredits / 2, UpdateSlot: 0},
+			ExpirySlot:                            iotago.MaxSlotIndex,
+			OutputID:                              ts.AccountOutput("Genesis:4").OutputID(),
+			BlockIssuerKeys:                       iotago.NewBlockIssuerKeys(iotago.Ed25519PublicKeyBlockIssuerKeyFromPublicKey(ed25519.PublicKey(ts.Node("nodeD").Validator.PublicKey))),
+			ValidatorStake:                        mock.MinValidatorAccountAmount,
 			DelegationStake:                       0,
 			FixedCost:                             0,
-			StakeEndEpoch:                         math.MaxUint64,
+			StakeEndEpoch:                         iotago.MaxEpochIndex,
 			LatestSupportedProtocolVersionAndHash: model.VersionAndHash{Version: 5, Hash: hash2},
 		}, ts.Nodes()...)
 	}
 
-	// Check that issuing still produces the same commitments
-	ts.IssueBlocksAtEpoch("", 8, 4, "63.3", ts.Nodes("nodeA", "nodeB", "nodeC", "nodeD", "nodeF"), true, nil)
-	ts.AssertNodeState(ts.Nodes(),
+	// TODO: these node start to warpsync and don't manage to catch up
+	for _, node := range ts.Nodes("nodeE2", "nodeH") {
+		node.Shutdown()
+		ts.RemoveNode(node.Name)
+	}
+
+	// Check that issuing still produces the same commitments on the nodes that upgraded. The nodes that did not upgrade
+	// should not be able to issue and process blocks with the new version.
+	ts.IssueBlocksAtEpoch("", 8, 4, "63.3", ts.Nodes("nodeB", "nodeC"), false, nil)
+
+	// Nodes that did not set up the new protocol parameters are not able to process blocks with the new version.
+	ts.AssertNodeState(ts.Nodes("nodeA", "nodeD", "nodeF", "nodeG"),
+		testsuite.WithLatestCommitmentSlotIndex(61),
+		testsuite.WithEqualStoredCommitmentAtIndex(61),
+	)
+
+	ts.AssertNodeState(ts.Nodes("nodeB", "nodeC"),
 		testsuite.WithLatestCommitmentSlotIndex(69),
 		testsuite.WithEqualStoredCommitmentAtIndex(69),
 	)

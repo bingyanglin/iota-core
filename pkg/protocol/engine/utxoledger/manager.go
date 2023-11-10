@@ -2,15 +2,14 @@ package utxoledger
 
 import (
 	"crypto/sha256"
-	"encoding/binary"
 
 	"github.com/iotaledger/hive.go/ads"
 	"github.com/iotaledger/hive.go/ierrors"
 	"github.com/iotaledger/hive.go/kvstore"
 	"github.com/iotaledger/hive.go/lo"
 	"github.com/iotaledger/hive.go/runtime/syncutils"
+	"github.com/iotaledger/hive.go/serializer/v2/stream"
 	iotago "github.com/iotaledger/iota.go/v4"
-	"github.com/iotaledger/iota.go/v4/api"
 )
 
 // ErrOutputsSumNotEqualTotalSupply is returned if the sum of the output base token amounts is not equal the total supply of tokens.
@@ -20,15 +19,17 @@ type Manager struct {
 	store     kvstore.KVStore
 	storeLock syncutils.RWMutex
 
-	stateTree ads.Map[iotago.OutputID, *stateTreeMetadata]
+	stateTree ads.Map[iotago.Identifier, iotago.OutputID, *stateTreeMetadata]
 
-	apiProvider api.Provider
+	apiProvider iotago.APIProvider
 }
 
-func New(store kvstore.KVStore, apiProvider api.Provider) *Manager {
+func New(store kvstore.KVStore, apiProvider iotago.APIProvider) *Manager {
 	return &Manager{
 		store: store,
-		stateTree: ads.NewMap(lo.PanicOnErr(store.WithExtendedRealm(kvstore.Realm{StoreKeyPrefixStateTree})),
+		stateTree: ads.NewMap[iotago.Identifier](lo.PanicOnErr(store.WithExtendedRealm(kvstore.Realm{StoreKeyPrefixStateTree})),
+			iotago.Identifier.Bytes,
+			iotago.IdentifierFromBytes,
 			iotago.OutputID.Bytes,
 			iotago.OutputIDFromBytes,
 			(*stateTreeMetadata).Bytes,
@@ -73,8 +74,8 @@ func (m *Manager) WriteUnlockLedger() {
 	m.storeLock.Unlock()
 }
 
-func (m *Manager) PruneSlotIndexWithoutLocking(index iotago.SlotIndex) error {
-	diff, err := m.SlotDiffWithoutLocking(index)
+func (m *Manager) PruneSlotIndexWithoutLocking(slot iotago.SlotIndex) error {
+	diff, err := m.SlotDiffWithoutLocking(slot)
 	if err != nil {
 		// There's no need to prune this slot.
 		if ierrors.Is(err, kvstore.ErrKeyNotFound) {
@@ -103,7 +104,7 @@ func (m *Manager) PruneSlotIndexWithoutLocking(index iotago.SlotIndex) error {
 		}
 	}
 
-	if err := deleteDiff(index, mutations); err != nil {
+	if err := deleteDiff(slot, mutations); err != nil {
 		mutations.Cancel()
 
 		return err
@@ -112,27 +113,27 @@ func (m *Manager) PruneSlotIndexWithoutLocking(index iotago.SlotIndex) error {
 	return mutations.Commit()
 }
 
-func storeLedgerIndex(index iotago.SlotIndex, mutations kvstore.BatchedMutations) error {
-	return mutations.Set([]byte{StoreKeyPrefixLedgerSlotIndex}, index.MustBytes())
+func storeLedgerIndex(slot iotago.SlotIndex, mutations kvstore.BatchedMutations) error {
+	return mutations.Set([]byte{StoreKeyPrefixLedgerSlotIndex}, slot.MustBytes())
 }
 
-func (m *Manager) StoreLedgerIndexWithoutLocking(index iotago.SlotIndex) error {
-	return m.store.Set([]byte{StoreKeyPrefixLedgerSlotIndex}, index.MustBytes())
+func (m *Manager) StoreLedgerIndexWithoutLocking(slot iotago.SlotIndex) error {
+	return m.store.Set([]byte{StoreKeyPrefixLedgerSlotIndex}, slot.MustBytes())
 }
 
-func (m *Manager) StoreLedgerIndex(index iotago.SlotIndex) error {
+func (m *Manager) StoreLedgerIndex(slot iotago.SlotIndex) error {
 	m.WriteLockLedger()
 	defer m.WriteUnlockLedger()
 
-	return m.StoreLedgerIndexWithoutLocking(index)
+	return m.StoreLedgerIndexWithoutLocking(slot)
 }
 
 func (m *Manager) ReadLedgerIndexWithoutLocking() (iotago.SlotIndex, error) {
 	value, err := m.store.Get([]byte{StoreKeyPrefixLedgerSlotIndex})
 	if err != nil {
 		if ierrors.Is(err, kvstore.ErrKeyNotFound) {
-			// there is no ledger milestone yet => return 0
-			return 0, nil
+			// there is no ledger milestone yet => return genesis slot
+			return m.apiProvider.CommittedAPI().ProtocolParameters().GenesisSlot(), nil
 		}
 
 		return 0, ierrors.Errorf("failed to load ledger milestone index: %w", err)
@@ -141,14 +142,14 @@ func (m *Manager) ReadLedgerIndexWithoutLocking() (iotago.SlotIndex, error) {
 	return lo.DropCount(iotago.SlotIndexFromBytes(value))
 }
 
-func (m *Manager) ReadLedgerIndex() (iotago.SlotIndex, error) {
+func (m *Manager) ReadLedgerSlot() (iotago.SlotIndex, error) {
 	m.ReadLockLedger()
 	defer m.ReadUnlockLedger()
 
 	return m.ReadLedgerIndexWithoutLocking()
 }
 
-func (m *Manager) ApplyDiffWithoutLocking(index iotago.SlotIndex, newOutputs Outputs, newSpents Spents) error {
+func (m *Manager) ApplyDiffWithoutLocking(slot iotago.SlotIndex, newOutputs Outputs, newSpents Spents) error {
 	mutations, err := m.store.Batched()
 	if err != nil {
 		return err
@@ -176,7 +177,7 @@ func (m *Manager) ApplyDiffWithoutLocking(index iotago.SlotIndex, newOutputs Out
 	}
 
 	slotDiff := &SlotDiff{
-		Index:   index,
+		Slot:    slot,
 		Outputs: newOutputs,
 		Spents:  newSpents,
 	}
@@ -187,7 +188,7 @@ func (m *Manager) ApplyDiffWithoutLocking(index iotago.SlotIndex, newOutputs Out
 		return err
 	}
 
-	if err := storeLedgerIndex(index, mutations); err != nil {
+	if err := storeLedgerIndex(slot, mutations); err != nil {
 		mutations.Cancel()
 
 		return err
@@ -215,14 +216,14 @@ func (m *Manager) ApplyDiffWithoutLocking(index iotago.SlotIndex, newOutputs Out
 	return nil
 }
 
-func (m *Manager) ApplyDiff(index iotago.SlotIndex, newOutputs Outputs, newSpents Spents) error {
+func (m *Manager) ApplyDiff(slot iotago.SlotIndex, newOutputs Outputs, newSpents Spents) error {
 	m.WriteLockLedger()
 	defer m.WriteUnlockLedger()
 
-	return m.ApplyDiffWithoutLocking(index, newOutputs, newSpents)
+	return m.ApplyDiffWithoutLocking(slot, newOutputs, newSpents)
 }
 
-func (m *Manager) RollbackDiffWithoutLocking(index iotago.SlotIndex, newOutputs Outputs, newSpents Spents) error {
+func (m *Manager) RollbackDiffWithoutLocking(slot iotago.SlotIndex, newOutputs Outputs, newSpents Spents) error {
 	mutations, err := m.store.Batched()
 	if err != nil {
 		return err
@@ -257,13 +258,13 @@ func (m *Manager) RollbackDiffWithoutLocking(index iotago.SlotIndex, newOutputs 
 		}
 	}
 
-	if err := deleteDiff(index, mutations); err != nil {
+	if err := deleteDiff(slot, mutations); err != nil {
 		mutations.Cancel()
 
 		return err
 	}
 
-	if err := storeLedgerIndex(index-1, mutations); err != nil {
+	if err := storeLedgerIndex(slot-1, mutations); err != nil {
 		mutations.Cancel()
 
 		return err
@@ -291,11 +292,11 @@ func (m *Manager) RollbackDiffWithoutLocking(index iotago.SlotIndex, newOutputs 
 	return nil
 }
 
-func (m *Manager) RollbackDiff(index iotago.SlotIndex, newOutputs Outputs, newSpents Spents) error {
+func (m *Manager) RollbackDiff(slot iotago.SlotIndex, newOutputs Outputs, newSpents Spents) error {
 	m.WriteLockLedger()
 	defer m.WriteUnlockLedger()
 
-	return m.RollbackDiffWithoutLocking(index, newOutputs, newSpents)
+	return m.RollbackDiffWithoutLocking(slot, newOutputs, newSpents)
 }
 
 func (m *Manager) CheckLedgerState(tokenSupply iotago.BaseToken) error {
@@ -365,11 +366,12 @@ func (m *Manager) LedgerStateSHA256Sum() ([]byte, error) {
 
 	ledgerStateHash := sha256.New()
 
-	ledgerIndex, err := m.ReadLedgerIndexWithoutLocking()
+	ledgerSlot, err := m.ReadLedgerIndexWithoutLocking()
 	if err != nil {
 		return nil, err
 	}
-	if err := binary.Write(ledgerStateHash, binary.LittleEndian, ledgerIndex); err != nil {
+
+	if err := stream.Write(ledgerStateHash, ledgerSlot); err != nil {
 		return nil, err
 	}
 
@@ -385,22 +387,16 @@ func (m *Manager) LedgerStateSHA256Sum() ([]byte, error) {
 			return nil, err
 		}
 
-		if _, err := ledgerStateHash.Write(output.outputID[:]); err != nil {
+		if err := stream.Write(ledgerStateHash, outputID); err != nil {
 			return nil, err
 		}
 
-		if _, err := ledgerStateHash.Write(output.KVStorableValue()); err != nil {
+		if err := stream.WriteBytes(ledgerStateHash, output.KVStorableValue()); err != nil {
 			return nil, err
 		}
 	}
 
-	// Add root of the state tree
-	stateTreeBytes, err := m.StateTreeRoot().Bytes()
-	if err != nil {
-		return nil, err
-	}
-
-	if _, err := ledgerStateHash.Write(stateTreeBytes); err != nil {
+	if err := stream.Write(ledgerStateHash, m.StateTreeRoot()); err != nil {
 		return nil, err
 	}
 

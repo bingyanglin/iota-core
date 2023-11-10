@@ -20,11 +20,13 @@ func TestAccounts(t *testing.T) {
 
 	// check "Set"
 	for id, stake := range issuers {
-		accounts.Set(id, &account.Pool{
+		if err := accounts.Set(id, &account.Pool{
 			PoolStake:      iotago.BaseToken(stake),
 			ValidatorStake: iotago.BaseToken(stake) * 2,
 			FixedCost:      iotago.Mana(stake) * 3,
-		})
+		}); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	// check "Size"
@@ -97,7 +99,7 @@ func TestAccounts(t *testing.T) {
 	require.Equal(t, accounts, accounts2)
 
 	// check "AccountsFromReader"
-	accounts3, _, err := account.AccountsFromReader(bytes.NewReader(accountBytes))
+	accounts3, err := account.AccountsFromReader(bytes.NewReader(accountBytes))
 	require.NoError(t, err)
 
 	// check if the new account is the same

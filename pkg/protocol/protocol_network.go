@@ -4,6 +4,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/iotaledger/hive.go/runtime/event"
+	"github.com/iotaledger/hive.go/runtime/workerpool"
 	"github.com/iotaledger/iota-core/pkg/model"
 	"github.com/iotaledger/iota-core/pkg/network/protocols/core"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/blocks"
@@ -37,7 +38,7 @@ func (p *Protocol) runNetworkProtocol() {
 
 	p.Events.Network.SlotCommitmentRequestReceived.Hook(func(commitmentID iotago.CommitmentID, source peer.ID) {
 		// when we receive a commitment request, do not look it up in the ChainManager but in the storage, else we might answer with commitments we did not issue ourselves and for which we cannot provide attestations
-		if requestedCommitment, err := p.MainEngineInstance().Storage.Commitments().Load(commitmentID.Index()); err == nil && requestedCommitment.ID() == commitmentID {
+		if requestedCommitment, err := p.MainEngineInstance().Storage.Commitments().Load(commitmentID.Slot()); err == nil && requestedCommitment.ID() == commitmentID {
 			p.networkProtocol.SendSlotCommitment(requestedCommitment, source)
 		}
 	}, event.WithWorkerPool(wpCommitments))
@@ -50,7 +51,7 @@ func (p *Protocol) runNetworkProtocol() {
 		p.networkProtocol.RequestSlotCommitment(commitmentID)
 	}, event.WithWorkerPool(wpCommitments))
 
-	wpAttestations := p.Workers.CreatePool("NetworkEvents.Attestations", 1) // Using just 1 worker to avoid contention
+	wpAttestations := p.Workers.CreatePool("NetworkEvents.Attestations", workerpool.WithWorkerCount(1)) // Using just 1 worker to avoid contention
 
 	p.Events.Network.AttestationsRequestReceived.Hook(p.processAttestationsRequest, event.WithWorkerPool(wpAttestations))
 }

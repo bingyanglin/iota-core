@@ -8,9 +8,8 @@ import (
 	"github.com/iotaledger/hive.go/kvstore"
 	"github.com/iotaledger/hive.go/lo"
 	"github.com/iotaledger/hive.go/serializer/v2"
-	"github.com/iotaledger/hive.go/serializer/v2/marshalutil"
+	"github.com/iotaledger/hive.go/serializer/v2/stream"
 	iotago "github.com/iotaledger/iota.go/v4"
-	"github.com/iotaledger/iota.go/v4/api"
 )
 
 // LexicalOrderedOutputs are outputs ordered in lexical order by their outputID.
@@ -20,25 +19,28 @@ func (l LexicalOrderedOutputs) Len() int {
 	return len(l)
 }
 
-func (l LexicalOrderedOutputs) Less(i, j int) bool {
+func (l LexicalOrderedOutputs) Less(i int, j int) bool {
 	return bytes.Compare(l[i].outputID[:], l[j].outputID[:]) < 0
 }
 
-func (l LexicalOrderedOutputs) Swap(i, j int) {
+func (l LexicalOrderedOutputs) Swap(i int, j int) {
 	l[i], l[j] = l[j], l[i]
 }
 
 type Output struct {
-	apiProvider api.Provider
+	apiProvider iotago.APIProvider
 
-	outputID    iotago.OutputID
-	blockID     iotago.BlockID
-	slotBooked  iotago.SlotIndex
-	slotCreated iotago.SlotIndex
+	outputID   iotago.OutputID
+	blockID    iotago.BlockID
+	slotBooked iotago.SlotIndex
 
 	encodedOutput []byte
 	outputOnce    sync.Once
 	output        iotago.Output
+
+	encodedProof []byte
+	proofOnce    sync.Once
+	outputProof  *iotago.OutputIDProof
 }
 
 func (o *Output) StateID() iotago.Identifier {
@@ -49,12 +51,12 @@ func (o *Output) Type() iotago.StateType {
 	return iotago.InputUTXO
 }
 
-func (o *Output) OutputID() iotago.OutputID {
-	return o.outputID
+func (o *Output) IsReadOnly() bool {
+	return false
 }
 
-func (o *Output) CreationSlot() iotago.SlotIndex {
-	return o.slotCreated
+func (o *Output) OutputID() iotago.OutputID {
+	return o.outputID
 }
 
 func (o *Output) MapKey() string {
@@ -70,7 +72,7 @@ func (o *Output) SlotBooked() iotago.SlotIndex {
 }
 
 func (o *Output) SlotCreated() iotago.SlotIndex {
-	return o.slotCreated
+	return o.outputID.CreationSlot()
 }
 
 func (o *Output) OutputType() iotago.OutputType {
@@ -81,7 +83,7 @@ func (o *Output) Output() iotago.Output {
 	o.outputOnce.Do(func() {
 		if o.output == nil {
 			var decoded iotago.TxEssenceOutput
-			if _, err := o.apiProvider.APIForSlot(o.blockID.Index()).Decode(o.encodedOutput, &decoded); err != nil {
+			if _, err := o.apiProvider.APIForSlot(o.outputID.CreationSlot()).Decode(o.encodedOutput, &decoded); err != nil {
 				panic(err)
 			}
 			o.output = decoded
@@ -91,8 +93,27 @@ func (o *Output) Output() iotago.Output {
 	return o.output
 }
 
+func (o *Output) OutputIDProof() *iotago.OutputIDProof {
+	o.proofOnce.Do(func() {
+		if o.outputProof == nil {
+			api := o.apiProvider.APIForSlot(o.blockID.Slot())
+			proof, _, err := iotago.OutputIDProofFromBytes(api)(o.encodedProof)
+			if err != nil {
+				panic(err)
+			}
+			o.outputProof = proof
+		}
+	})
+
+	return o.outputProof
+}
+
 func (o *Output) Bytes() []byte {
 	return o.encodedOutput
+}
+
+func (o *Output) ProofBytes() []byte {
+	return o.encodedProof
 }
 
 func (o *Output) BaseTokenAmount() iotago.BaseToken {
@@ -114,58 +135,71 @@ func (o Outputs) ToOutputSet() iotago.OutputSet {
 	return outputSet
 }
 
-func CreateOutput(apiProvider api.Provider, outputID iotago.OutputID, blockID iotago.BlockID, slotIndexBooked iotago.SlotIndex, slotCreated iotago.SlotIndex, output iotago.Output, outputBytes ...[]byte) *Output {
-	var encodedOutput []byte
-	if len(outputBytes) == 0 {
-		var err error
-		encodedOutput, err = apiProvider.APIForSlot(blockID.Index()).Encode(output)
-		if err != nil {
-			panic(err)
-		}
-	} else {
-		encodedOutput = outputBytes[0]
-	}
+func NewOutput(apiProvider iotago.APIProvider,
+	outputID iotago.OutputID,
+	blockID iotago.BlockID,
+	slotBooked iotago.SlotIndex,
+	output iotago.Output,
+	outputBytes []byte,
+	outputProof *iotago.OutputIDProof,
+	outputProofBytes []byte,
+) *Output {
 
 	o := &Output{
 		apiProvider:   apiProvider,
 		outputID:      outputID,
 		blockID:       blockID,
-		slotBooked:    slotIndexBooked,
-		slotCreated:   slotCreated,
-		encodedOutput: encodedOutput,
+		slotBooked:    slotBooked,
+		encodedOutput: outputBytes,
+		encodedProof:  outputProofBytes,
 	}
 
 	o.outputOnce.Do(func() {
 		o.output = output
 	})
 
+	o.proofOnce.Do(func() {
+		o.outputProof = outputProof
+	})
+
 	return o
 }
 
-func NewOutput(apiProvider api.Provider, blockID iotago.BlockID, slotIndexBooked iotago.SlotIndex, slotCreated iotago.SlotIndex, transaction *iotago.Transaction, index uint16) (*Output, error) {
-	txID, err := transaction.ID(apiProvider.APIForSlot(blockID.Index()))
+func CreateOutput(apiProvider iotago.APIProvider,
+	outputID iotago.OutputID,
+	blockID iotago.BlockID,
+	slotBooked iotago.SlotIndex,
+	output iotago.Output,
+	outputProof *iotago.OutputIDProof,
+) *Output {
+
+	encodedOutput, err := apiProvider.APIForSlot(blockID.Slot()).Encode(output)
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
 
-	var output iotago.Output
-	if len(transaction.Essence.Outputs) <= int(index) {
-		return nil, ierrors.New("output not found")
+	encodedProof, err := outputProof.Bytes()
+	if err != nil {
+		panic(err)
 	}
-	output = transaction.Essence.Outputs[int(index)]
-	outputID := iotago.OutputIDFromTransactionIDAndIndex(txID, index)
 
-	return CreateOutput(apiProvider, outputID, blockID, slotIndexBooked, slotCreated, output), nil
+	return NewOutput(apiProvider, outputID, blockID, slotBooked, output, encodedOutput, outputProof, encodedProof)
+}
+
+func (o *Output) CopyWithBlockIDAndSlotBooked(blockID iotago.BlockID, slotBooked iotago.SlotIndex) *Output {
+	return NewOutput(o.apiProvider, o.outputID, blockID, slotBooked, o.Output(), o.encodedOutput, o.outputProof, o.encodedProof)
 }
 
 // - kvStorable
 
 func outputStorageKeyForOutputID(outputID iotago.OutputID) []byte {
-	ms := marshalutil.New(35)
-	ms.WriteByte(StoreKeyPrefixOutput) // 1 byte
-	ms.WriteBytes(outputID[:])         // 34 bytes
+	byteBuffer := stream.NewByteBuffer(iotago.OutputIDLength + serializer.OneByte)
 
-	return ms.Bytes()
+	// There can't be any errors.
+	_ = stream.Write(byteBuffer, StoreKeyPrefixOutput)
+	_ = stream.Write(byteBuffer, outputID)
+
+	return lo.PanicOnErr(byteBuffer.Bytes())
 }
 
 func (o *Output) KVStorableKey() (key []byte) {
@@ -173,49 +207,42 @@ func (o *Output) KVStorableKey() (key []byte) {
 }
 
 func (o *Output) KVStorableValue() (value []byte) {
-	ms := marshalutil.New()
-	ms.WriteBytes(o.blockID[:])              // 40 bytes
-	ms.WriteBytes(o.slotBooked.MustBytes())  // 8 bytes
-	ms.WriteBytes(o.slotCreated.MustBytes()) // 8 bytes
-	ms.WriteBytes(o.encodedOutput)
+	byteBuffer := stream.NewByteBuffer()
 
-	return ms.Bytes()
+	// There can't be any errors.
+	_ = stream.Write(byteBuffer, o.blockID)
+	_ = stream.Write(byteBuffer, o.slotBooked)
+	_ = stream.WriteBytesWithSize(byteBuffer, o.encodedOutput, serializer.SeriLengthPrefixTypeAsUint32)
+	_ = stream.WriteBytesWithSize(byteBuffer, o.encodedProof, serializer.SeriLengthPrefixTypeAsUint32)
+
+	return lo.PanicOnErr(byteBuffer.Bytes())
 }
 
 func (o *Output) kvStorableLoad(_ *Manager, key []byte, value []byte) error {
-	// Parse key
-	keyUtil := marshalutil.New(key)
+	var err error
 
-	// Read prefix output
-	_, err := keyUtil.ReadByte()
-	if err != nil {
-		return err
+	keyReader := stream.NewByteReader(key)
+
+	if _, err = stream.Read[byte](keyReader); err != nil {
+		return ierrors.Wrap(err, "unable to read prefix")
+	}
+	if o.outputID, err = stream.Read[iotago.OutputID](keyReader); err != nil {
+		return ierrors.Wrap(err, "unable to read outputID")
 	}
 
-	// Read OutputID
-	if o.outputID, err = ParseOutputID(keyUtil); err != nil {
-		return err
+	valueReader := stream.NewByteReader(value)
+	if o.blockID, err = stream.Read[iotago.BlockID](valueReader); err != nil {
+		return ierrors.Wrap(err, "unable to read blockID")
 	}
-
-	// Parse value
-	valueUtil := marshalutil.New(value)
-
-	// Read BlockID
-	if o.blockID, err = ParseBlockID(valueUtil); err != nil {
-		return err
+	if o.slotBooked, err = stream.Read[iotago.SlotIndex](valueReader); err != nil {
+		return ierrors.Wrap(err, "unable to read slotBooked")
 	}
-
-	// Read SlotIndex
-	o.slotBooked, err = parseSlotIndex(valueUtil)
-	if err != nil {
-		return err
+	if o.encodedOutput, err = stream.ReadBytesWithSize(valueReader, serializer.SeriLengthPrefixTypeAsUint32); err != nil {
+		return ierrors.Wrap(err, "unable to read encodedOutput")
 	}
-
-	if o.slotCreated, err = parseSlotIndex(valueUtil); err != nil {
-		return err
+	if o.encodedProof, err = stream.ReadBytesWithSize(valueReader, serializer.SeriLengthPrefixTypeAsUint32); err != nil {
+		return ierrors.Wrap(err, "unable to read encodedProof")
 	}
-
-	o.encodedOutput = valueUtil.ReadRemainingBytes()
 
 	return nil
 }

@@ -32,9 +32,7 @@
       "highWatermark": 10,
       "lowWatermark": 5
     },
-    "seed": "",
-    "overwriteStoredSeed": false,
-    "externalAddress": "auto",
+    "externalMultiAddresses": [],
     "identityPrivateKey": "",
     "db": {
       "path": "testnet/p2pstore"
@@ -46,7 +44,7 @@
   },
   "restAPI": {
     "enabled": true,
-    "bindAddress": "0.0.0.0:8080",
+    "bindAddress": "0.0.0.0:14265",
     "publicRoutes": [
       "/health",
       "/api/routes",
@@ -60,23 +58,23 @@
       "/api/core/v3/rewards*",
       "/api/core/v3/committee",
       "/api/debug/v2/*",
-      "/api/indexer/v2/*"
+      "/api/indexer/v2/*",
+      "/api/mqtt/v2"
     ],
     "protectedRoutes": [
       "/api/*"
     ],
     "debugRequestLoggerEnabled": false,
-    "allowIncompleteBlock": false,
     "maxPageSize": 100,
+    "requestsMemoryCacheGranularity": 10,
+    "maxRequestedSlotAge": 10,
     "jwtAuth": {
       "salt": "IOTA"
     },
     "limits": {
       "maxBodyLength": "1M",
       "maxResults": 1000
-    },
-    "blockIssuerAccount": "",
-    "blockIssuerPrivateKey": ""
+    }
   },
   "debugAPI": {
     "enabled": true,
@@ -85,7 +83,7 @@
     "pruningThreshold": 1,
     "dbGranularity": 100
   },
-  "metricstracker": {
+  "metricsTracker": {
     "enabled": true
   },
   "database": {
@@ -108,6 +106,7 @@
     "filter": {
       "maxAllowedClockDrift": "5s"
     },
+    "protocolParametersPath": "testnet/protocol_parameters.json",
     "baseToken": {
       "name": "Shimmer",
       "tickerSymbol": "SMR",
@@ -116,21 +115,6 @@
       "decimals": 6,
       "useMetricPrefix": false
     }
-  },
-  "blockIssuer": {
-    "enabled": true,
-    "tipSelectionTimeout": "10s",
-    "tipSelectionRetryInterval": "200ms",
-    "rateSetterEnabled": false
-  },
-  "validator": {
-    "enabled": false,
-    "committeeBroadcastInterval": "500ms",
-    "candidateBroadcastInterval": "30m",
-    "parentsCount": 8,
-    "ignoreBootstrapped": false,
-    "account": "",
-    "privateKey": ""
   },
   "dashboard": {
     "enabled": true,
@@ -153,8 +137,6 @@
   },
   "inx": {
     "enabled": false,
-    "bindAddress": "localhost:9029",
-    "blockIssuerAccount": "",
-    "blockIssuerPrivateKey": ""
+    "bindAddress": "localhost:9029"
   }
 }

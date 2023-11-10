@@ -29,7 +29,7 @@ type SyncManager interface {
 	LatestFinalizedSlot() iotago.SlotIndex
 
 	// LastPrunedEpoch returns the last pruned epoch index.
-	LastPrunedEpoch() iotago.EpochIndex
+	LastPrunedEpoch() (iotago.EpochIndex, bool)
 
 	// Shutdown shuts down the SyncManager.
 	Shutdown()
@@ -38,10 +38,12 @@ type SyncManager interface {
 }
 
 type SyncStatus struct {
+	NodeBootstrapped       bool
 	NodeSynced             bool
 	LastAcceptedBlockSlot  iotago.SlotIndex
 	LastConfirmedBlockSlot iotago.SlotIndex
 	LatestCommitment       *model.Commitment
 	LatestFinalizedSlot    iotago.SlotIndex
 	LastPrunedEpoch        iotago.EpochIndex
+	HasPruned              bool
 }

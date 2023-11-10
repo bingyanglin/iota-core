@@ -18,7 +18,6 @@ import (
 	"github.com/iotaledger/iota-core/pkg/storage/prunable/slotstore"
 	"github.com/iotaledger/iota-core/pkg/votes"
 	iotago "github.com/iotaledger/iota.go/v4"
-	"github.com/iotaledger/iota.go/v4/api"
 )
 
 // Orchestrator is a component that is in charge of protocol upgrades by signaling the upgrade, gathering
@@ -65,7 +64,7 @@ type Orchestrator struct {
 	protocolParametersAndVersionsHashFunc func() (iotago.Identifier, error)
 	epochForVersionFunc                   func(iotago.Version) (iotago.EpochIndex, bool)
 
-	apiProvider api.Provider
+	apiProvider iotago.APIProvider
 	seatManager seatmanager.SeatManager
 
 	optsProtocolParameters []iotago.ProtocolParameters
@@ -113,7 +112,7 @@ func NewProvider(opts ...options.Option[Orchestrator]) module.Provider[*engine.E
 func NewOrchestrator(errorHandler func(error),
 	decidedUpgradeSignals *epochstore.Store[model.VersionAndHash],
 	upgradeSignalsFunc func(slot iotago.SlotIndex) (*slotstore.Store[account.SeatIndex, *model.SignaledBlock], error),
-	apiProvider api.Provider,
+	apiProvider iotago.APIProvider,
 	setProtocolParametersEpochMappingFunc func(iotago.Version, iotago.Identifier, iotago.EpochIndex) error,
 	protocolParametersAndVersionsHashFunc func() (iotago.Identifier, error),
 	epochForVersionFunc func(iotago.Version) (iotago.EpochIndex, bool),
@@ -147,8 +146,12 @@ func (o *Orchestrator) TrackValidationBlock(block *blocks.Block) {
 	}
 	newSignaledBlock := model.NewSignaledBlock(block.ID(), block.ProtocolBlock(), validationBlock)
 
-	committee := o.seatManager.Committee(block.ID().Index())
-	seat, exists := committee.GetSeat(block.ProtocolBlock().IssuerID)
+	committee, exists := o.seatManager.CommitteeInSlot(block.ID().Slot())
+	if !exists {
+		return
+	}
+
+	seat, exists := committee.GetSeat(block.ProtocolBlock().Header.IssuerID)
 	if !exists {
 		return
 	}
@@ -162,7 +165,7 @@ func (o *Orchestrator) TrackValidationBlock(block *blocks.Block) {
 	o.evictionMutex.RLock()
 	defer o.evictionMutex.RUnlock()
 
-	latestSignalsForEpoch := o.latestSignals.Get(block.ID().Index(), true)
+	latestSignalsForEpoch := o.latestSignals.Get(block.ID().Slot(), true)
 	o.addNewSignaledBlock(latestSignalsForEpoch, seat, newSignaledBlock)
 }
 
@@ -274,7 +277,7 @@ func (o *Orchestrator) tryUpgrade(currentEpoch iotago.EpochIndex, lastSlotInEpoc
 
 	// The version should be upgraded. We're adding the version to the settings.
 	// Effectively, this is a soft fork as it is contained in the hash of protocol parameters and versions.
-	if err := o.setProtocolParametersEpochMappingFunc(versionAndHashTobeUpgraded.Version, versionAndHashTobeUpgraded.Hash, currentEpoch+iotago.EpochIndex(o.apiProvider.CurrentAPI().ProtocolParameters().VersionSignaling().ActivationOffset)); err != nil {
+	if err := o.setProtocolParametersEpochMappingFunc(versionAndHashTobeUpgraded.Version, versionAndHashTobeUpgraded.Hash, currentEpoch+iotago.EpochIndex(o.apiProvider.APIForEpoch(currentEpoch).ProtocolParameters().VersionSignaling().ActivationOffset)); err != nil {
 		o.errorHandler(ierrors.Wrap(err, "failed to set protocol parameters epoch mapping"))
 		return
 	}
@@ -296,7 +299,9 @@ func (o *Orchestrator) maxVersionByCount(versionSupporters map[model.VersionAndH
 func (o *Orchestrator) signalingThresholdReached(currentEpoch iotago.EpochIndex) (model.VersionAndHash, bool) {
 	epochVersions := make(map[model.VersionAndHash]int)
 
-	for epoch := o.signalingWindowStart(currentEpoch); epoch <= currentEpoch; epoch++ {
+	apiForEpoch := o.apiProvider.APIForEpoch(currentEpoch)
+
+	for epoch := o.signalingWindowStart(currentEpoch, apiForEpoch); epoch <= currentEpoch; epoch++ {
 		version, err := o.decidedUpgradeSignals.Load(epoch)
 		if err != nil {
 			o.errorHandler(ierrors.Wrapf(err, "failed to get permanent upgrade signals for epoch %d in %d", epoch, currentEpoch))
@@ -315,15 +320,15 @@ func (o *Orchestrator) signalingThresholdReached(currentEpoch iotago.EpochIndex)
 	versionMostSignaled, signaledCount := o.maxVersionByCount(epochVersions)
 
 	// Check whether the signaling window threshold is reached.
-	if signaledCount < int(o.apiProvider.CurrentAPI().ProtocolParameters().VersionSignaling().WindowTargetRatio) {
+	if signaledCount < int(apiForEpoch.ProtocolParameters().VersionSignaling().WindowTargetRatio) {
 		return model.VersionAndHash{}, false
 	}
 
 	return versionMostSignaled, true
 }
 
-func (o *Orchestrator) signalingWindowStart(epoch iotago.EpochIndex) iotago.EpochIndex {
-	windowSize := iotago.EpochIndex(o.apiProvider.CurrentAPI().ProtocolParameters().VersionSignaling().WindowSize)
+func (o *Orchestrator) signalingWindowStart(epoch iotago.EpochIndex, api iotago.API) iotago.EpochIndex {
+	windowSize := iotago.EpochIndex(api.ProtocolParameters().VersionSignaling().WindowSize)
 
 	if epoch < windowSize {
 		return 0

@@ -7,6 +7,7 @@ import (
 	"github.com/iotaledger/hive.go/runtime/module"
 	"github.com/iotaledger/hive.go/runtime/options"
 	"github.com/iotaledger/hive.go/runtime/syncutils"
+	"github.com/iotaledger/hive.go/runtime/workerpool"
 	"github.com/iotaledger/iota-core/pkg/model"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/blocks"
@@ -36,6 +37,7 @@ type SyncManager struct {
 	latestFinalizedSlotLock syncutils.RWMutex
 
 	lastPrunedEpoch     iotago.EpochIndex
+	hasPruned           bool
 	lastPrunedEpochLock syncutils.RWMutex
 
 	isSynced     bool
@@ -54,7 +56,7 @@ type SyncManager struct {
 func NewProvider(opts ...options.Option[SyncManager]) module.Provider[*engine.Engine, syncmanager.SyncManager] {
 	return module.Provide(func(e *engine.Engine) syncmanager.SyncManager {
 		s := New(e, e.Storage.Settings().LatestCommitment(), e.Storage.Settings().LatestFinalizedSlot(), opts...)
-		asyncOpt := event.WithWorkerPool(e.Workers.CreatePool("SyncManager", 1))
+		asyncOpt := event.WithWorkerPool(e.Workers.CreatePool("SyncManager", workerpool.WithWorkerCount(1)))
 
 		e.Events.BlockGadget.BlockAccepted.Hook(func(b *blocks.Block) {
 			if s.updateLastAcceptedBlock(b.ID()) {
@@ -88,7 +90,7 @@ func NewProvider(opts ...options.Option[SyncManager]) module.Provider[*engine.En
 		}, asyncOpt)
 
 		e.Events.StoragePruned.Hook(func(index iotago.EpochIndex) {
-			if s.updatePrunedEpoch(index) {
+			if s.updatePrunedEpoch(index, true) {
 				s.triggerUpdate()
 			}
 		}, asyncOpt)
@@ -105,13 +107,15 @@ func New(e *engine.Engine, latestCommitment *model.Commitment, finalizedSlot iot
 		events:                 syncmanager.NewEvents(),
 		engine:                 e,
 		syncThreshold:          10 * time.Second,
-		lastAcceptedBlockSlot:  latestCommitment.Index(),
-		lastConfirmedBlockSlot: latestCommitment.Index(),
+		lastAcceptedBlockSlot:  latestCommitment.Slot(),
+		lastConfirmedBlockSlot: latestCommitment.Slot(),
 		latestCommitment:       latestCommitment,
 		latestFinalizedSlot:    finalizedSlot,
 
 		optsBootstrappedThreshold: 10 * time.Second,
 	}, opts, func(s *SyncManager) {
+		s.updatePrunedEpoch(s.engine.Storage.LastPrunedEpoch())
+
 		// set the default bootstrapped function
 		if s.optsIsBootstrappedFunc == nil {
 			s.optsIsBootstrappedFunc = func(e *engine.Engine) bool {
@@ -135,11 +139,13 @@ func (s *SyncManager) SyncStatus() *syncmanager.SyncStatus {
 
 	return &syncmanager.SyncStatus{
 		NodeSynced:             s.IsNodeSynced(),
+		NodeBootstrapped:       s.IsBootstrapped(),
 		LastAcceptedBlockSlot:  s.lastAcceptedBlockSlot,
 		LastConfirmedBlockSlot: s.lastConfirmedBlockSlot,
 		LatestCommitment:       s.latestCommitment,
 		LatestFinalizedSlot:    s.latestFinalizedSlot,
 		LastPrunedEpoch:        s.lastPrunedEpoch,
+		HasPruned:              s.hasPruned,
 	}
 }
 
@@ -151,8 +157,8 @@ func (s *SyncManager) updateLastAcceptedBlock(id iotago.BlockID) (changed bool) 
 	s.lastAcceptedBlockSlotLock.Lock()
 	defer s.lastAcceptedBlockSlotLock.Unlock()
 
-	if id.Index() > s.lastAcceptedBlockSlot {
-		s.lastAcceptedBlockSlot = id.Index()
+	if id.Slot() > s.lastAcceptedBlockSlot {
+		s.lastAcceptedBlockSlot = id.Slot()
 		return true
 	}
 
@@ -163,8 +169,8 @@ func (s *SyncManager) updateLastConfirmedBlock(id iotago.BlockID) (changed bool)
 	s.lastConfirmedBlockSlotLock.Lock()
 	defer s.lastConfirmedBlockSlotLock.Unlock()
 
-	if id.Index() > s.lastConfirmedBlockSlot {
-		s.lastConfirmedBlockSlot = id.Index()
+	if id.Slot() > s.lastConfirmedBlockSlot {
+		s.lastConfirmedBlockSlot = id.Slot()
 		return true
 	}
 
@@ -216,12 +222,14 @@ func (s *SyncManager) updateFinalizedSlot(index iotago.SlotIndex) (changed bool)
 	return false
 }
 
-func (s *SyncManager) updatePrunedEpoch(index iotago.EpochIndex) (changed bool) {
+func (s *SyncManager) updatePrunedEpoch(index iotago.EpochIndex, hasPruned bool) (changed bool) {
 	s.lastPrunedEpochLock.Lock()
 	defer s.lastPrunedEpochLock.Unlock()
 
 	if s.lastPrunedEpoch != index {
 		s.lastPrunedEpoch = index
+		s.hasPruned = hasPruned
+
 		return true
 	}
 
@@ -270,11 +278,11 @@ func (s *SyncManager) LatestFinalizedSlot() iotago.SlotIndex {
 	return s.latestFinalizedSlot
 }
 
-func (s *SyncManager) LastPrunedEpoch() iotago.EpochIndex {
+func (s *SyncManager) LastPrunedEpoch() (iotago.EpochIndex, bool) {
 	s.lastPrunedEpochLock.RLock()
 	defer s.lastPrunedEpochLock.RUnlock()
 
-	return s.lastPrunedEpoch
+	return s.lastPrunedEpoch, s.hasPruned
 }
 
 func (s *SyncManager) triggerUpdate() {

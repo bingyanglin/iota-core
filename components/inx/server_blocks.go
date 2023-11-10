@@ -10,12 +10,18 @@ import (
 	"github.com/iotaledger/hive.go/runtime/contextutils"
 	"github.com/iotaledger/hive.go/runtime/event"
 	"github.com/iotaledger/hive.go/runtime/workerpool"
-	"github.com/iotaledger/hive.go/serializer/v2/serix"
 	inx "github.com/iotaledger/inx/go"
-	"github.com/iotaledger/iota-core/pkg/blockfactory"
+	"github.com/iotaledger/iota-core/pkg/blockhandler"
+	"github.com/iotaledger/iota-core/pkg/model"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/blocks"
 	iotago "github.com/iotaledger/iota.go/v4"
 )
+
+func (s *Server) ReadActiveRootBlocks(_ context.Context, _ *inx.NoParams) (*inx.RootBlocksResponse, error) {
+	activeRootBlocks := deps.Protocol.MainEngineInstance().EvictionState.ActiveRootBlocks()
+
+	return inx.WrapRootBlocks(activeRootBlocks), nil
+}
 
 func (s *Server) ReadBlock(_ context.Context, blockID *inx.BlockId) (*inx.RawBlock, error) {
 	blkID := blockID.Unwrap()
@@ -30,24 +36,13 @@ func (s *Server) ReadBlock(_ context.Context, blockID *inx.BlockId) (*inx.RawBlo
 }
 
 func (s *Server) ReadBlockMetadata(_ context.Context, blockID *inx.BlockId) (*inx.BlockMetadata, error) {
-	blockMetadata, err := deps.Protocol.MainEngineInstance().Retainer.BlockMetadata(blockID.Unwrap())
-	if err != nil {
-		return nil, err
-	}
-
-	return &inx.BlockMetadata{
-		BlockId:            blockID,
-		BlockState:         inx.WrapBlockState(blockMetadata.BlockState),
-		BlockFailureReason: inx.WrapBlockFailureReason(blockMetadata.BlockFailureReason),
-		TxState:            inx.WrapTransactionState(blockMetadata.TxState),
-		TxFailureReason:    inx.WrapTransactionFailureReason(blockMetadata.TxFailureReason),
-	}, nil
+	return getINXBlockMetadata(blockID.Unwrap())
 }
 
 func (s *Server) ListenToBlocks(_ *inx.NoParams, srv inx.INX_ListenToBlocksServer) error {
 	ctx, cancel := context.WithCancel(Component.Daemon().ContextStopped())
 
-	wp := workerpool.New("ListenToBlocks", workerCount).Start()
+	wp := workerpool.New("ListenToBlocks", workerpool.WithWorkerCount(workerCount)).Start()
 
 	unhook := deps.Protocol.Events.Engine.Booker.BlockBooked.Hook(func(block *blocks.Block) {
 		payload := inx.NewBlockWithBytes(block.ID(), block.ModelBlock().Data())
@@ -72,10 +67,15 @@ func (s *Server) ListenToBlocks(_ *inx.NoParams, srv inx.INX_ListenToBlocksServe
 func (s *Server) ListenToAcceptedBlocks(_ *inx.NoParams, srv inx.INX_ListenToAcceptedBlocksServer) error {
 	ctx, cancel := context.WithCancel(Component.Daemon().ContextStopped())
 
-	wp := workerpool.New("ListenToAcceptedBlocks", workerCount).Start()
+	wp := workerpool.New("ListenToAcceptedBlocks", workerpool.WithWorkerCount(workerCount)).Start()
 
 	unhook := deps.Protocol.Events.Engine.BlockGadget.BlockAccepted.Hook(func(block *blocks.Block) {
-		payload := inx.NewBlockWithBytes(block.ID(), block.ModelBlock().Data())
+		payload, err := getINXBlockMetadata(block.ID())
+		if err != nil {
+			Component.LogErrorf("get block metadata error: %v", err)
+			cancel()
+		}
+
 		if err := srv.Send(payload); err != nil {
 			Component.LogErrorf("send error: %v", err)
 			cancel()
@@ -97,10 +97,15 @@ func (s *Server) ListenToAcceptedBlocks(_ *inx.NoParams, srv inx.INX_ListenToAcc
 func (s *Server) ListenToConfirmedBlocks(_ *inx.NoParams, srv inx.INX_ListenToConfirmedBlocksServer) error {
 	ctx, cancel := context.WithCancel(Component.Daemon().ContextStopped())
 
-	wp := workerpool.New("ListenToConfirmedBlocks", workerCount).Start()
+	wp := workerpool.New("ListenToConfirmedBlocks", workerpool.WithWorkerCount(workerCount)).Start()
 
 	unhook := deps.Protocol.Events.Engine.BlockGadget.BlockConfirmed.Hook(func(block *blocks.Block) {
-		payload := inx.NewBlockWithBytes(block.ID(), block.ModelBlock().Data())
+		payload, err := getINXBlockMetadata(block.ID())
+		if err != nil {
+			Component.LogErrorf("get block metadata error: %v", err)
+			cancel()
+		}
+
 		if err := srv.Send(payload); err != nil {
 			Component.LogErrorf("send error: %v", err)
 			cancel()
@@ -119,18 +124,35 @@ func (s *Server) ListenToConfirmedBlocks(_ *inx.NoParams, srv inx.INX_ListenToCo
 	return ctx.Err()
 }
 
+func (s *Server) ReadAcceptedBlocks(slot *inx.SlotIndex, srv inx.INX_ReadAcceptedBlocksServer) error {
+	blocksStore, err := deps.Protocol.MainEngineInstance().Storage.Blocks(slot.Unwrap())
+	if err != nil {
+		return status.Errorf(codes.InvalidArgument, "failed to get blocks: %s", err.Error())
+	}
+
+	if err := blocksStore.ForEachBlockInSlot(func(block *model.Block) error {
+		metadata, err := getINXBlockMetadata(block.ID())
+		if err != nil {
+			return err
+		}
+
+		payload := &inx.BlockWithMetadata{
+			Metadata: metadata,
+			Block: &inx.RawBlock{
+				Data: block.Data(),
+			},
+		}
+
+		return srv.Send(payload)
+	}); err != nil {
+		return status.Errorf(codes.Internal, "failed to iterate blocks: %s", err.Error())
+	}
+
+	return nil
+}
+
 func (s *Server) SubmitBlock(ctx context.Context, rawBlock *inx.RawBlock) (*inx.BlockId, error) {
-	version, _, err := iotago.VersionFromBytes(rawBlock.GetData())
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "failed to parse block version: %s", err.Error())
-	}
-
-	apiForVersion, err := deps.Protocol.APIForVersion(version)
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid block version: %s", err.Error())
-	}
-
-	block, err := rawBlock.UnwrapBlock(apiForVersion, serix.WithValidation())
+	block, err := rawBlock.UnwrapBlock(deps.Protocol)
 	if err != nil {
 		return nil, err
 	}
@@ -138,34 +160,17 @@ func (s *Server) SubmitBlock(ctx context.Context, rawBlock *inx.RawBlock) (*inx.
 	return s.attachBlock(ctx, block)
 }
 
-func (s *Server) SubmitPayload(ctx context.Context, rawPayload *inx.RawPayload) (*inx.BlockId, error) {
-	payload, err := rawPayload.Unwrap(deps.Protocol.CurrentAPI(), serix.WithValidation())
-	if err != nil {
-		return nil, err
-	}
-
+func (s *Server) attachBlock(ctx context.Context, block *iotago.Block) (*inx.BlockId, error) {
 	mergedCtx, mergedCtxCancel := contextutils.MergeContexts(ctx, Component.Daemon().ContextStopped())
 	defer mergedCtxCancel()
 
-	block, err := deps.BlockIssuer.CreateBlock(mergedCtx, blockIssuerAccount, blockfactory.WithPayload(payload))
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "failed to create block: %s", err.Error())
-	}
-
-	return s.attachBlock(ctx, block.ProtocolBlock())
-}
-
-func (s *Server) attachBlock(ctx context.Context, block *iotago.ProtocolBlock) (*inx.BlockId, error) {
-	mergedCtx, mergedCtxCancel := contextutils.MergeContexts(ctx, Component.Daemon().ContextStopped())
-	defer mergedCtxCancel()
-
-	blockID, err := deps.BlockIssuer.AttachBlock(mergedCtx, block, blockIssuerAccount)
+	blockID, err := deps.BlockHandler.AttachBlock(mergedCtx, block)
 	if err != nil {
 		switch {
-		case ierrors.Is(err, blockfactory.ErrBlockAttacherInvalidBlock):
+		case ierrors.Is(err, blockhandler.ErrBlockAttacherInvalidBlock):
 			return nil, status.Errorf(codes.InvalidArgument, "failed to attach block: %s", err.Error())
 
-		case ierrors.Is(err, blockfactory.ErrBlockAttacherAttachingNotPossible):
+		case ierrors.Is(err, blockhandler.ErrBlockAttacherAttachingNotPossible):
 			return nil, status.Errorf(codes.Internal, "failed to attach block: %s", err.Error())
 
 		default:
@@ -174,4 +179,19 @@ func (s *Server) attachBlock(ctx context.Context, block *iotago.ProtocolBlock) (
 	}
 
 	return inx.NewBlockId(blockID), nil
+}
+
+func getINXBlockMetadata(blockID iotago.BlockID) (*inx.BlockMetadata, error) {
+	blockMetadata, err := deps.Protocol.MainEngineInstance().Retainer.BlockMetadata(blockID)
+	if err != nil {
+		return nil, ierrors.Errorf("failed to get BlockMetadata: %v", err)
+	}
+
+	return &inx.BlockMetadata{
+		BlockId:                  inx.NewBlockId(blockID),
+		BlockState:               inx.WrapBlockState(blockMetadata.BlockState),
+		BlockFailureReason:       inx.WrapBlockFailureReason(blockMetadata.BlockFailureReason),
+		TransactionState:         inx.WrapTransactionState(blockMetadata.TransactionState),
+		TransactionFailureReason: inx.WrapTransactionFailureReason(blockMetadata.TransactionFailureReason),
+	}, nil
 }

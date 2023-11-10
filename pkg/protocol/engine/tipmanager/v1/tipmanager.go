@@ -1,12 +1,13 @@
 package tipmanagerv1
 
 import (
+	"fmt"
+
 	"github.com/iotaledger/hive.go/ds/randommap"
 	"github.com/iotaledger/hive.go/ds/shrinkingmap"
 	"github.com/iotaledger/hive.go/lo"
 	"github.com/iotaledger/hive.go/runtime/event"
 	"github.com/iotaledger/hive.go/runtime/module"
-	"github.com/iotaledger/hive.go/runtime/options"
 	"github.com/iotaledger/hive.go/runtime/syncutils"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/blocks"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/tipmanager"
@@ -40,20 +41,25 @@ type TipManager struct {
 	module.Module
 }
 
-// NewTipManager creates a new TipManager.
-func NewTipManager(blockRetriever func(blockID iotago.BlockID) (block *blocks.Block, exists bool), opts ...options.Option[TipManager]) *TipManager {
-	return options.Apply(&TipManager{
+// New creates a new TipManager.
+func New(blockRetriever func(blockID iotago.BlockID) (block *blocks.Block, exists bool)) *TipManager {
+	t := &TipManager{
 		retrieveBlock:      blockRetriever,
 		tipMetadataStorage: shrinkingmap.New[iotago.SlotIndex, *shrinkingmap.ShrinkingMap[iotago.BlockID, *TipMetadata]](),
 		strongTipSet:       randommap.New[iotago.BlockID, *TipMetadata](),
 		weakTipSet:         randommap.New[iotago.BlockID, *TipMetadata](),
 		blockAdded:         event.New1[tipmanager.TipMetadata](),
-	}, opts, (*TipManager).TriggerConstructed)
+	}
+
+	t.TriggerConstructed()
+	t.TriggerInitialized()
+
+	return t
 }
 
 // AddBlock adds a Block to the TipManager and returns the TipMetadata if the Block was added successfully.
 func (t *TipManager) AddBlock(block *blocks.Block) tipmanager.TipMetadata {
-	storage := t.metadataStorage(block.ID().Index())
+	storage := t.metadataStorage(block.ID().Slot())
 	if storage == nil {
 		return nil
 	}
@@ -85,12 +91,12 @@ func (t *TipManager) WeakTips(optAmount ...int) []tipmanager.TipMetadata {
 }
 
 // Evict evicts a slot from the TipManager.
-func (t *TipManager) Evict(slotIndex iotago.SlotIndex) {
-	if !t.markSlotAsEvicted(slotIndex) {
+func (t *TipManager) Evict(slot iotago.SlotIndex) {
+	if !t.markSlotAsEvicted(slot) {
 		return
 	}
 
-	if evictedObjects, deleted := t.tipMetadataStorage.DeleteAndReturn(slotIndex); deleted {
+	if evictedObjects, deleted := t.tipMetadataStorage.DeleteAndReturn(slot); deleted {
 		evictedObjects.ForEach(func(_ iotago.BlockID, tipMetadata *TipMetadata) bool {
 			tipMetadata.evicted.Trigger()
 
@@ -99,12 +105,15 @@ func (t *TipManager) Evict(slotIndex iotago.SlotIndex) {
 	}
 }
 
-// Shutdown does nothing but is required by the module.Interface.
-func (t *TipManager) Shutdown() {}
+// Shutdown marks the TipManager as shutdown.
+func (t *TipManager) Shutdown() {
+	t.TriggerShutdown()
+	t.TriggerStopped()
+}
 
 // setupBlockMetadata sets up the behavior of the given Block.
 func (t *TipManager) setupBlockMetadata(tipMetadata *TipMetadata) {
-	tipMetadata.isStrongTip.OnUpdate(func(_, isStrongTip bool) {
+	tipMetadata.isStrongTip.OnUpdate(func(_ bool, isStrongTip bool) {
 		if isStrongTip {
 			t.strongTipSet.Set(tipMetadata.ID(), tipMetadata)
 		} else {
@@ -112,7 +121,7 @@ func (t *TipManager) setupBlockMetadata(tipMetadata *TipMetadata) {
 		}
 	})
 
-	tipMetadata.isWeakTip.OnUpdate(func(_, isWeakTip bool) {
+	tipMetadata.isWeakTip.OnUpdate(func(_ bool, isWeakTip bool) {
 		if isWeakTip {
 			t.weakTipSet.Set(tipMetadata.Block().ID(), tipMetadata)
 		} else {
@@ -133,42 +142,49 @@ func (t *TipManager) setupBlockMetadata(tipMetadata *TipMetadata) {
 
 // forEachParentByType iterates through the parents of the given block and calls the consumer for each parent.
 func (t *TipManager) forEachParentByType(block *blocks.Block, consumer func(parentType iotago.ParentsType, parentMetadata *TipMetadata)) {
-	if block == nil || block.ProtocolBlock() == nil {
-		return
-	}
-
 	for _, parent := range block.ParentsWithType() {
-		if metadataStorage := t.metadataStorage(parent.ID.Index()); metadataStorage != nil {
-			if parentMetadata, created := metadataStorage.GetOrCreate(parent.ID, func() *TipMetadata { return NewBlockMetadata(lo.Return1(t.retrieveBlock(parent.ID))) }); parentMetadata.Block() != nil {
-				consumer(parent.Type, parentMetadata)
+		if metadataStorage := t.metadataStorage(parent.ID.Slot()); metadataStorage != nil {
+			// Make sure we don't add root blocks back to the tips.
+			parentBlock, exists := t.retrieveBlock(parent.ID)
 
-				if created {
-					t.setupBlockMetadata(parentMetadata)
-				}
+			if !exists || parentBlock.IsRootBlock() {
+				continue
 			}
+
+			if parentBlock.ModelBlock() == nil {
+				fmt.Printf(">> parentBlock exists, but parentBlock.ProtocolBlock() == nil\n ParentBlock: %s\n Block: %s\n", parentBlock.String(), block.String())
+			}
+
+			parentMetadata, created := metadataStorage.GetOrCreate(parent.ID, func() *TipMetadata { return NewBlockMetadata(parentBlock) })
+			consumer(parent.Type, parentMetadata)
+
+			if created {
+				t.setupBlockMetadata(parentMetadata)
+			}
+
 		}
 	}
 }
 
 // metadataStorage returns the TipMetadata storage for the given slotIndex.
-func (t *TipManager) metadataStorage(slotIndex iotago.SlotIndex) (storage *shrinkingmap.ShrinkingMap[iotago.BlockID, *TipMetadata]) {
+func (t *TipManager) metadataStorage(slot iotago.SlotIndex) (storage *shrinkingmap.ShrinkingMap[iotago.BlockID, *TipMetadata]) {
 	t.evictionMutex.RLock()
 	defer t.evictionMutex.RUnlock()
 
-	if t.lastEvictedSlot >= slotIndex {
+	if t.lastEvictedSlot >= slot {
 		return nil
 	}
 
-	return lo.Return1(t.tipMetadataStorage.GetOrCreate(slotIndex, lo.NoVariadic(shrinkingmap.New[iotago.BlockID, *TipMetadata])))
+	return lo.Return1(t.tipMetadataStorage.GetOrCreate(slot, lo.NoVariadic(shrinkingmap.New[iotago.BlockID, *TipMetadata])))
 }
 
 // markSlotAsEvicted marks the given slotIndex as evicted.
-func (t *TipManager) markSlotAsEvicted(slotIndex iotago.SlotIndex) (success bool) {
+func (t *TipManager) markSlotAsEvicted(slot iotago.SlotIndex) (success bool) {
 	t.evictionMutex.Lock()
 	defer t.evictionMutex.Unlock()
 
-	if success = t.lastEvictedSlot < slotIndex; success {
-		t.lastEvictedSlot = slotIndex
+	if success = t.lastEvictedSlot < slot; success {
+		t.lastEvictedSlot = slot
 	}
 
 	return success

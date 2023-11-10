@@ -7,11 +7,11 @@ import (
 	iotago "github.com/iotaledger/iota.go/v4"
 )
 
-const VersionAndHashSize = iotago.IdentifierLength + iotago.VersionLength
+const VersionAndHashSize = iotago.VersionLength + iotago.IdentifierLength
 
 type VersionAndHash struct {
-	Version iotago.Version
-	Hash    iotago.Identifier
+	Version iotago.Version    `serix:""`
+	Hash    iotago.Identifier `serix:""`
 }
 
 func (v VersionAndHash) Bytes() ([]byte, error) {

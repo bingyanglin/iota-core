@@ -111,14 +111,21 @@ func RandNFTID() iotago.NFTID {
 }
 
 func RandAccountID() iotago.AccountID {
-	alias := iotago.AccountID{}
-	copy(alias[:], RandBytes(iotago.AccountIDLength))
+	accountID := iotago.AccountID{}
+	copy(accountID[:], RandBytes(iotago.AccountIDLength))
 
-	return alias
+	return accountID
+}
+
+func RandAnchorID() iotago.AnchorID {
+	anchorID := iotago.AnchorID{}
+	copy(anchorID[:], RandBytes(iotago.AnchorIDLength))
+
+	return anchorID
 }
 
 func RandSlotIndex() iotago.SlotIndex {
-	return iotago.SlotIndex(RandUint64(math.MaxUint64))
+	return iotago.SlotIndex(RandUint32(uint32(iotago.MaxSlotIndex)))
 }
 
 func RandTimestamp() time.Time {
@@ -146,7 +153,9 @@ func RandAddress(addressType iotago.AddressType) iotago.Address {
 }
 
 func RandOutputType() iotago.OutputType {
-	return iotago.OutputType(byte(RandomIntn(3) + 3))
+	outputTypes := []iotago.OutputType{iotago.OutputBasic, iotago.OutputAccount, iotago.OutputAnchor, iotago.OutputFoundry, iotago.OutputNFT, iotago.OutputDelegation}
+
+	return outputTypes[RandomIntn(len(outputTypes)-1)]
 }
 
 func RandOutput(outputType iotago.OutputType) iotago.Output {
@@ -161,7 +170,7 @@ func RandOutput(outputType iotago.OutputType) iotago.Output {
 }
 
 func RandOutputOnAddress(outputType iotago.OutputType, address iotago.Address) iotago.Output {
-	return RandOutputOnAddressWithAmount(outputType, address, tpkg.RandBaseToken(math.MaxUint64))
+	return RandOutputOnAddressWithAmount(outputType, address, tpkg.RandBaseToken(iotago.MaxBaseToken))
 }
 
 func RandOutputOnAddressWithAmount(outputType iotago.OutputType, address iotago.Address, amount iotago.BaseToken) iotago.Output {
@@ -172,18 +181,34 @@ func RandOutputOnAddressWithAmount(outputType iotago.OutputType, address iotago.
 		//nolint:forcetypeassert // we already checked the type
 		iotaOutput = &iotago.BasicOutput{
 			Amount: amount,
-			Conditions: iotago.BasicOutputUnlockConditions{
+			UnlockConditions: iotago.BasicOutputUnlockConditions{
 				&iotago.AddressUnlockCondition{
 					Address: address,
 				},
 			},
+			Features: iotago.BasicOutputFeatures{},
 		}
+
 	case iotago.OutputAccount:
 		//nolint:forcetypeassert // we already checked the type
 		iotaOutput = &iotago.AccountOutput{
 			Amount:    amount,
 			AccountID: RandAccountID(),
-			Conditions: iotago.AccountOutputUnlockConditions{
+			UnlockConditions: iotago.AccountOutputUnlockConditions{
+				&iotago.AddressUnlockCondition{
+					Address: address,
+				},
+			},
+			Features:          iotago.AccountOutputFeatures{},
+			ImmutableFeatures: iotago.AccountOutputImmFeatures{},
+		}
+
+	case iotago.OutputAnchor:
+		//nolint:forcetypeassert // we already checked the type
+		iotaOutput = &iotago.AnchorOutput{
+			Amount:   amount,
+			AnchorID: RandAnchorID(),
+			UnlockConditions: iotago.AnchorOutputUnlockConditions{
 				&iotago.StateControllerAddressUnlockCondition{
 					Address: address,
 				},
@@ -191,7 +216,11 @@ func RandOutputOnAddressWithAmount(outputType iotago.OutputType, address iotago.
 					Address: address,
 				},
 			},
+			StateMetadata:     make([]byte, 0),
+			Features:          iotago.AnchorOutputFeatures{},
+			ImmutableFeatures: iotago.AnchorOutputImmFeatures{},
 		}
+
 	case iotago.OutputFoundry:
 		if address.Type() != iotago.AddressAccount {
 			panic("not an alias address")
@@ -207,23 +236,45 @@ func RandOutputOnAddressWithAmount(outputType iotago.OutputType, address iotago.
 				MeltedTokens:  new(big.Int).SetBytes([]byte{0}),
 				MaximumSupply: supply,
 			},
-			Conditions: iotago.FoundryOutputUnlockConditions{
+			UnlockConditions: iotago.FoundryOutputUnlockConditions{
 				&iotago.ImmutableAccountUnlockCondition{
 					Address: address.(*iotago.AccountAddress),
 				},
 			},
+			Features:          iotago.FoundryOutputFeatures{},
+			ImmutableFeatures: iotago.FoundryOutputImmFeatures{},
 		}
+
 	case iotago.OutputNFT:
 		//nolint:forcetypeassert // we already checked the type
 		iotaOutput = &iotago.NFTOutput{
 			Amount: amount,
 			NFTID:  RandNFTID(),
-			Conditions: iotago.NFTOutputUnlockConditions{
+			UnlockConditions: iotago.NFTOutputUnlockConditions{
+				&iotago.AddressUnlockCondition{
+					Address: address,
+				},
+			},
+			Features:          iotago.NFTOutputFeatures{},
+			ImmutableFeatures: iotago.NFTOutputImmFeatures{},
+		}
+
+	case iotago.OutputDelegation:
+		//nolint:forcetypeassert // we already checked the type
+		iotaOutput = &iotago.DelegationOutput{
+			Amount:           amount,
+			DelegatedAmount:  amount,
+			DelegationID:     tpkg.RandDelegationID(),
+			ValidatorAddress: tpkg.RandAccountAddress(),
+			StartEpoch:       tpkg.RandEpoch(),
+			EndEpoch:         iotago.MaxEpochIndex,
+			UnlockConditions: iotago.DelegationOutputUnlockConditions{
 				&iotago.AddressUnlockCondition{
 					Address: address,
 				},
 			},
 		}
+
 	default:
 		panic("unhandled output type")
 	}
@@ -232,15 +283,16 @@ func RandOutputOnAddressWithAmount(outputType iotago.OutputType, address iotago.
 }
 
 func RandBlockIssuerKey() iotago.BlockIssuerKey {
-	return iotago.BlockIssuerKeyEd25519FromPublicKey(ed25519.PublicKey(RandBytes(32)))
+	return iotago.Ed25519PublicKeyBlockIssuerKeyFromPublicKey(ed25519.PublicKey(RandBytes(32)))
 }
 
 func RandBlockIssuerKeys() iotago.BlockIssuerKeys {
 	// We always generate at least one key.
 	length := RandomIntn(10) + 1
-	blockIssuerKeys := make(iotago.BlockIssuerKeys, length)
+
+	blockIssuerKeys := iotago.NewBlockIssuerKeys()
 	for i := 0; i < length; i++ {
-		blockIssuerKeys[i] = RandBlockIssuerKey()
+		blockIssuerKeys.Add(RandBlockIssuerKey())
 	}
 
 	return blockIssuerKeys

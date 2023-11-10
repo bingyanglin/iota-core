@@ -53,7 +53,7 @@ func (m *Manager) writeToDisk() error {
 
 		attestations := m.determineAttestationsFromWindow(i)
 		for _, a := range attestations {
-			if err := storage.Set(a.IssuerID, a); err != nil {
+			if err := storage.Set(a.Header.IssuerID, a); err != nil {
 				return ierrors.Wrapf(err, "failed to set attestation %v", a)
 			}
 		}
@@ -72,24 +72,15 @@ func (m *Manager) trackerStorage(index iotago.SlotIndex) (*kvstore.TypedStore[io
 		return nil, ierrors.Wrapf(err, "failed to get extended realm for tracker of slot %d", index)
 	}
 
-	api := m.apiProvider.APIForSlot(index)
-
 	return kvstore.NewTypedStore[iotago.AccountID, *iotago.Attestation](trackerStorage,
-		iotago.Identifier.Bytes,
-		iotago.IdentifierFromBytes,
-		func(v *iotago.Attestation) ([]byte, error) {
-			return api.Encode(v)
-		},
-		func(bytes []byte) (object *iotago.Attestation, consumed int, err error) {
-			attestation := new(iotago.Attestation)
-			consumed, err = api.Decode(bytes, attestation)
-
-			return attestation, consumed, err
-		},
+		iotago.AccountID.Bytes,
+		iotago.AccountIDFromBytes,
+		(*iotago.Attestation).Bytes,
+		iotago.AttestationFromBytes(m.apiProvider),
 	), nil
 }
 
-func (m *Manager) attestationsForSlot(index iotago.SlotIndex) (ads.Map[iotago.AccountID, *iotago.Attestation], error) {
+func (m *Manager) attestationsForSlot(index iotago.SlotIndex) (ads.Map[iotago.Identifier, iotago.AccountID, *iotago.Attestation], error) {
 	attestationsStorage, err := m.bucketedStorage(index)
 	if err != nil {
 		return nil, ierrors.Errorf("failed to access storage for attestors of slot %d", index)
@@ -99,19 +90,13 @@ func (m *Manager) attestationsForSlot(index iotago.SlotIndex) (ads.Map[iotago.Ac
 		return nil, ierrors.Wrapf(err, "failed to get extended realm for attestations of slot %d", index)
 	}
 
-	api := m.apiProvider.APIForSlot(index)
-
-	return ads.NewMap(attestationsStorage,
+	return ads.NewMap[iotago.Identifier](
+		attestationsStorage,
 		iotago.Identifier.Bytes,
 		iotago.IdentifierFromBytes,
-		func(v *iotago.Attestation) ([]byte, error) {
-			return api.Encode(v)
-		},
-		func(bytes []byte) (object *iotago.Attestation, consumed int, err error) {
-			attestation := new(iotago.Attestation)
-			consumed, err = api.Decode(bytes, attestation)
-
-			return attestation, consumed, err
-		},
+		iotago.AccountID.Bytes,
+		iotago.AccountIDFromBytes,
+		(*iotago.Attestation).Bytes,
+		iotago.AttestationFromBytes(m.apiProvider),
 	), nil
 }

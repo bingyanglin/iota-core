@@ -52,14 +52,13 @@ import (
 	retainer1 "github.com/iotaledger/iota-core/pkg/retainer/retainer"
 	"github.com/iotaledger/iota-core/pkg/storage"
 	iotago "github.com/iotaledger/iota.go/v4"
-	"github.com/iotaledger/iota.go/v4/api"
 )
 
 type Protocol struct {
 	context         context.Context
 	Events          *Events
 	BlockDispatcher *BlockDispatcher
-	engineManager   *enginemanager.EngineManager
+	EngineManager   *enginemanager.EngineManager
 	ChainManager    *chainmanager.Manager
 
 	Workers           *workerpool.Group
@@ -154,7 +153,7 @@ func (p *Protocol) Run(ctx context.Context) error {
 	p.ChainManager.Initialize(rootCommitment)
 
 	// Fill the chain manager with all our known commitments so that the chain is solid
-	for i := rootCommitment.Index(); i <= p.mainEngine.Storage.Settings().LatestCommitment().Index(); i++ {
+	for i := rootCommitment.Slot(); i <= p.mainEngine.Storage.Settings().LatestCommitment().Slot(); i++ {
 		if cm, err := p.mainEngine.Storage.Commitments().Load(i); err == nil {
 			p.ChainManager.ProcessCommitment(cm)
 		}
@@ -196,7 +195,7 @@ func (p *Protocol) shutdown() {
 }
 
 func (p *Protocol) initEngineManager() {
-	p.engineManager = enginemanager.New(
+	p.EngineManager = enginemanager.New(
 		p.Workers.CreateGroup("EngineManager"),
 		p.HandleError,
 		p.optsBaseDirectory,
@@ -222,7 +221,7 @@ func (p *Protocol) initEngineManager() {
 		p.optsSyncManagerProvider,
 	)
 
-	mainEngine, err := p.engineManager.LoadActiveEngine(p.optsSnapshotPath)
+	mainEngine, err := p.EngineManager.LoadActiveEngine(p.optsSnapshotPath)
 	if err != nil {
 		panic(fmt.Sprintf("could not load active engine: %s", err))
 	}
@@ -230,7 +229,7 @@ func (p *Protocol) initEngineManager() {
 }
 
 func (p *Protocol) initChainManager() {
-	p.ChainManager = chainmanager.NewManager(p.optsChainManagerOptions...)
+	p.ChainManager = chainmanager.NewManager(p, p.HandleError, p.optsChainManagerOptions...)
 	p.Events.ChainManager.LinkTo(p.ChainManager.Events)
 
 	// This needs to be hooked so that the ChainManager always knows the commitments we issued.
@@ -239,8 +238,8 @@ func (p *Protocol) initChainManager() {
 		p.ChainManager.ProcessCommitment(details.Commitment)
 	})
 
-	p.Events.Engine.SlotGadget.SlotFinalized.Hook(func(index iotago.SlotIndex) {
-		rootCommitment := p.MainEngineInstance().EarliestRootCommitment(index)
+	p.Events.Engine.SlotGadget.SlotFinalized.Hook(func(slot iotago.SlotIndex) {
+		rootCommitment := p.MainEngineInstance().EarliestRootCommitment(slot)
 
 		// It is essential that we set the rootCommitment before evicting the chainManager's state, this way
 		// we first specify the chain's cut-off point, and only then evict the state. It is also important to
@@ -250,12 +249,12 @@ func (p *Protocol) initChainManager() {
 
 		// We want to evict just below the height of our new root commitment (so that the slot of the root commitment
 		// stays in memory storage and with it the root commitment itself as well).
-		if rootCommitment.ID().Index() > 0 {
-			p.ChainManager.EvictUntil(rootCommitment.ID().Index() - 1)
+		if rootCommitment.ID().Slot() > 0 {
+			p.ChainManager.EvictUntil(rootCommitment.ID().Slot() - 1)
 		}
 	})
 
-	wpForking := p.Workers.CreatePool("Protocol.Forking", 1) // Using just 1 worker to avoid contention
+	wpForking := p.Workers.CreatePool("Protocol.Forking", workerpool.WithWorkerCount(1)) // Using just 1 worker to avoid contention
 	p.Events.ChainManager.ForkDetected.Hook(p.onForkDetected, event.WithWorkerPool(wpForking))
 }
 
@@ -285,16 +284,20 @@ func (p *Protocol) Network() *core.Protocol {
 	return p.networkProtocol
 }
 
+func (p *Protocol) CommittedAPI() iotago.API {
+	return p.MainEngineInstance().CommittedAPI()
+}
+
 func (p *Protocol) LatestAPI() iotago.API {
 	return p.MainEngineInstance().LatestAPI()
 }
 
-func (p *Protocol) CurrentAPI() iotago.API {
-	return p.MainEngineInstance().CurrentAPI()
-}
-
 func (p *Protocol) APIForVersion(version iotago.Version) (iotago.API, error) {
 	return p.MainEngineInstance().APIForVersion(version)
+}
+
+func (p *Protocol) APIForTime(t time.Time) iotago.API {
+	return p.MainEngineInstance().APIForTime(t)
 }
 
 func (p *Protocol) APIForSlot(slot iotago.SlotIndex) iotago.API {
@@ -311,4 +314,4 @@ func (p *Protocol) HandleError(err error) {
 	}
 }
 
-var _ api.Provider = &Protocol{}
+var _ iotago.APIProvider = &Protocol{}

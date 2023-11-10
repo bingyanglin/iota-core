@@ -20,20 +20,130 @@ import (
 	iotago "github.com/iotaledger/iota.go/v4"
 )
 
+func Test_BookInCommittedSlot(t *testing.T) {
+	ts := testsuite.NewTestSuite(t,
+		testsuite.WithProtocolParametersOptions(
+			iotago.WithTimeProviderOptions(
+				0,
+				testsuite.GenesisTimeWithOffsetBySlots(1000, testsuite.DefaultSlotDurationInSeconds),
+				testsuite.DefaultSlotDurationInSeconds,
+				3,
+			),
+			iotago.WithLivenessOptions(
+				10,
+				10,
+				2,
+				4,
+				2,
+			),
+		),
+	)
+	defer ts.Shutdown()
+
+	nodeA := ts.AddValidatorNode("nodeA")
+
+	nodeOptions := []options.Option[protocol.Protocol]{
+		protocol.WithStorageOptions(
+			storage.WithPruningDelay(20),
+		),
+	}
+
+	ts.Run(true, map[string][]options.Option[protocol.Protocol]{
+		"nodeA": nodeOptions,
+	})
+
+	ts.Wait()
+
+	expectedCommittee := []iotago.AccountID{
+		nodeA.Validator.AccountID,
+	}
+
+	expectedOnlineCommittee := []account.SeatIndex{
+		lo.Return1(lo.Return1(nodeA.Protocol.MainEngineInstance().SybilProtection.SeatManager().CommitteeInSlot(1)).GetSeat(nodeA.Validator.AccountID)),
+	}
+
+	// Verify that nodes have the expected states.
+	genesisCommitment := iotago.NewEmptyCommitment(ts.API)
+	genesisCommitment.ReferenceManaCost = ts.API.ProtocolParameters().CongestionControlParameters().MinReferenceManaCost
+	ts.AssertNodeState(ts.Nodes(),
+		testsuite.WithSnapshotImported(true),
+		testsuite.WithProtocolParameters(ts.API.ProtocolParameters()),
+		testsuite.WithLatestCommitment(genesisCommitment),
+		testsuite.WithLatestFinalizedSlot(0),
+		testsuite.WithChainID(genesisCommitment.MustID()),
+		testsuite.WithStorageCommitments([]*iotago.Commitment{genesisCommitment}),
+		testsuite.WithSybilProtectionCommittee(0, expectedCommittee),
+		testsuite.WithSybilProtectionOnlineCommittee(expectedOnlineCommittee...),
+		testsuite.WithEvictedSlot(0),
+		testsuite.WithActiveRootBlocks(ts.Blocks("Genesis")),
+		testsuite.WithStorageRootBlocks(ts.Blocks("Genesis")),
+	)
+
+	var expectedStorageRootBlocksFrom0 []*blocks.Block
+
+	// Epoch 0: issue 4 rows per slot.
+	{
+		ts.IssueBlocksAtEpoch("", 0, 4, "Genesis", ts.Nodes(), true, nil)
+
+		ts.AssertBlocksExist(ts.BlocksWithPrefixes("1", "2", "3", "4", "5", "6", "7"), true, ts.Nodes()...)
+
+		ts.AssertBlocksInCachePreAccepted(ts.BlocksWithPrefixes("7.3"), true, ts.Nodes()...)
+
+		var expectedActiveRootBlocks []*blocks.Block
+		for _, slot := range []iotago.SlotIndex{3, 4, 5} {
+			expectedActiveRootBlocks = append(expectedActiveRootBlocks, ts.BlocksWithPrefix(fmt.Sprintf("%d.3-", slot))...)
+		}
+
+		for _, slot := range []iotago.SlotIndex{1, 2, 3, 4, 5, 6} {
+			expectedStorageRootBlocksFrom0 = append(expectedStorageRootBlocksFrom0, ts.BlocksWithPrefix(fmt.Sprintf("%d.3-", slot))...)
+		}
+
+		ts.AssertNodeState(ts.Nodes(),
+			testsuite.WithSnapshotImported(true),
+			testsuite.WithProtocolParameters(ts.API.ProtocolParameters()),
+			testsuite.WithChainID(genesisCommitment.MustID()),
+			testsuite.WithLatestCommitmentSlotIndex(5),
+			testsuite.WithEvictedSlot(5),
+			testsuite.WithActiveRootBlocks(expectedActiveRootBlocks),
+			testsuite.WithStorageRootBlocks(expectedStorageRootBlocksFrom0),
+		)
+
+		for _, slot := range []iotago.SlotIndex{4, 5} {
+			aliases := lo.Map([]string{"nodeA"}, func(s string) string {
+				return fmt.Sprintf("%d.3-%s", slot, s)
+			})
+			ts.AssertAttestationsForSlot(slot, ts.Blocks(aliases...), ts.Nodes()...)
+		}
+		ts.IssueValidationBlockAtSlot("5*", 5, lo.PanicOnErr(nodeA.Protocol.MainEngineInstance().Storage.Commitments().Load(3)).Commitment(), ts.Node("nodeA"), ts.BlockIDsWithPrefix("4.3-")...)
+
+		ts.AssertBlocksExist(ts.Blocks("5*"), false, ts.Nodes("nodeA")...)
+	}
+}
+
 func Test_StartNodeFromSnapshotAndDisk(t *testing.T) {
 	ts := testsuite.NewTestSuite(t,
-		testsuite.WithLivenessThreshold(1),
-		testsuite.WithMinCommittableAge(2),
-		testsuite.WithMaxCommittableAge(4),
-		testsuite.WithEpochNearingThreshold(2),
-		testsuite.WithSlotsPerEpochExponent(3),
-		testsuite.WithGenesisTimestampOffset(1000*10),
+		testsuite.WithProtocolParametersOptions(
+			iotago.WithTimeProviderOptions(
+				0,
+				testsuite.GenesisTimeWithOffsetBySlots(1000, testsuite.DefaultSlotDurationInSeconds),
+				testsuite.DefaultSlotDurationInSeconds,
+				3,
+			),
+			iotago.WithLivenessOptions(
+				10,
+				10,
+				2,
+				4,
+				2,
+			),
+		),
 	)
 	defer ts.Shutdown()
 
 	nodeA := ts.AddValidatorNode("nodeA")
 	nodeB := ts.AddValidatorNode("nodeB")
 	ts.AddNode("nodeC")
+	ts.AddGenesisWallet("default", nodeA, iotago.MaxBlockIssuanceCredits/2)
 
 	nodeOptions := []options.Option[protocol.Protocol]{
 		protocol.WithStorageOptions(
@@ -55,18 +165,18 @@ func Test_StartNodeFromSnapshotAndDisk(t *testing.T) {
 	ts.Wait()
 
 	expectedCommittee := []iotago.AccountID{
-		nodeA.AccountID,
-		nodeB.AccountID,
+		nodeA.Validator.AccountID,
+		nodeB.Validator.AccountID,
 	}
 
 	expectedOnlineCommittee := []account.SeatIndex{
-		lo.Return1(nodeA.Protocol.MainEngineInstance().SybilProtection.SeatManager().Committee(1).GetSeat(nodeA.AccountID)),
-		lo.Return1(nodeA.Protocol.MainEngineInstance().SybilProtection.SeatManager().Committee(1).GetSeat(nodeB.AccountID)),
+		lo.Return1(lo.Return1(nodeA.Protocol.MainEngineInstance().SybilProtection.SeatManager().CommitteeInSlot(1)).GetSeat(nodeA.Validator.AccountID)),
+		lo.Return1(lo.Return1(nodeA.Protocol.MainEngineInstance().SybilProtection.SeatManager().CommitteeInSlot(1)).GetSeat(nodeB.Validator.AccountID)),
 	}
 
 	// Verify that nodes have the expected states.
-	genesisCommitment := iotago.NewEmptyCommitment(ts.API.ProtocolParameters().Version())
-	genesisCommitment.RMC = ts.API.ProtocolParameters().CongestionControlParameters().RMCMin
+	genesisCommitment := iotago.NewEmptyCommitment(ts.API)
+	genesisCommitment.ReferenceManaCost = ts.API.ProtocolParameters().CongestionControlParameters().MinReferenceManaCost
 	ts.AssertNodeState(ts.Nodes(),
 		testsuite.WithSnapshotImported(true),
 		testsuite.WithProtocolParameters(ts.API.ProtocolParameters()),
@@ -114,7 +224,7 @@ func Test_StartNodeFromSnapshotAndDisk(t *testing.T) {
 			testsuite.WithLatestCommitmentSlotIndex(5),
 			testsuite.WithEqualStoredCommitmentAtIndex(5),
 			testsuite.WithLatestCommitmentCumulativeWeight(4), // 2 for each slot starting from 4
-			testsuite.WithSybilProtectionCommittee(5, expectedCommittee),
+			testsuite.WithSybilProtectionCommittee(ts.API.TimeProvider().EpochFromSlot(5), expectedCommittee),
 			testsuite.WithSybilProtectionOnlineCommittee(expectedOnlineCommittee...),
 			testsuite.WithEvictedSlot(5),
 			testsuite.WithActiveRootBlocks(expectedActiveRootBlocks),
@@ -162,7 +272,7 @@ func Test_StartNodeFromSnapshotAndDisk(t *testing.T) {
 			testsuite.WithLatestCommitmentSlotIndex(11),
 			testsuite.WithEqualStoredCommitmentAtIndex(11),
 			testsuite.WithLatestCommitmentCumulativeWeight(16), // 2 for each slot starting from 4
-			testsuite.WithSybilProtectionCommittee(11, expectedCommittee),
+			testsuite.WithSybilProtectionCommittee(ts.API.TimeProvider().EpochFromSlot(11), expectedCommittee),
 			testsuite.WithSybilProtectionOnlineCommittee(expectedOnlineCommittee...),
 			testsuite.WithEvictedSlot(11),
 			testsuite.WithActiveRootBlocks(expectedActiveRootBlocks),
@@ -185,7 +295,6 @@ func Test_StartNodeFromSnapshotAndDisk(t *testing.T) {
 				ts.RemoveNode("nodeC")
 
 				nodeC1 := ts.AddNode("nodeC-restarted")
-				nodeC1.CopyIdentityFromNode(nodeC)
 				nodeC1.Initialize(true,
 					protocol.WithBaseDirectory(ts.Directory.Path(nodeC.Name)),
 					protocol.WithStorageOptions(
@@ -200,8 +309,7 @@ func Test_StartNodeFromSnapshotAndDisk(t *testing.T) {
 				)
 				ts.Wait()
 
-				// Everything that was accepted before shutting down should be available on disk (verifying that restoring the block cache from disk works).
-				ts.AssertBlocksExist(ts.BlocksWithPrefixes("8", "9", "11", "12", "13.0", "13.1", "13.2", "13.3"), true, ts.Nodes("nodeC-restarted")...)
+				// Everything that was accepted before shutting down should be available on disk.
 				ts.AssertStorageRootBlocks(expectedStorageRootBlocksFrom0, ts.Nodes("nodeC-restarted")...)
 
 				for _, slot := range []iotago.SlotIndex{8, 9, 11} {
@@ -220,7 +328,6 @@ func Test_StartNodeFromSnapshotAndDisk(t *testing.T) {
 				require.NoError(t, ts.Node("nodeA").Protocol.MainEngineInstance().WriteSnapshot(snapshotPath))
 
 				nodeD := ts.AddNode("nodeD")
-				nodeD.CopyIdentityFromNode(ts.Node("nodeC-restarted")) // we just want to be able to issue some stuff and don't care about the account for now.
 				nodeD.Initialize(true, append(nodeOptions,
 					protocol.WithSnapshotPath(snapshotPath),
 					protocol.WithBaseDirectory(ts.Directory.PathWithCreate(nodeD.Name)),
@@ -249,7 +356,7 @@ func Test_StartNodeFromSnapshotAndDisk(t *testing.T) {
 				testsuite.WithLatestCommitmentSlotIndex(11),
 				testsuite.WithEqualStoredCommitmentAtIndex(11),
 				testsuite.WithLatestCommitmentCumulativeWeight(16), // 2 for each slot starting from 4
-				testsuite.WithSybilProtectionCommittee(11, expectedCommittee),
+				testsuite.WithSybilProtectionCommittee(ts.API.TimeProvider().EpochFromSlot(11), expectedCommittee),
 				testsuite.WithSybilProtectionOnlineCommittee(expectedOnlineCommittee...),
 				testsuite.WithEvictedSlot(11),
 				testsuite.WithActiveRootBlocks(expectedActiveRootBlocks),
@@ -305,7 +412,7 @@ func Test_StartNodeFromSnapshotAndDisk(t *testing.T) {
 			testsuite.WithLatestCommitmentSlotIndex(37),
 			testsuite.WithEqualStoredCommitmentAtIndex(37),
 			testsuite.WithLatestCommitmentCumulativeWeight(68), // 2 for each slot starting from 4
-			testsuite.WithSybilProtectionCommittee(37, expectedCommittee),
+			testsuite.WithSybilProtectionCommittee(ts.API.TimeProvider().EpochFromSlot(37), expectedCommittee),
 			testsuite.WithSybilProtectionOnlineCommittee(expectedOnlineCommittee...),
 			testsuite.WithEvictedSlot(37),
 			testsuite.WithActiveRootBlocks(expectedActiveRootBlocks),
@@ -371,7 +478,6 @@ func Test_StartNodeFromSnapshotAndDisk(t *testing.T) {
 		require.NoError(t, ts.Node("nodeA").Protocol.MainEngineInstance().WriteSnapshot(snapshotPath))
 
 		nodeD := ts.AddNode("nodeE")
-		nodeD.CopyIdentityFromNode(ts.Node("nodeC-restarted")) // we just want to be able to issue some stuff and don't care about the account for now.
 		nodeD.Initialize(true, append(nodeOptions,
 			protocol.WithSnapshotPath(snapshotPath),
 			protocol.WithBaseDirectory(ts.Directory.PathWithCreate(nodeD.Name)),

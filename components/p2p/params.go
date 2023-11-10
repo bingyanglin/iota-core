@@ -6,7 +6,8 @@ import (
 
 const (
 	// CfgPeers defines the static peers this node should retain a connection to (CLI).
-	CfgPeers = "peers"
+	CfgPeers                   = "peers"
+	IdentityPrivateKeyFileName = "identity.key"
 )
 
 // ParametersP2P contains the definition of configuration parameters used by the p2p plugin.
@@ -21,12 +22,8 @@ type ParametersP2P struct {
 		LowWatermark int `default:"5" usage:"the minimum connections count to hold after the high watermark was reached"`
 	}
 
-	// Seed defines the config flag of the autopeering private key seed.
-	Seed string `usage:"private key seed used to derive the node identity; optional base58 or base64 encoded 256-bit string. Prefix with 'base58:' or 'base64', respectively"`
-	// OverwriteStoredSeed defines whether the private key stored in an existing peerdb should be overwritten.
-	OverwriteStoredSeed bool `default:"false" usage:"whether to overwrite the private key if an existing peerdb exists"`
-	// ExternalAddress defines the config flag of the network external address.
-	ExternalAddress string `default:"auto" usage:"external IP address under which the node is reachable; or 'auto' to determine it automatically"`
+	// ExternalMultiAddress defines additional p2p multiaddresses to be advertised via DHT.
+	ExternalMultiAddresses []string `default:"" usage:"external reacheable multi addresses advertised to the network"`
 
 	// Defines the private key used to derive the node identity (optional).
 	IdentityPrivateKey string `default:"" usage:"private key used to derive the node identity (optional)"`

@@ -1,6 +1,7 @@
 package chainmanager
 
 import (
+	"fmt"
 	"sync/atomic"
 	"testing"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/iotaledger/hive.go/runtime/syncutils"
 	"github.com/iotaledger/iota-core/pkg/model"
 	iotago "github.com/iotaledger/iota.go/v4"
+	"github.com/iotaledger/iota.go/v4/api"
 )
 
 type TestFramework struct {
@@ -28,14 +30,18 @@ type TestFramework struct {
 	syncutils.RWMutex
 }
 
-func NewTestFramework(test *testing.T, api iotago.API, opts ...options.Option[TestFramework]) (testFramework *TestFramework) {
-	snapshotCommitment := model.NewEmptyCommitment(api)
+func NewTestFramework(test *testing.T, a iotago.API, opts ...options.Option[TestFramework]) (testFramework *TestFramework) {
+	snapshotCommitment := model.NewEmptyCommitment(a)
+
+	handleError := func(err error) {
+		fmt.Println(err)
+	}
 
 	return options.Apply(&TestFramework{
-		Instance: NewManager(),
+		Instance: NewManager(api.SingleVersionProvider(a), handleError),
 
 		test: test,
-		api:  api,
+		api:  a,
 		commitmentsByAlias: map[string]*model.Commitment{
 			"Genesis": snapshotCommitment,
 		},
@@ -134,7 +140,7 @@ func (t *TestFramework) SlotCommitment(alias string) iotago.CommitmentID {
 }
 
 func (t *TestFramework) SlotIndex(alias string) iotago.SlotIndex {
-	return t.commitment(alias).Index()
+	return t.commitment(alias).Slot()
 }
 
 func (t *TestFramework) SlotCommitmentRoot(alias string) iotago.Identifier {
@@ -142,7 +148,7 @@ func (t *TestFramework) SlotCommitmentRoot(alias string) iotago.Identifier {
 }
 
 func (t *TestFramework) PrevSlotCommitment(alias string) iotago.CommitmentID {
-	return t.commitment(alias).PrevID()
+	return t.commitment(alias).PreviousCommitmentID()
 }
 
 func (t *TestFramework) AssertChainIsAlias(chain *Chain, alias string) {
@@ -186,5 +192,5 @@ func (t *TestFramework) previousCommitmentID(alias string) (previousCommitmentID
 		panic("the previous commitment does not exist")
 	}
 
-	return previousCommitment.ID(), previousCommitment.Index()
+	return previousCommitment.ID(), previousCommitment.Slot()
 }

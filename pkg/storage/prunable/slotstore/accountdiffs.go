@@ -28,22 +28,17 @@ func NewAccountDiffs(slot iotago.SlotIndex, store kvstore.KVStore, api iotago.AP
 		api:  api,
 		slot: slot,
 		diffChangeStore: kvstore.NewTypedStore[iotago.AccountID, *model.AccountDiff](lo.PanicOnErr(store.WithExtendedRealm(kvstore.Realm{diffChangePrefix})),
-			iotago.Identifier.Bytes,
-			iotago.IdentifierFromBytes,
+			iotago.AccountID.Bytes,
+			iotago.AccountIDFromBytes,
 			(*model.AccountDiff).Bytes,
-			func(bytes []byte) (object *model.AccountDiff, consumed int, err error) {
-				diff := new(model.AccountDiff)
-				n, err := diff.FromBytes(bytes)
-
-				return diff, n, err
-			}),
+			model.AccountDiffFromBytes,
+		),
 		destroyedAccounts: kvstore.NewTypedStore[iotago.AccountID, types.Empty](lo.PanicOnErr(store.WithExtendedRealm(kvstore.Realm{destroyedAccountsPrefix})),
-			iotago.Identifier.Bytes,
-			iotago.IdentifierFromBytes,
+			iotago.AccountID.Bytes,
+			iotago.AccountIDFromBytes,
 			types.Empty.Bytes,
-			func(bytes []byte) (object types.Empty, consumed int, err error) {
-				return types.Void, 0, nil
-			}),
+			types.EmptyFromBytes,
+		),
 	}
 }
 

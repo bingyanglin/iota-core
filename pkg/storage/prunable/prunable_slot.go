@@ -1,12 +1,8 @@
 package prunable
 
 import (
-	"bytes"
-	"encoding/binary"
-
 	"github.com/iotaledger/hive.go/ierrors"
 	"github.com/iotaledger/hive.go/kvstore"
-	"github.com/iotaledger/hive.go/serializer/v2"
 	"github.com/iotaledger/hive.go/serializer/v2/byteutils"
 	"github.com/iotaledger/iota-core/pkg/core/account"
 	"github.com/iotaledger/iota-core/pkg/model"
@@ -18,12 +14,14 @@ import (
 const (
 	slotPrefixBlocks byte = iota
 	slotPrefixRootBlocks
+	slotPrefixMutations
 	slotPrefixAttestations
 	slotPrefixAccountDiffs
 	slotPrefixPerformanceFactors
 	slotPrefixUpgradeSignals
 	slotPrefixRoots
 	slotPrefixRetainer
+	epochPrefixCommitteeCandidates
 )
 
 func (p *Prunable) getKVStoreFromSlot(slot iotago.SlotIndex, prefix kvstore.Realm) (kvstore.KVStore, error) {
@@ -48,11 +46,21 @@ func (p *Prunable) RootBlocks(slot iotago.SlotIndex) (*slotstore.Store[iotago.Bl
 	}
 
 	return slotstore.NewStore(slot, kv,
-		iotago.SlotIdentifier.Bytes,
-		iotago.SlotIdentifierFromBytes,
-		iotago.SlotIdentifier.Bytes,
-		iotago.SlotIdentifierFromBytes,
+		iotago.BlockID.Bytes,
+		iotago.BlockIDFromBytes,
+		iotago.CommitmentID.Bytes,
+		iotago.CommitmentIDFromBytes,
 	), nil
+}
+
+func (p *Prunable) CommitteeCandidates(epoch iotago.EpochIndex) (kvstore.KVStore, error) {
+	// Use the first slot of an epoch to avoid random clashes with other keys.
+	// Candidates belong to an epoch, but we store them here so that they're pruned more quickly and easily without unnecessary key iteration.
+	return p.prunableSlotStore.Get(epoch, byteutils.ConcatBytes(p.apiProvider.APIForEpoch(epoch).TimeProvider().EpochStart(epoch).MustBytes(), kvstore.Realm{epochPrefixCommitteeCandidates}))
+}
+
+func (p *Prunable) Mutations(slot iotago.SlotIndex) (kvstore.KVStore, error) {
+	return p.getKVStoreFromSlot(slot, kvstore.Realm{slotPrefixMutations})
 }
 
 func (p *Prunable) Attestations(slot iotago.SlotIndex) (kvstore.KVStore, error) {
@@ -68,38 +76,20 @@ func (p *Prunable) AccountDiffs(slot iotago.SlotIndex) (*slotstore.AccountDiffs,
 	return slotstore.NewAccountDiffs(slot, kv, p.apiProvider.APIForSlot(slot)), nil
 }
 
-func (p *Prunable) PerformanceFactors(slot iotago.SlotIndex) (*slotstore.Store[iotago.AccountID, uint64], error) {
+func (p *Prunable) ValidatorPerformances(slot iotago.SlotIndex) (*slotstore.Store[iotago.AccountID, *model.ValidatorPerformance], error) {
 	kv, err := p.getKVStoreFromSlot(slot, kvstore.Realm{slotPrefixPerformanceFactors})
 	if err != nil {
 		return nil, ierrors.Wrapf(database.ErrEpochPruned, "could not get performance factors with slot %d", slot)
 	}
 
-	uint64Bytes := func(value uint64) ([]byte, error) {
-		buf := bytes.NewBuffer(make([]byte, 0, serializer.UInt64ByteSize))
-		if err := binary.Write(buf, binary.LittleEndian, value); err != nil {
-			return nil, err
-		}
-
-		return buf.Bytes(), nil
-	}
-
-	uint64FromBytes := func(b []byte) (uint64, int, error) {
-		buf := bytes.NewBuffer(b)
-		var value uint64
-		if err := binary.Read(buf, binary.LittleEndian, &value); err != nil {
-			return 0, 0, err
-		}
-
-		return value, serializer.UInt64ByteSize, nil
-	}
-
 	return slotstore.NewStore(slot, kv,
 		iotago.AccountID.Bytes,
-		iotago.IdentifierFromBytes,
-		uint64Bytes,
-		uint64FromBytes,
+		iotago.AccountIDFromBytes,
+		(*model.ValidatorPerformance).Bytes,
+		model.ValidatorPerformanceFromBytes,
 	), nil
 }
+
 func (p *Prunable) UpgradeSignals(slot iotago.SlotIndex) (*slotstore.Store[account.SeatIndex, *model.SignaledBlock], error) {
 	kv, err := p.getKVStoreFromSlot(slot, kvstore.Realm{slotPrefixUpgradeSignals})
 	if err != nil {
@@ -140,7 +130,7 @@ func (p *Prunable) Roots(slot iotago.SlotIndex) (*slotstore.Store[iotago.Commitm
 
 	return slotstore.NewStore(slot, kv,
 		iotago.CommitmentID.Bytes,
-		iotago.SlotIdentifierFromBytes,
+		iotago.CommitmentIDFromBytes,
 		rootsBytes,
 		rootsFromBytes,
 	), nil

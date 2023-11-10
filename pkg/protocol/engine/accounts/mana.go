@@ -7,9 +7,9 @@ import (
 
 // Mana is the stored and potential mana value of an account collected on the UTXO layer - used by the Scheduler.
 type Mana struct {
-	value            iotago.Mana      `serix:"0"`
-	excessBaseTokens iotago.BaseToken `serix:"1"`
-	updateTime       iotago.SlotIndex `serix:"2"`
+	value            iotago.Mana      `serix:""`
+	excessBaseTokens iotago.BaseToken `serix:""`
+	updateTime       iotago.SlotIndex `serix:""`
 
 	mutex syncutils.RWMutex
 }
@@ -20,23 +20,6 @@ func NewMana(value iotago.Mana, excessBaseTokens iotago.BaseToken, updateTime io
 		excessBaseTokens: excessBaseTokens,
 		updateTime:       updateTime,
 	}
-}
-
-func (m *Mana) Update(value iotago.Mana, excessBaseTokens iotago.BaseToken, updateTime iotago.SlotIndex) {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-
-	m.value = value
-	m.excessBaseTokens = excessBaseTokens
-	m.updateTime = updateTime
-}
-
-func (m *Mana) UpdateValue(value iotago.Mana, updateTime iotago.SlotIndex) {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-
-	m.value = value
-	m.updateTime = updateTime
 }
 
 func (m *Mana) Value() iotago.Mana {

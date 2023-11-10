@@ -10,6 +10,7 @@ import (
 	"github.com/iotaledger/iota-core/pkg/daemon"
 	"github.com/iotaledger/iota-core/pkg/model"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/blocks"
+	"github.com/iotaledger/iota-core/pkg/protocol/engine/mempool"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/tipmanager"
 	iotago "github.com/iotaledger/iota.go/v4"
 )
@@ -42,20 +43,19 @@ type tipinfo struct {
 // }
 
 func sendVertex(blk *blocks.Block, confirmed bool) {
-	modelBlk, _ := model.BlockFromBlock(blk.ProtocolBlock(), deps.Protocol.APIForSlot(blk.ID().Index()))
-	tx, isTx := modelBlk.Transaction()
+	modelBlk, _ := model.BlockFromBlock(blk.ProtocolBlock())
+	signedTransaction, isTx := modelBlk.SignedTransaction()
 
 	broadcastWsBlock(&wsblk{MsgTypeVertex, &vertex{
 		ID:                  blk.ID().ToHex(),
-		StrongParents:       blk.ProtocolBlock().Block.StrongParentIDs().ToHex(),
-		WeakParents:         blk.ProtocolBlock().Block.WeakParentIDs().ToHex(),
-		ShallowLikedParents: blk.ProtocolBlock().Block.ShallowLikeParentIDs().ToHex(),
+		StrongParents:       blk.ProtocolBlock().Body.StrongParentIDs().ToHex(),
+		WeakParents:         blk.ProtocolBlock().Body.WeakParentIDs().ToHex(),
+		ShallowLikedParents: blk.ProtocolBlock().Body.ShallowLikeParentIDs().ToHex(),
 		IsConfirmed:         confirmed,
 		IsTx:                isTx,
 		IsTxAccepted: func() bool {
 			if isTx {
-				api := lo.PanicOnErr(deps.Protocol.APIForVersion(blk.ProtocolBlock().ProtocolVersion))
-				txMetadata, exists := deps.Protocol.MainEngineInstance().Ledger.MemPool().TransactionMetadata(lo.PanicOnErr(tx.ID(api)))
+				txMetadata, exists := deps.Protocol.MainEngineInstance().Ledger.MemPool().TransactionMetadata(lo.PanicOnErr(signedTransaction.Transaction.ID()))
 				if exists {
 					return txMetadata.IsAccepted()
 				}
@@ -82,23 +82,14 @@ func sendTipInfo(block *blocks.Block, isTip bool) {
 
 func runVisualizer(component *app.Component) {
 	if err := component.Daemon().BackgroundWorker("Dashboard[Visualizer]", func(ctx context.Context) {
+
 		unhook := lo.Batch(
+			deps.Protocol.Events.Engine.Booker.TransactionAccepted.Hook(func(transactionMetadata mempool.TransactionMetadata) {
+				attachmentID := transactionMetadata.EarliestIncludedAttachment()
+				sendTxAccepted(attachmentID, true)
+			}, event.WithWorkerPool(component.WorkerPool)).Unhook,
 			deps.Protocol.Events.Engine.BlockDAG.BlockAttached.Hook(func(block *blocks.Block) {
 				sendVertex(block, false)
-
-				tx, hasTx := block.Transaction()
-				if hasTx {
-					api := lo.PanicOnErr(deps.Protocol.APIForVersion(block.ProtocolBlock().ProtocolVersion))
-					txMetadata, exists := deps.Protocol.MainEngineInstance().Ledger.MemPool().TransactionMetadata(lo.PanicOnErr(tx.ID(api)))
-					if exists {
-						txMetadata.OnAccepted(func() {
-							sendTxAccepted(block.ID(), true)
-						})
-					}
-				}
-				// if block.ID().Index() > slot.Index(currentSlot.Load()) {
-				// 	currentSlot.Store(int64(block.ID().Index()))
-				// }
 			}, event.WithWorkerPool(component.WorkerPool)).Unhook,
 			deps.Protocol.Events.Engine.BlockGadget.BlockConfirmed.Hook(func(block *blocks.Block) {
 				sendVertex(block, block.IsConfirmed())

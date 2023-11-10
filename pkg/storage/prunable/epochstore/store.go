@@ -17,7 +17,7 @@ type Store[V any] struct {
 	lastPrunedEpoch *model.PruningIndex
 }
 
-func NewStore[V any](storeRealm, pruningRealm kvstore.Realm, kv kvstore.KVStore, pruningDelay iotago.EpochIndex, vToBytes kvstore.ObjectToBytes[V], bytesToV kvstore.BytesToObject[V]) *Store[V] {
+func NewStore[V any](storeRealm kvstore.Realm, pruningRealm kvstore.Realm, kv kvstore.KVStore, pruningDelay iotago.EpochIndex, vToBytes kvstore.ObjectToBytes[V], bytesToV kvstore.BytesToObject[V]) *Store[V] {
 	return &Store[V]{
 		realm:           storeRealm,
 		kv:              kvstore.NewTypedStore(lo.PanicOnErr(kv.WithExtendedRealm(storeRealm)), iotago.EpochIndex.Bytes, iotago.EpochIndexFromBytes, vToBytes, bytesToV),
@@ -99,6 +99,10 @@ func (s *Store[V]) StreamBytes(consumer func([]byte, []byte) error) error {
 	}
 
 	return innerErr
+}
+
+func (s *Store[V]) DeleteEpoch(epoch iotago.EpochIndex) error {
+	return s.kv.DeletePrefix(epoch.MustBytes())
 }
 
 func (s *Store[V]) Prune(epoch iotago.EpochIndex, defaultPruningDelay iotago.EpochIndex) error {

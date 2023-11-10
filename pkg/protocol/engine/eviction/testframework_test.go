@@ -42,7 +42,7 @@ func (t *TestFramework) CreateAndAddRootBlock(alias string, slot iotago.SlotInde
 
 	id := iotago.Identifier{}
 	binary.LittleEndian.PutUint64(id[:], t.idCounter)
-	blockID := iotago.NewSlotIdentifier(slot, id)
+	blockID := iotago.NewBlockID(slot, id)
 	blockID.RegisterAlias(alias)
 
 	if !t.rootBlockIDs.Set(alias, blockID) {
@@ -94,11 +94,12 @@ func (t *TestFramework) RequireStorageRootBlocks(expected ...string) {
 	expectedRootBlocks := t.RootBlocks(expected...)
 
 	for blockID, commitmentID := range expectedRootBlocks {
-		rootBlockStorage, err := t.prunableStorage.RootBlocks(blockID.Index())
+		rootBlockStorage, err := t.prunableStorage.RootBlocks(blockID.Slot())
 		require.NoError(t.Testing, err)
 
-		loadedCommitmentID, err := rootBlockStorage.Load(blockID)
+		loadedCommitmentID, exists, err := rootBlockStorage.Load(blockID)
 		require.NoError(t.Testing, err)
+		require.True(t.Testing, exists)
 		require.Equal(t.Testing, commitmentID, loadedCommitmentID)
 	}
 }

@@ -28,12 +28,21 @@ import (
 
 func TestProtocol_EngineSwitching(t *testing.T) {
 	ts := testsuite.NewTestSuite(t,
-		testsuite.WithLivenessThreshold(1),
-		testsuite.WithMinCommittableAge(2),
-		testsuite.WithMaxCommittableAge(4),
-		testsuite.WithEpochNearingThreshold(2),
-		testsuite.WithSlotsPerEpochExponent(3),
-		testsuite.WithGenesisTimestampOffset(1000*10),
+		testsuite.WithProtocolParametersOptions(
+			iotago.WithTimeProviderOptions(
+				0,
+				testsuite.GenesisTimeWithOffsetBySlots(1000, testsuite.DefaultSlotDurationInSeconds),
+				testsuite.DefaultSlotDurationInSeconds,
+				3,
+			),
+			iotago.WithLivenessOptions(
+				10,
+				10,
+				2,
+				4,
+				2,
+			),
+		),
 
 		testsuite.WithWaitFor(15*time.Second),
 	)
@@ -48,6 +57,7 @@ func TestProtocol_EngineSwitching(t *testing.T) {
 	node6 := ts.AddValidatorNode("node6")
 	node7 := ts.AddValidatorNode("node7")
 	node8 := ts.AddNode("node8")
+	ts.AddGenesisWallet("default", node0, iotago.MaxBlockIssuanceCredits/2)
 
 	const expectedCommittedSlotAfterPartitionMerge = 19
 	nodesP1 := []*mock.Node{node0, node1, node2, node3, node4, node5}
@@ -58,8 +68,8 @@ func TestProtocol_EngineSwitching(t *testing.T) {
 			poa := mock2.NewManualPOAProvider()(e).(*mock2.ManualPOA)
 
 			for _, node := range append(nodesP1, nodesP2...) {
-				if node.Validator {
-					poa.AddAccount(node.AccountID, node.Name)
+				if node.IsValidator() {
+					poa.AddAccount(node.Validator.AccountID, node.Name)
 				}
 			}
 			poa.SetOnline("node0", "node1", "node2", "node3", "node4")
@@ -93,7 +103,7 @@ func TestProtocol_EngineSwitching(t *testing.T) {
 			protocol.WithSyncManagerProvider(
 				trivialsyncmanager.NewProvider(
 					trivialsyncmanager.WithBootstrappedFunc(func(e *engine.Engine) bool {
-						return e.Storage.Settings().LatestCommitment().Index() >= expectedCommittedSlotAfterPartitionMerge && e.Notarization.IsBootstrapped()
+						return e.Storage.Settings().LatestCommitment().Slot() >= expectedCommittedSlotAfterPartitionMerge && e.Notarization.IsBootstrapped()
 					}),
 				),
 			),
@@ -106,24 +116,24 @@ func TestProtocol_EngineSwitching(t *testing.T) {
 	ts.Run(false, nodeOptions)
 
 	expectedCommittee := []iotago.AccountID{
-		node0.AccountID,
-		node1.AccountID,
-		node2.AccountID,
-		node3.AccountID,
-		node4.AccountID,
-		node6.AccountID,
-		node7.AccountID,
+		node0.Validator.AccountID,
+		node1.Validator.AccountID,
+		node2.Validator.AccountID,
+		node3.Validator.AccountID,
+		node4.Validator.AccountID,
+		node6.Validator.AccountID,
+		node7.Validator.AccountID,
 	}
 	expectedP1OnlineCommittee := []account.SeatIndex{
-		lo.Return1(node0.Protocol.MainEngineInstance().SybilProtection.SeatManager().Committee(1).GetSeat(node0.AccountID)),
-		lo.Return1(node0.Protocol.MainEngineInstance().SybilProtection.SeatManager().Committee(1).GetSeat(node1.AccountID)),
-		lo.Return1(node0.Protocol.MainEngineInstance().SybilProtection.SeatManager().Committee(1).GetSeat(node2.AccountID)),
-		lo.Return1(node0.Protocol.MainEngineInstance().SybilProtection.SeatManager().Committee(1).GetSeat(node3.AccountID)),
-		lo.Return1(node0.Protocol.MainEngineInstance().SybilProtection.SeatManager().Committee(1).GetSeat(node4.AccountID)),
+		lo.Return1(lo.Return1(node0.Protocol.MainEngineInstance().SybilProtection.SeatManager().CommitteeInSlot(1)).GetSeat(node0.Validator.AccountID)),
+		lo.Return1(lo.Return1(node0.Protocol.MainEngineInstance().SybilProtection.SeatManager().CommitteeInSlot(1)).GetSeat(node1.Validator.AccountID)),
+		lo.Return1(lo.Return1(node0.Protocol.MainEngineInstance().SybilProtection.SeatManager().CommitteeInSlot(1)).GetSeat(node2.Validator.AccountID)),
+		lo.Return1(lo.Return1(node0.Protocol.MainEngineInstance().SybilProtection.SeatManager().CommitteeInSlot(1)).GetSeat(node3.Validator.AccountID)),
+		lo.Return1(lo.Return1(node0.Protocol.MainEngineInstance().SybilProtection.SeatManager().CommitteeInSlot(1)).GetSeat(node4.Validator.AccountID)),
 	}
 	expectedP2OnlineCommittee := []account.SeatIndex{
-		lo.Return1(node0.Protocol.MainEngineInstance().SybilProtection.SeatManager().Committee(1).GetSeat(node6.AccountID)),
-		lo.Return1(node0.Protocol.MainEngineInstance().SybilProtection.SeatManager().Committee(1).GetSeat(node7.AccountID)),
+		lo.Return1(lo.Return1(node0.Protocol.MainEngineInstance().SybilProtection.SeatManager().CommitteeInSlot(1)).GetSeat(node6.Validator.AccountID)),
+		lo.Return1(lo.Return1(node0.Protocol.MainEngineInstance().SybilProtection.SeatManager().CommitteeInSlot(1)).GetSeat(node7.Validator.AccountID)),
 	}
 	expectedOnlineCommittee := append(expectedP1OnlineCommittee, expectedP2OnlineCommittee...)
 
@@ -134,8 +144,8 @@ func TestProtocol_EngineSwitching(t *testing.T) {
 	// Verify that nodes have the expected states.
 
 	{
-		genesisCommitment := iotago.NewEmptyCommitment(ts.API.ProtocolParameters().Version())
-		genesisCommitment.RMC = ts.API.ProtocolParameters().CongestionControlParameters().RMCMin
+		genesisCommitment := iotago.NewEmptyCommitment(ts.API)
+		genesisCommitment.ReferenceManaCost = ts.API.ProtocolParameters().CongestionControlParameters().MinReferenceManaCost
 		ts.AssertNodeState(ts.Nodes(),
 			testsuite.WithSnapshotImported(true),
 			testsuite.WithProtocolParameters(ts.API.ProtocolParameters()),
@@ -161,7 +171,7 @@ func TestProtocol_EngineSwitching(t *testing.T) {
 			testsuite.WithLatestCommitmentSlotIndex(11),
 			testsuite.WithEqualStoredCommitmentAtIndex(11),
 			testsuite.WithLatestCommitmentCumulativeWeight(56), // 7 for each slot starting from 4
-			testsuite.WithSybilProtectionCommittee(11, expectedCommittee),
+			testsuite.WithSybilProtectionCommittee(ts.API.TimeProvider().EpochFromSlot(11), expectedCommittee),
 			testsuite.WithSybilProtectionOnlineCommittee(expectedOnlineCommittee...),
 			testsuite.WithEvictedSlot(11),
 		)
@@ -169,7 +179,7 @@ func TestProtocol_EngineSwitching(t *testing.T) {
 		for _, slot := range []iotago.SlotIndex{4, 5, 6, 7, 8, 9, 10, 11} {
 			var attestationBlocks []*blocks.Block
 			for _, node := range ts.Nodes() {
-				if node.Validator {
+				if node.IsValidator() {
 					attestationBlocks = append(attestationBlocks, ts.Block(fmt.Sprintf("P0:%d.3-%s", slot, node.Name)))
 				}
 			}
@@ -216,7 +226,7 @@ func TestProtocol_EngineSwitching(t *testing.T) {
 			testsuite.WithLatestCommitmentSlotIndex(18),
 			testsuite.WithEqualStoredCommitmentAtIndex(18),
 			testsuite.WithLatestCommitmentCumulativeWeight(99), // 56 + slot 12-15=7 + 5 for each slot starting from 16
-			testsuite.WithSybilProtectionCommittee(18, expectedCommittee),
+			testsuite.WithSybilProtectionCommittee(ts.API.TimeProvider().EpochFromSlot(18), expectedCommittee),
 			testsuite.WithSybilProtectionOnlineCommittee(expectedP1OnlineCommittee...),
 			testsuite.WithEvictedSlot(18),
 		)
@@ -224,7 +234,7 @@ func TestProtocol_EngineSwitching(t *testing.T) {
 		for _, slot := range []iotago.SlotIndex{12, 13, 14, 15} {
 			var attestationBlocks []*blocks.Block
 			for _, node := range nodesP1 {
-				if node.Validator {
+				if node.IsValidator() {
 					if slot <= 13 {
 						attestationBlocks = append(attestationBlocks, ts.Block(fmt.Sprintf("P0:%d.3-%s", slot, node.Name)))
 					} else {
@@ -235,7 +245,7 @@ func TestProtocol_EngineSwitching(t *testing.T) {
 
 			// We carry these attestations forward with the window even though these nodes didn't issue in P1.
 			for _, node := range nodesP2 {
-				if node.Validator {
+				if node.IsValidator() {
 					attestationBlocks = append(attestationBlocks, ts.Block(fmt.Sprintf("P0:%d.3-%s", lo.Min(slot, 13), node.Name)))
 				}
 			}
@@ -246,7 +256,7 @@ func TestProtocol_EngineSwitching(t *testing.T) {
 		for _, slot := range []iotago.SlotIndex{16, 17, 18} {
 			var attestationBlocks []*blocks.Block
 			for _, node := range nodesP1 {
-				if node.Validator {
+				if node.IsValidator() {
 					attestationBlocks = append(attestationBlocks, ts.Block(fmt.Sprintf("P1:%d.3-%s", slot, node.Name)))
 				}
 			}
@@ -270,7 +280,7 @@ func TestProtocol_EngineSwitching(t *testing.T) {
 			testsuite.WithLatestCommitmentSlotIndex(18),
 			testsuite.WithEqualStoredCommitmentAtIndex(18),
 			testsuite.WithLatestCommitmentCumulativeWeight(90), // 56 + slot 12-15=7 + 2 for each slot starting from 16
-			testsuite.WithSybilProtectionCommittee(18, expectedCommittee),
+			testsuite.WithSybilProtectionCommittee(ts.API.TimeProvider().EpochFromSlot(18), expectedCommittee),
 			testsuite.WithSybilProtectionOnlineCommittee(expectedP2OnlineCommittee...),
 			testsuite.WithEvictedSlot(18),
 		)
@@ -278,7 +288,7 @@ func TestProtocol_EngineSwitching(t *testing.T) {
 		for _, slot := range []iotago.SlotIndex{12, 13, 14, 15} {
 			var attestationBlocks []*blocks.Block
 			for _, node := range nodesP2 {
-				if node.Validator {
+				if node.IsValidator() {
 					if slot <= 13 {
 						attestationBlocks = append(attestationBlocks, ts.Block(fmt.Sprintf("P0:%d.3-%s", slot, node.Name)))
 					} else {
@@ -289,7 +299,7 @@ func TestProtocol_EngineSwitching(t *testing.T) {
 
 			// We carry these attestations forward with the window even though these nodes didn't issue in P1.
 			for _, node := range nodesP1 {
-				if node.Validator {
+				if node.IsValidator() {
 					attestationBlocks = append(attestationBlocks, ts.Block(fmt.Sprintf("P0:%d.3-%s", lo.Min(slot, 13), node.Name)))
 				}
 			}
@@ -300,7 +310,7 @@ func TestProtocol_EngineSwitching(t *testing.T) {
 		for _, slot := range []iotago.SlotIndex{16, 17, 18} {
 			var attestationBlocks []*blocks.Block
 			for _, node := range nodesP2 {
-				if node.Validator {
+				if node.IsValidator() {
 					attestationBlocks = append(attestationBlocks, ts.Block(fmt.Sprintf("P2:%d.3-%s", slot, node.Name)))
 				}
 			}
@@ -319,7 +329,6 @@ func TestProtocol_EngineSwitching(t *testing.T) {
 		manualPOA := node.Protocol.MainEngineInstance().SybilProtection.SeatManager().(*mock2.ManualPOA)
 		manualPOA.SetOnline("node0", "node1", "node2", "node3", "node4", "node6", "node7")
 	}
-
 	// Merge the partitions
 	{
 		ts.MergePartitionsToMain()
@@ -334,16 +343,16 @@ func TestProtocol_EngineSwitching(t *testing.T) {
 		wg := &sync.WaitGroup{}
 
 		// Issue blocks on both partitions after merging the networks.
-		node0.IssueActivity(ctxP1, wg, 21)
-		node1.IssueActivity(ctxP1, wg, 21)
-		node2.IssueActivity(ctxP1, wg, 21)
-		node3.IssueActivity(ctxP1, wg, 21)
-		node4.IssueActivity(ctxP1, wg, 21)
-		node5.IssueActivity(ctxP1, wg, 21)
+		node0.Validator.IssueActivity(ctxP1, wg, 21, node0)
+		node1.Validator.IssueActivity(ctxP1, wg, 21, node1)
+		node2.Validator.IssueActivity(ctxP1, wg, 21, node2)
+		node3.Validator.IssueActivity(ctxP1, wg, 21, node3)
+		node4.Validator.IssueActivity(ctxP1, wg, 21, node4)
+		// node5.Validator.IssueActivity(ctxP1, wg, 21, node5)
 
-		node6.IssueActivity(ctxP2, wg, 21)
-		node7.IssueActivity(ctxP2, wg, 21)
-		node8.IssueActivity(ctxP2, wg, 21)
+		node6.Validator.IssueActivity(ctxP2, wg, 21, node6)
+		node7.Validator.IssueActivity(ctxP2, wg, 21, node7)
+		// node8.Validator.IssueActivity(ctxP2, wg, 21, node8)
 
 		// P1 finalized until slot 18. We do not expect any forks here because our CW is higher than the other partition's.
 		ts.AssertForkDetectedCount(0, nodesP1...)
@@ -361,6 +370,13 @@ func TestProtocol_EngineSwitching(t *testing.T) {
 		ctxP1Cancel()
 		wg.Wait()
 	}
+
+	// Make sure that nodes that switched their engine still have blocks with prefix P0 from before the fork.
+	// Those nodes should also have all the blocks from the target fork P1 and should not have blocks from P2.
+	// This is to make sure that the storage was copied correctly during engine switching.
+	ts.AssertBlocksExist(ts.BlocksWithPrefix("P0"), true, ts.Nodes()...)
+	ts.AssertBlocksExist(ts.BlocksWithPrefix("P1"), true, ts.Nodes()...)
+	ts.AssertBlocksExist(ts.BlocksWithPrefix("P2"), false, ts.Nodes()...)
 
 	ts.AssertEqualStoredCommitmentAtIndex(expectedCommittedSlotAfterPartitionMerge, ts.Nodes()...)
 }

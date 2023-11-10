@@ -109,15 +109,13 @@ Example:
 
 ## <a id="p2p"></a> 3. P2p
 
-| Name                                        | Description                                                                                                                                          | Type    | Default value                                |
-| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | -------------------------------------------- |
-| bindMultiAddresses                          | The bind multi addresses for p2p connections                                                                                                         | array   | /ip4/0.0.0.0/tcp/14666<br/>/ip6/::/tcp/14666 |
-| [connectionManager](#p2p_connectionmanager) | Configuration for connectionManager                                                                                                                  | object  |                                              |
-| seed                                        | Private key seed used to derive the node identity; optional base58 or base64 encoded 256-bit string. Prefix with 'base58:' or 'base64', respectively | string  | ""                                           |
-| overwriteStoredSeed                         | Whether to overwrite the private key if an existing peerdb exists                                                                                    | boolean | false                                        |
-| externalAddress                             | External IP address under which the node is reachable; or 'auto' to determine it automatically                                                       | string  | "auto"                                       |
-| identityPrivateKey                          | Private key used to derive the node identity (optional)                                                                                              | string  | ""                                           |
-| [db](#p2p_db)                               | Configuration for db                                                                                                                                 | object  |                                              |
+| Name                                        | Description                                                   | Type   | Default value                                |
+| ------------------------------------------- | ------------------------------------------------------------- | ------ | -------------------------------------------- |
+| bindMultiAddresses                          | The bind multi addresses for p2p connections                  | array  | /ip4/0.0.0.0/tcp/14666<br/>/ip6/::/tcp/14666 |
+| [connectionManager](#p2p_connectionmanager) | Configuration for connectionManager                           | object |                                              |
+| externalMultiAddresses                      | External reacheable multi addresses advertised to the network | array  |                                              |
+| identityPrivateKey                          | Private key used to derive the node identity (optional)       | string | ""                                           |
+| [db](#p2p_db)                               | Configuration for db                                          | object |                                              |
 
 ### <a id="p2p_connectionmanager"></a> ConnectionManager
 
@@ -145,9 +143,7 @@ Example:
         "highWatermark": 10,
         "lowWatermark": 5
       },
-      "seed": "",
-      "overwriteStoredSeed": false,
-      "externalAddress": "auto",
+      "externalMultiAddresses": [],
       "identityPrivateKey": "",
       "db": {
         "path": "testnet/p2pstore"
@@ -176,19 +172,18 @@ Example:
 
 ## <a id="restapi"></a> 5. RestAPI
 
-| Name                        | Description                                                                                    | Type    | Default value                                                                                                                                                                                                                                                                                                        |
-| --------------------------- | ---------------------------------------------------------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| enabled                     | Whether the REST API plugin is enabled                                                         | boolean | true                                                                                                                                                                                                                                                                                                                 |
-| bindAddress                 | The bind address on which the REST API listens on                                              | string  | "0.0.0.0:8080"                                                                                                                                                                                                                                                                                                       |
-| publicRoutes                | The HTTP REST routes which can be called without authorization. Wildcards using \* are allowed  | array   | /health<br/>/api/routes<br/>/api/core/v3/info<br/>/api/core/v3/blocks\*<br/>/api/core/v3/transactions\*<br/>/api/core/v3/commitments\*<br/>/api/core/v3/outputs\*<br/>/api/core/v3/accounts\*<br/>/api/core/v3/validators\*<br/>/api/core/v3/rewards\*<br/>/api/core/v3/committee<br/>/api/debug/v2/\*<br/>/api/indexer/v2/\* |
-| protectedRoutes             | The HTTP REST routes which need to be called with authorization. Wildcards using \* are allowed | array   | /api/\*                                                                                                                                                                                                                                                                                                               |
-| debugRequestLoggerEnabled   | Whether the debug logging for requests should be enabled                                       | boolean | false                                                                                                                                                                                                                                                                                                                |
-| allowIncompleteBlock        | Whether the node allows to fill in incomplete block and issue it for user                      | boolean | false                                                                                                                                                                                                                                                                                                                |
-| maxPageSize                 | The maximum number of results per page                                                         | uint    | 100                                                                                                                                                                                                                                                                                                                  |
-| [jwtAuth](#restapi_jwtauth) | Configuration for jwtAuth                                                                      | object  |                                                                                                                                                                                                                                                                                                                      |
-| [limits](#restapi_limits)   | Configuration for limits                                                                       | object  |                                                                                                                                                                                                                                                                                                                      |
-| blockIssuerAccount          | The accountID of the account that will issue the blocks                                        | string  | ""                                                                                                                                                                                                                                                                                                                   |
-| blockIssuerPrivateKey       | The private key of the account that will issue the blocks                                      | string  | ""                                                                                                                                                                                                                                                                                                                   |
+| Name                           | Description                                                                                    | Type    | Default value                                                                                                                                                                                                                                                                                                                         |
+| ------------------------------ | ---------------------------------------------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| enabled                        | Whether the REST API plugin is enabled                                                         | boolean | true                                                                                                                                                                                                                                                                                                                                  |
+| bindAddress                    | The bind address on which the REST API listens on                                              | string  | "0.0.0.0:14265"                                                                                                                                                                                                                                                                                                                       |
+| publicRoutes                   | The HTTP REST routes which can be called without authorization. Wildcards using \* are allowed  | array   | /health<br/>/api/routes<br/>/api/core/v3/info<br/>/api/core/v3/blocks\*<br/>/api/core/v3/transactions\*<br/>/api/core/v3/commitments\*<br/>/api/core/v3/outputs\*<br/>/api/core/v3/accounts\*<br/>/api/core/v3/validators\*<br/>/api/core/v3/rewards\*<br/>/api/core/v3/committee<br/>/api/debug/v2/\*<br/>/api/indexer/v2/\*<br/>/api/mqtt/v2 |
+| protectedRoutes                | The HTTP REST routes which need to be called with authorization. Wildcards using \* are allowed | array   | /api/\*                                                                                                                                                                                                                                                                                                                                |
+| debugRequestLoggerEnabled      | Whether the debug logging for requests should be enabled                                       | boolean | false                                                                                                                                                                                                                                                                                                                                 |
+| maxPageSize                    | The maximum number of results per page                                                         | uint    | 100                                                                                                                                                                                                                                                                                                                                   |
+| requestsMemoryCacheGranularity | Defines per how many slots a cache is created for big API requests                             | uint    | 10                                                                                                                                                                                                                                                                                                                                    |
+| maxRequestedSlotAge            | The maximum age of a request that will be processed                                            | uint    | 10                                                                                                                                                                                                                                                                                                                                    |
+| [jwtAuth](#restapi_jwtauth)    | Configuration for jwtAuth                                                                      | object  |                                                                                                                                                                                                                                                                                                                                       |
+| [limits](#restapi_limits)      | Configuration for limits                                                                       | object  |                                                                                                                                                                                                                                                                                                                                       |
 
 ### <a id="restapi_jwtauth"></a> JwtAuth
 
@@ -209,7 +204,7 @@ Example:
   {
     "restAPI": {
       "enabled": true,
-      "bindAddress": "0.0.0.0:8080",
+      "bindAddress": "0.0.0.0:14265",
       "publicRoutes": [
         "/health",
         "/api/routes",
@@ -223,23 +218,23 @@ Example:
         "/api/core/v3/rewards*",
         "/api/core/v3/committee",
         "/api/debug/v2/*",
-        "/api/indexer/v2/*"
+        "/api/indexer/v2/*",
+        "/api/mqtt/v2"
       ],
       "protectedRoutes": [
         "/api/*"
       ],
       "debugRequestLoggerEnabled": false,
-      "allowIncompleteBlock": false,
       "maxPageSize": 100,
+      "requestsMemoryCacheGranularity": 10,
+      "maxRequestedSlotAge": 10,
       "jwtAuth": {
         "salt": "IOTA"
       },
       "limits": {
         "maxBodyLength": "1M",
         "maxResults": 1000
-      },
-      "blockIssuerAccount": "",
-      "blockIssuerPrivateKey": ""
+      }
     }
   }
 ```
@@ -268,7 +263,7 @@ Example:
   }
 ```
 
-## <a id="metricstracker"></a> 7. Metricstracker
+## <a id="metricstracker"></a> 7. MetricsTracker
 
 | Name    | Description                                   | Type    | Default value |
 | ------- | --------------------------------------------- | ------- | ------------- |
@@ -278,7 +273,7 @@ Example:
 
 ```json
   {
-    "metricstracker": {
+    "metricsTracker": {
       "enabled": true
     }
   }
@@ -324,11 +319,12 @@ Example:
 
 ## <a id="protocol"></a> 9. Protocol
 
-| Name                             | Description                 | Type   | Default value |
-| -------------------------------- | --------------------------- | ------ | ------------- |
-| [snapshot](#protocol_snapshot)   | Configuration for snapshot  | object |               |
-| [filter](#protocol_filter)       | Configuration for filter    | object |               |
-| [baseToken](#protocol_basetoken) | Configuration for baseToken | object |               |
+| Name                             | Description                              | Type   | Default value                      |
+| -------------------------------- | ---------------------------------------- | ------ | ---------------------------------- |
+| [snapshot](#protocol_snapshot)   | Configuration for snapshot               | object |                                    |
+| [filter](#protocol_filter)       | Configuration for filter                 | object |                                    |
+| protocolParametersPath           | The path of the protocol parameters file | string | "testnet/protocol_parameters.json" |
+| [baseToken](#protocol_basetoken) | Configuration for baseToken              | object |                                    |
 
 ### <a id="protocol_snapshot"></a> Snapshot
 
@@ -366,6 +362,7 @@ Example:
       "filter": {
         "maxAllowedClockDrift": "5s"
       },
+      "protocolParametersPath": "testnet/protocol_parameters.json",
       "baseToken": {
         "name": "Shimmer",
         "tickerSymbol": "SMR",
@@ -378,57 +375,7 @@ Example:
   }
 ```
 
-## <a id="blockissuer"></a> 10. BlockIssuer
-
-| Name                      | Description                                                             | Type    | Default value |
-| ------------------------- | ----------------------------------------------------------------------- | ------- | ------------- |
-| enabled                   | Whether the BlockIssuer component is enabled                            | boolean | true          |
-| tipSelectionTimeout       | The timeout for tip selection                                           | string  | "10s"         |
-| tipSelectionRetryInterval | The interval for retrying tip selection                                 | string  | "200ms"       |
-| rateSetterEnabled         | Whether the RateSetter should be taken into account when issuing blocks | boolean | false         |
-
-Example:
-
-```json
-  {
-    "blockIssuer": {
-      "enabled": true,
-      "tipSelectionTimeout": "10s",
-      "tipSelectionRetryInterval": "200ms",
-      "rateSetterEnabled": false
-    }
-  }
-```
-
-## <a id="validator"></a> 11. Validator
-
-| Name                       | Description                                                                                                  | Type    | Default value |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------ | ------- | ------------- |
-| enabled                    | Whether the Validator component is enabled                                                                   | boolean | false         |
-| committeeBroadcastInterval | The interval at which the node will broadcast its committee validator block                                  | string  | "500ms"       |
-| candidateBroadcastInterval | The interval at which the node will broadcast its candidate validator block                                  | string  | "30m"         |
-| parentsCount               | The number of parents that node will choose for its validator blocks                                         | int     | 8             |
-| ignoreBootstrapped         | Whether the Validator component should start issuing validator blocks before the main engine is bootstrapped | boolean | false         |
-| account                    | The accountID of the validator account that will issue the blocks                                            | string  | ""            |
-| privateKey                 | The private key of the validator account that will issue the blocks                                          | string  | ""            |
-
-Example:
-
-```json
-  {
-    "validator": {
-      "enabled": false,
-      "committeeBroadcastInterval": "500ms",
-      "candidateBroadcastInterval": "30m",
-      "parentsCount": 8,
-      "ignoreBootstrapped": false,
-      "account": "",
-      "privateKey": ""
-    }
-  }
-```
-
-## <a id="dashboard"></a> 12. Dashboard
+## <a id="dashboard"></a> 10. Dashboard
 
 | Name                              | Description                             | Type    | Default value  |
 | --------------------------------- | --------------------------------------- | ------- | -------------- |
@@ -470,7 +417,7 @@ Example:
   }
 ```
 
-## <a id="metrics"></a> 13. Metrics
+## <a id="metrics"></a> 11. Metrics
 
 | Name            | Description                                          | Type    | Default value  |
 | --------------- | ---------------------------------------------------- | ------- | -------------- |
@@ -494,14 +441,12 @@ Example:
   }
 ```
 
-## <a id="inx"></a> 14. Inx
+## <a id="inx"></a> 12. Inx
 
-| Name                  | Description                                               | Type    | Default value    |
-| --------------------- | --------------------------------------------------------- | ------- | ---------------- |
-| enabled               | Whether the INX plugin is enabled                         | boolean | false            |
-| bindAddress           | The bind address on which the INX can be accessed from    | string  | "localhost:9029" |
-| blockIssuerAccount    | The accountID of the account that will issue the blocks   | string  | ""               |
-| blockIssuerPrivateKey | The private key of the account that will issue the blocks | string  | ""               |
+| Name        | Description                                            | Type    | Default value    |
+| ----------- | ------------------------------------------------------ | ------- | ---------------- |
+| enabled     | Whether the INX plugin is enabled                      | boolean | false            |
+| bindAddress | The bind address on which the INX can be accessed from | string  | "localhost:9029" |
 
 Example:
 
@@ -509,9 +454,7 @@ Example:
   {
     "inx": {
       "enabled": false,
-      "bindAddress": "localhost:9029",
-      "blockIssuerAccount": "",
-      "blockIssuerPrivateKey": ""
+      "bindAddress": "localhost:9029"
     }
   }
 ```

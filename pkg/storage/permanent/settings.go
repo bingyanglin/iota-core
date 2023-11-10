@@ -10,6 +10,7 @@ import (
 	"github.com/iotaledger/hive.go/lo"
 	"github.com/iotaledger/hive.go/runtime/options"
 	"github.com/iotaledger/hive.go/runtime/syncutils"
+	"github.com/iotaledger/hive.go/serializer/v2"
 	"github.com/iotaledger/hive.go/serializer/v2/byteutils"
 	"github.com/iotaledger/hive.go/serializer/v2/stream"
 	"github.com/iotaledger/hive.go/stringify"
@@ -25,6 +26,7 @@ const (
 	protocolVersionEpochMappingKey
 	futureProtocolParametersKey
 	protocolParametersKey
+	latestIssuedValidationBlock
 )
 
 type Settings struct {
@@ -33,6 +35,7 @@ type Settings struct {
 	storeSnapshotImported            *kvstore.TypedValue[bool]
 	storeLatestCommitment            *kvstore.TypedValue[*model.Commitment]
 	storeLatestFinalizedSlot         *kvstore.TypedValue[iotago.SlotIndex]
+	storeLatestIssuedValidationBlock *kvstore.TypedValue[*model.Block]
 	storeProtocolVersionEpochMapping *kvstore.TypedStore[iotago.Version, iotago.EpochIndex]
 	storeFutureProtocolParameters    *kvstore.TypedStore[iotago.Version, *types.Tuple[iotago.EpochIndex, iotago.Identifier]]
 	storeProtocolParameters          *kvstore.TypedStore[iotago.Version, iotago.ProtocolParameters]
@@ -63,23 +66,20 @@ func NewSettings(store kvstore.KVStore, opts ...options.Option[api.EpochBasedPro
 		storeLatestCommitment: kvstore.NewTypedValue(
 			store,
 			[]byte{latestCommitmentKey},
-			func(commitment *model.Commitment) ([]byte, error) {
-				return commitment.Data(), nil
-			},
-			func(bytes []byte) (*model.Commitment, int, error) {
-				commitment, err := model.CommitmentFromBytes(bytes, apiProvider)
-				if err != nil {
-					return nil, 0, err
-				}
-
-				return commitment, len(bytes), nil
-			},
+			(*model.Commitment).Bytes,
+			model.CommitmentFromBytes(apiProvider),
 		),
 		storeLatestFinalizedSlot: kvstore.NewTypedValue(
 			store,
 			[]byte{latestFinalizedSlotKey},
 			iotago.SlotIndex.Bytes,
 			iotago.SlotIndexFromBytes,
+		),
+		storeLatestIssuedValidationBlock: kvstore.NewTypedValue(
+			store,
+			[]byte{latestIssuedValidationBlock},
+			(*model.Block).Bytes,
+			model.BlockFromBytesFunc(apiProvider),
 		),
 
 		storeProtocolVersionEpochMapping: kvstore.NewTypedStore(
@@ -123,7 +123,7 @@ func NewSettings(store kvstore.KVStore, opts ...options.Option[api.EpochBasedPro
 	s.loadFutureProtocolParameters()
 	s.loadProtocolParametersEpochMappings()
 	if s.IsSnapshotImported() {
-		s.apiProvider.SetCurrentSlot(s.latestCommitment().Index())
+		s.apiProvider.SetCommittedSlot(s.latestCommitment().Slot())
 	}
 
 	return s
@@ -252,10 +252,10 @@ func (s *Settings) SetLatestCommitment(latestCommitment *model.Commitment) (err 
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	s.apiProvider.SetCurrentSlot(latestCommitment.Index())
+	s.apiProvider.SetCommittedSlot(latestCommitment.Slot())
 
 	// Delete the old future protocol parameters if they exist.
-	_ = s.storeFutureProtocolParameters.Delete(s.apiProvider.VersionForSlot(latestCommitment.Index()))
+	_ = s.storeFutureProtocolParameters.Delete(s.apiProvider.VersionForSlot(latestCommitment.Slot()))
 
 	return s.storeLatestCommitment.Set(latestCommitment)
 }
@@ -265,7 +265,7 @@ func (s *Settings) latestCommitment() *model.Commitment {
 
 	if err != nil {
 		if ierrors.Is(err, kvstore.ErrKeyNotFound) {
-			return model.NewEmptyCommitment(s.apiProvider.CurrentAPI())
+			return model.NewEmptyCommitment(s.apiProvider.CommittedAPI())
 		}
 		panic(err)
 	}
@@ -280,18 +280,18 @@ func (s *Settings) LatestFinalizedSlot() iotago.SlotIndex {
 	return s.latestFinalizedSlot()
 }
 
-func (s *Settings) SetLatestFinalizedSlot(index iotago.SlotIndex) (err error) {
+func (s *Settings) SetLatestFinalizedSlot(slot iotago.SlotIndex) (err error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	return s.storeLatestFinalizedSlot.Set(index)
+	return s.storeLatestFinalizedSlot.Set(slot)
 }
 
 func (s *Settings) latestFinalizedSlot() iotago.SlotIndex {
 	latestFinalizedSlot, err := s.storeLatestFinalizedSlot.Get()
 	if err != nil {
 		if ierrors.Is(err, kvstore.ErrKeyNotFound) {
-			return 0
+			return s.apiProvider.CommittedAPI().ProtocolParameters().GenesisSlot()
 		}
 		panic(err)
 	}
@@ -299,12 +299,38 @@ func (s *Settings) latestFinalizedSlot() iotago.SlotIndex {
 	return latestFinalizedSlot
 }
 
+func (s *Settings) LatestIssuedValidationBlock() *model.Block {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+
+	return s.latestIssuedValidationBlock()
+}
+
+func (s *Settings) SetLatestIssuedValidationBlock(block *model.Block) (err error) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	return s.storeLatestIssuedValidationBlock.Set(block)
+}
+
+func (s *Settings) latestIssuedValidationBlock() *model.Block {
+	block, err := s.storeLatestIssuedValidationBlock.Get()
+	if err != nil {
+		if ierrors.Is(err, kvstore.ErrKeyNotFound) {
+			return nil
+		}
+		panic(err)
+	}
+
+	return block
+}
+
 func (s *Settings) Export(writer io.WriteSeeker, targetCommitment *iotago.Commitment) error {
 	var commitmentBytes []byte
 	var err error
 	if targetCommitment != nil {
 		// We always know the version of the target commitment, so there can be no error.
-		commitmentBytes, err = lo.PanicOnErr(s.apiProvider.APIForVersion(targetCommitment.Version)).Encode(targetCommitment)
+		commitmentBytes, err = lo.PanicOnErr(s.apiProvider.APIForVersion(targetCommitment.ProtocolVersion)).Encode(targetCommitment)
 		if err != nil {
 			return ierrors.Wrap(err, "failed to encode target commitment")
 		}
@@ -312,7 +338,7 @@ func (s *Settings) Export(writer io.WriteSeeker, targetCommitment *iotago.Commit
 		commitmentBytes = s.LatestCommitment().Data()
 	}
 
-	if err := stream.WriteBlob(writer, commitmentBytes); err != nil {
+	if err := stream.WriteBytesWithSize(writer, commitmentBytes, serializer.SeriLengthPrefixTypeAsUint16); err != nil {
 		return ierrors.Wrap(err, "failed to write commitment")
 	}
 
@@ -324,8 +350,8 @@ func (s *Settings) Export(writer io.WriteSeeker, targetCommitment *iotago.Commit
 	defer s.mutex.RUnlock()
 
 	// Export protocol versions
-	if err := stream.WriteCollection(writer, func() (uint64, error) {
-		var count uint64
+	if err := stream.WriteCollection(writer, serializer.SeriLengthPrefixTypeAsUint16, func() (int, error) {
+		var count int
 		var innerErr error
 
 		if err := s.storeProtocolVersionEpochMapping.Iterate(kvstore.EmptyPrefix, func(version iotago.Version, epoch iotago.EpochIndex) bool {
@@ -355,9 +381,10 @@ func (s *Settings) Export(writer io.WriteSeeker, targetCommitment *iotago.Commit
 		return ierrors.Wrap(err, "failed to stream write protocol version epoch mapping")
 	}
 
+	// TODO: rollback future protocol parameters if it was added after targetCommitment.Slot()
 	// Export future protocol parameters
-	if err := stream.WriteCollection(writer, func() (uint64, error) {
-		var count uint64
+	if err := stream.WriteCollection(writer, serializer.SeriLengthPrefixTypeAsUint16, func() (int, error) {
+		var count int
 		var innerErr error
 
 		if err := s.storeFutureProtocolParameters.Iterate(kvstore.EmptyPrefix, func(version iotago.Version, tuple *types.Tuple[iotago.EpochIndex, iotago.Identifier]) bool {
@@ -393,8 +420,8 @@ func (s *Settings) Export(writer io.WriteSeeker, targetCommitment *iotago.Commit
 	}
 
 	// Export protocol parameters: we only export the parameters up until the current active ones.
-	if err := stream.WriteCollection(writer, func() (uint64, error) {
-		var paramsCount uint64
+	if err := stream.WriteCollection(writer, serializer.SeriLengthPrefixTypeAsUint16, func() (int, error) {
+		var paramsCount int
 		var innerErr error
 
 		if err := s.storeProtocolParameters.KVStore().Iterate(kvstore.EmptyPrefix, func(key kvstore.Key, value kvstore.Value) bool {
@@ -404,12 +431,12 @@ func (s *Settings) Export(writer io.WriteSeeker, targetCommitment *iotago.Commit
 				return false
 			}
 
-			if s.apiProvider.IsFutureVersion(version) {
-				// We don't export future protocol parameters, just skip to the next ones.
+			// We don't export future protocol parameters, just skip to the next ones.
+			if s.apiProvider.CommittedAPI().Version() < version {
 				return true
 			}
 
-			if err := stream.WriteBlob(writer, value); err != nil {
+			if err := stream.WriteBytesWithSize(writer, value, serializer.SeriLengthPrefixTypeAsUint32); err != nil {
 				innerErr = err
 				return false
 			}
@@ -432,7 +459,7 @@ func (s *Settings) Export(writer io.WriteSeeker, targetCommitment *iotago.Commit
 }
 
 func (s *Settings) Import(reader io.ReadSeeker) (err error) {
-	commitmentBytes, err := stream.ReadBlob(reader)
+	commitmentBytes, err := stream.ReadBytesWithSize(reader, serializer.SeriLengthPrefixTypeAsUint16)
 	if err != nil {
 		return ierrors.Wrap(err, "failed to read commitment")
 	}
@@ -447,7 +474,7 @@ func (s *Settings) Import(reader io.ReadSeeker) (err error) {
 	}
 
 	// Read protocol version epoch mapping
-	if err := stream.ReadCollection(reader, func(i int) error {
+	if err := stream.ReadCollection(reader, serializer.SeriLengthPrefixTypeAsUint16, func(i int) error {
 		version, err := stream.Read[iotago.Version](reader)
 		if err != nil {
 			return ierrors.Wrap(err, "failed to parse version")
@@ -469,7 +496,7 @@ func (s *Settings) Import(reader io.ReadSeeker) (err error) {
 	}
 
 	// Read future protocol parameters
-	if err := stream.ReadCollection(reader, func(i int) error {
+	if err := stream.ReadCollection(reader, serializer.SeriLengthPrefixTypeAsUint16, func(i int) error {
 		version, err := stream.Read[iotago.Version](reader)
 		if err != nil {
 			return ierrors.Wrap(err, "failed to parse version")
@@ -495,8 +522,8 @@ func (s *Settings) Import(reader io.ReadSeeker) (err error) {
 	}
 
 	// Read protocol parameters
-	if err := stream.ReadCollection(reader, func(i int) error {
-		paramsBytes, err := stream.ReadBlob(reader)
+	if err := stream.ReadCollection(reader, serializer.SeriLengthPrefixTypeAsUint16, func(i int) error {
+		paramsBytes, err := stream.ReadBytesWithSize(reader, serializer.SeriLengthPrefixTypeAsUint32)
 		if err != nil {
 			return ierrors.Wrapf(err, "failed to read protocol parameters bytes at index %d", i)
 		}
@@ -515,12 +542,22 @@ func (s *Settings) Import(reader io.ReadSeeker) (err error) {
 	}
 
 	// Now that we parsed the protocol parameters, we can parse the commitment since there will be an API available
-	commitment, err := model.CommitmentFromBytes(commitmentBytes, s.apiProvider)
+	commitment, err := lo.DropCount(model.CommitmentFromBytes(s.apiProvider)(commitmentBytes))
 	if err != nil {
 		return ierrors.Wrap(err, "failed to parse commitment")
 	}
 
 	if err := s.SetLatestCommitment(commitment); err != nil {
+		return ierrors.Wrap(err, "failed to set latest commitment")
+	}
+
+	return nil
+}
+
+func (s *Settings) Rollback(targetCommitment *model.Commitment) error {
+	// TODO: rollback future protocol parameters if it was added after targetCommitment.Slot()
+
+	if err := s.SetLatestCommitment(targetCommitment); err != nil {
 		return ierrors.Wrap(err, "failed to set latest commitment")
 	}
 

@@ -16,16 +16,25 @@ func init() {
 }
 
 func storeTransactionsPerSlot(scd *notarization.SlotCommittedDetails) error {
-	slot := scd.Commitment.Index()
-	stateDiff := deps.Protocol.MainEngineInstance().Ledger.MemPool().StateDiff(slot)
-	mutationsTree := ads.NewSet(mapdb.NewMapDB(), iotago.Identifier.Bytes, iotago.IdentifierFromBytes)
+	slot := scd.Commitment.Slot()
+	stateDiff, err := deps.Protocol.MainEngineInstance().Ledger.MemPool().StateDiff(slot)
+	if err != nil {
+		return ierrors.Wrapf(err, "failed to retrieve state diff for slot %d", slot)
+	}
+	mutationsTree := ads.NewSet[iotago.Identifier](
+		mapdb.NewMapDB(),
+		iotago.Identifier.Bytes,
+		iotago.IdentifierFromBytes,
+		iotago.TransactionID.Bytes,
+		iotago.TransactionIDFromBytes,
+	)
 	tcs := &TransactionsChangesResponse{
 		Index:                slot,
 		IncludedTransactions: make([]string, 0),
 	}
 
 	var innerErr error
-	stateDiff.ExecutedTransactions().ForEach(func(_ iotago.Identifier, txMeta mempool.TransactionMetadata) bool {
+	stateDiff.ExecutedTransactions().ForEach(func(_ iotago.TransactionID, txMeta mempool.TransactionMetadata) bool {
 		tcs.IncludedTransactions = append(tcs.IncludedTransactions, txMeta.ID().String())
 		if err := mutationsTree.Add(txMeta.ID()); err != nil {
 			innerErr = ierrors.Wrapf(err, "failed to add transaction to mutations tree, txID: %s", txMeta.ID())
@@ -36,7 +45,7 @@ func storeTransactionsPerSlot(scd *notarization.SlotCommittedDetails) error {
 		return true
 	})
 
-	tcs.MutationsRoot = iotago.Identifier(mutationsTree.Root()).String()
+	tcs.MutationsRoot = mutationsTree.Root().String()
 
 	transactionsPerSlot[slot] = tcs
 

@@ -4,89 +4,93 @@ import (
 	"bytes"
 	"encoding/json"
 
-	"github.com/iotaledger/hive.go/ierrors"
 	"github.com/iotaledger/hive.go/serializer/v2/serix"
 	iotago "github.com/iotaledger/iota.go/v4"
-	"github.com/iotaledger/iota.go/v4/api"
 )
 
 type Block struct {
-	api iotago.API
-
 	blockID iotago.BlockID
 
-	data          []byte
-	protocolBlock *iotago.ProtocolBlock
+	data  []byte
+	block *iotago.Block
 }
 
-func newBlock(blockID iotago.BlockID, iotaBlock *iotago.ProtocolBlock, data []byte, api iotago.API) (*Block, error) {
+func newBlock(blockID iotago.BlockID, iotaBlock *iotago.Block, data []byte) (*Block, error) {
 	block := &Block{
-		api:           api,
-		blockID:       blockID,
-		data:          data,
-		protocolBlock: iotaBlock,
+		blockID: blockID,
+		data:    data,
+		block:   iotaBlock,
 	}
 
 	return block, nil
 }
 
-func BlockFromBlock(protocolBlock *iotago.ProtocolBlock, api iotago.API, opts ...serix.Option) (*Block, error) {
-	data, err := api.Encode(protocolBlock, opts...)
+func BlockFromBlock(block *iotago.Block, opts ...serix.Option) (*Block, error) {
+	data, err := block.API.Encode(block, opts...)
 	if err != nil {
 		return nil, err
 	}
 
-	blockID, err := protocolBlock.ID(api)
+	blockID, err := block.ID()
 	if err != nil {
 		return nil, err
 	}
 
-	return newBlock(blockID, protocolBlock, data, api)
+	return newBlock(blockID, block, data)
 }
 
 func BlockFromIDAndBytes(blockID iotago.BlockID, data []byte, api iotago.API, opts ...serix.Option) (*Block, error) {
-	protocolBlock := new(iotago.ProtocolBlock)
-	if _, err := api.Decode(data, protocolBlock, opts...); err != nil {
+	block := new(iotago.Block)
+	if _, err := api.Decode(data, block, opts...); err != nil {
 		return nil, err
 	}
 
-	return newBlock(blockID, protocolBlock, data, api)
+	return newBlock(blockID, block, data)
 }
 
-func BlockFromBytes(data []byte, apiProvider api.Provider, opts ...serix.Option) (*Block, error) {
-	version, _, err := iotago.VersionFromBytes(data)
-	if err != nil {
-		return nil, ierrors.Wrap(err, "failed to determine version")
-	}
-
-	apiForVersion, err := apiProvider.APIForVersion(version)
-	if err != nil {
-		return nil, ierrors.Wrapf(err, "failed to get API for version %d", version)
-	}
-
-	iotaBlock := new(iotago.ProtocolBlock)
-	if _, err := apiForVersion.Decode(data, iotaBlock, opts...); err != nil {
-		return nil, err
-	}
-
-	blockID, err := iotaBlock.ID(apiForVersion)
+func BlockFromBytes(data []byte, apiProvider iotago.APIProvider) (*Block, error) {
+	iotaBlock, _, err := iotago.BlockFromBytes(apiProvider)(data)
 	if err != nil {
 		return nil, err
 	}
 
-	return newBlock(blockID, iotaBlock, data, apiForVersion)
+	blockID, err := iotaBlock.ID()
+	if err != nil {
+		return nil, err
+	}
+
+	return newBlock(blockID, iotaBlock, data)
+}
+
+func BlockFromBytesFunc(apiProvider iotago.APIProvider) func(data []byte) (*Block, int, error) {
+	return func(data []byte) (*Block, int, error) {
+		block, err := BlockFromBytes(data, apiProvider)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		return block, len(data), nil
+	}
 }
 
 func (blk *Block) ID() iotago.BlockID {
 	return blk.blockID
 }
 
+func (blk *Block) SlotCommitmentID() iotago.CommitmentID {
+	return blk.block.Header.SlotCommitmentID
+}
+
 func (blk *Block) Data() []byte {
 	return blk.data
 }
 
-func (blk *Block) ProtocolBlock() *iotago.ProtocolBlock {
-	return blk.protocolBlock
+func (blk *Block) Bytes() ([]byte, error) {
+	return blk.data, nil
+}
+
+func (blk *Block) ProtocolBlock() *iotago.Block {
+	return blk.block
 }
 
 func (blk *Block) Payload() iotago.Payload {
@@ -98,29 +102,29 @@ func (blk *Block) Payload() iotago.Payload {
 	return basicBlock.Payload
 }
 
-func (blk *Block) Transaction() (tx *iotago.Transaction, isTransaction bool) {
+func (blk *Block) SignedTransaction() (tx *iotago.SignedTransaction, isTransaction bool) {
 	payload := blk.Payload()
 	if payload == nil {
 		return nil, false
 	}
 
-	tx, isTransaction = payload.(*iotago.Transaction)
+	tx, isTransaction = payload.(*iotago.SignedTransaction)
 
 	return tx, isTransaction
 }
 
-func (blk *Block) BasicBlock() (basicBlock *iotago.BasicBlock, isBasicBlock bool) {
-	basicBlock, isBasicBlock = blk.ProtocolBlock().Block.(*iotago.BasicBlock)
+func (blk *Block) BasicBlock() (basicBlock *iotago.BasicBlockBody, isBasicBlock bool) {
+	basicBlock, isBasicBlock = blk.ProtocolBlock().Body.(*iotago.BasicBlockBody)
 	return basicBlock, isBasicBlock
 }
 
-func (blk *Block) ValidationBlock() (validationBlock *iotago.ValidationBlock, isValidationBlock bool) {
-	validationBlock, isValidationBlock = blk.ProtocolBlock().Block.(*iotago.ValidationBlock)
+func (blk *Block) ValidationBlock() (validationBlock *iotago.ValidationBlockBody, isValidationBlock bool) {
+	validationBlock, isValidationBlock = blk.ProtocolBlock().Body.(*iotago.ValidationBlockBody)
 	return validationBlock, isValidationBlock
 }
 
 func (blk *Block) String() string {
-	encode, err := blk.api.JSONEncode(blk.ProtocolBlock())
+	encode, err := blk.block.API.JSONEncode(blk.ProtocolBlock())
 	if err != nil {
 		panic(err)
 	}
@@ -134,7 +138,7 @@ func (blk *Block) String() string {
 
 func (blk *Block) WorkScore() iotago.WorkScore {
 	if _, isBasic := blk.BasicBlock(); isBasic {
-		workScore, err := blk.ProtocolBlock().WorkScore(blk.api.ProtocolParameters().WorkScoreStructure())
+		workScore, err := blk.ProtocolBlock().WorkScore()
 		if err != nil {
 			panic(err)
 		}
@@ -145,5 +149,4 @@ func (blk *Block) WorkScore() iotago.WorkScore {
 	// else this is a validator block and should have workScore Zero
 	// TODO: deal with validator blocks with issue #236
 	return iotago.WorkScore(0)
-
 }

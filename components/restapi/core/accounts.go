@@ -6,7 +6,6 @@ import (
 
 	"github.com/labstack/echo/v4"
 
-	"github.com/iotaledger/hive.go/core/safemath"
 	"github.com/iotaledger/hive.go/ierrors"
 	"github.com/iotaledger/hive.go/lo"
 	"github.com/iotaledger/inx-app/pkg/httpserver"
@@ -17,40 +16,26 @@ import (
 	"github.com/iotaledger/iota.go/v4/nodeclient/apimodels"
 )
 
-const (
-	DefaultPageSize                = 50
-	RequestsMemoryCacheGranularity = 10
-	MaxRequestedSlotAge            = 10
-)
-
 func congestionForAccountID(c echo.Context) (*apimodels.CongestionResponse, error) {
 	accountID, err := httpserver.ParseAccountIDParam(c, restapipkg.ParameterAccountID)
 	if err != nil {
 		return nil, err
 	}
 
-	slotIndex := deps.Protocol.MainEngineInstance().SyncManager.LatestCommitment().Index()
+	commitment := deps.Protocol.MainEngineInstance().SyncManager.LatestCommitment()
 
-	acc, exists, err := deps.Protocol.MainEngineInstance().Ledger.Account(accountID, slotIndex)
+	acc, exists, err := deps.Protocol.MainEngineInstance().Ledger.Account(accountID, commitment.Slot())
 	if err != nil {
-		return nil, ierrors.Wrapf(err, "failed to get account: %s form the Ledger", accountID.ToHex())
+		return nil, ierrors.Wrapf(echo.ErrInternalServerError, "failed to get account %s from the Ledger: %s", accountID.ToHex(), err)
 	}
 	if !exists {
-		return nil, ierrors.Errorf("account not found: %s", accountID.ToHex())
-	}
-	rmcSlot, err := safemath.SafeSub(slotIndex, deps.Protocol.APIForSlot(slotIndex).ProtocolParameters().MaxCommittableAge())
-	if err != nil {
-		rmcSlot = 0
-	}
-	rmc, err := deps.Protocol.CandidateEngineInstance().Ledger.RMCManager().RMC(rmcSlot)
-	if err != nil {
-		return nil, ierrors.Wrapf(err, "failed to get RMC for slot: %d", rmcSlot)
+		return nil, ierrors.Wrapf(echo.ErrNotFound, "account not found: %s", accountID.ToHex())
 	}
 
 	return &apimodels.CongestionResponse{
-		SlotIndex:            slotIndex,
+		Slot:                 commitment.Slot(),
 		Ready:                deps.Protocol.MainEngineInstance().Scheduler.IsBlockIssuerReady(accountID),
-		ReferenceManaCost:    rmc,
+		ReferenceManaCost:    commitment.ReferenceManaCost(),
 		BlockIssuanceCredits: acc.Credits.Value,
 	}, nil
 }
@@ -61,36 +46,36 @@ func validators(c echo.Context) (*apimodels.ValidatorsResponse, error) {
 	if len(c.QueryParam(restapipkg.QueryParameterPageSize)) > 0 {
 		pageSize, err = httpserver.ParseUint32QueryParam(c, restapipkg.QueryParameterPageSize)
 		if err != nil {
-			return nil, ierrors.Wrapf(err, "failed to parse the %s parameter", restapipkg.QueryParameterPageSize)
+			return nil, ierrors.Wrapf(err, "failed to parse page size %s", c.Param(restapipkg.QueryParameterPageSize))
 		}
 		if pageSize > restapi.ParamsRestAPI.MaxPageSize {
 			pageSize = restapi.ParamsRestAPI.MaxPageSize
 		}
 	}
-	latestCommittedSlot := deps.Protocol.MainEngineInstance().SyncManager.LatestCommitment().Index()
+	latestCommittedSlot := deps.Protocol.MainEngineInstance().SyncManager.LatestCommitment().Slot()
 	// no cursor provided will be the first request
-	requestedSlotIndex := latestCommittedSlot
+	requestedSlot := latestCommittedSlot
 	var cursorIndex uint32
 	if len(c.QueryParam(restapipkg.QueryParameterCursor)) != 0 {
-		requestedSlotIndex, cursorIndex, err = httpserver.ParseCursorQueryParam(c, restapipkg.QueryParameterCursor)
+		requestedSlot, cursorIndex, err = httpserver.ParseCursorQueryParam(c, restapipkg.QueryParameterCursor)
 		if err != nil {
-			return nil, ierrors.Wrapf(err, "failed to parse the %s parameter", restapipkg.QueryParameterCursor)
+			return nil, ierrors.Wrapf(err, "failed to parse cursor %s", c.Param(restapipkg.QueryParameterCursor))
 		}
 	}
 
 	// do not respond to really old requests
-	if requestedSlotIndex+MaxRequestedSlotAge < latestCommittedSlot {
-		return nil, ierrors.Errorf("request is too old, request started at %d, latest committed slot index is %d", requestedSlotIndex, latestCommittedSlot)
+	if requestedSlot+iotago.SlotIndex(restapi.ParamsRestAPI.MaxRequestedSlotAge) < latestCommittedSlot {
+		return nil, ierrors.Wrapf(echo.ErrBadRequest, "request is too old, request started at %d, latest committed slot index is %d", requestedSlot, latestCommittedSlot)
 	}
 
 	nextEpoch := deps.Protocol.APIForSlot(latestCommittedSlot).TimeProvider().EpochFromSlot(latestCommittedSlot) + 1
 
-	slotRange := uint32(requestedSlotIndex / RequestsMemoryCacheGranularity)
+	slotRange := uint32(requestedSlot) / restapi.ParamsRestAPI.RequestsMemoryCacheGranularity
 	registeredValidators, exists := deps.Protocol.MainEngineInstance().Retainer.RegisteredValidatorsCache(slotRange)
 	if !exists {
 		registeredValidators, err = deps.Protocol.MainEngineInstance().SybilProtection.OrderedRegisteredCandidateValidatorsList(nextEpoch)
 		if err != nil {
-			return nil, ierrors.Wrapf(err, "failed to get ordered registered validators list for epoch %d", nextEpoch)
+			return nil, ierrors.Wrapf(echo.ErrInternalServerError, "failed to get ordered registered validators list for epoch %d : %s", nextEpoch, err)
 		}
 		deps.Protocol.MainEngineInstance().Retainer.RetainRegisteredValidatorsCache(slotRange, registeredValidators)
 	}
@@ -113,19 +98,23 @@ func validators(c echo.Context) (*apimodels.ValidatorsResponse, error) {
 func validatorByAccountID(c echo.Context) (*apimodels.ValidatorResponse, error) {
 	accountID, err := httpserver.ParseAccountIDParam(c, restapipkg.ParameterAccountID)
 	if err != nil {
-		return nil, ierrors.Wrapf(err, "failed to parse the %s parameter", restapipkg.ParameterAccountID)
+		return nil, ierrors.Wrapf(err, "failed to parse account ID %s", c.Param(restapipkg.ParameterAccountID))
 	}
-	latestCommittedSlot := deps.Protocol.MainEngineInstance().SyncManager.LatestCommitment().Index()
+	latestCommittedSlot := deps.Protocol.MainEngineInstance().SyncManager.LatestCommitment().Slot()
 
 	accountData, exists, err := deps.Protocol.MainEngineInstance().Ledger.Account(accountID, latestCommittedSlot)
 	if err != nil {
-		return nil, ierrors.Wrapf(err, "failed to get account: %s form the Ledger", accountID.ToHex())
+		return nil, ierrors.Wrapf(echo.ErrInternalServerError, "failed to get account %s from the Ledger: %s", accountID.ToHex(), err)
 	}
 	if !exists {
-		return nil, ierrors.Errorf("account not found: %s for latest committedSlot %d", accountID.ToHex(), latestCommittedSlot)
+		return nil, ierrors.Wrapf(echo.ErrNotFound, "account %s not found for latest committedSlot %d", accountID.ToHex(), latestCommittedSlot)
 	}
 	nextEpoch := deps.Protocol.APIForSlot(latestCommittedSlot).TimeProvider().EpochFromSlot(latestCommittedSlot) + 1
-	active := deps.Protocol.MainEngineInstance().SybilProtection.IsCandidateActive(accountID, nextEpoch)
+
+	active, err := deps.Protocol.MainEngineInstance().SybilProtection.IsCandidateActive(accountID, nextEpoch)
+	if err != nil {
+		return nil, ierrors.Wrapf(err, "failed to check if account %s is an active candidate", accountID.ToHex())
+	}
 
 	return &apimodels.ValidatorResponse{
 		AccountID:                      accountID,
@@ -142,12 +131,12 @@ func validatorByAccountID(c echo.Context) (*apimodels.ValidatorResponse, error) 
 func rewardsByOutputID(c echo.Context) (*apimodels.ManaRewardsResponse, error) {
 	outputID, err := httpserver.ParseOutputIDParam(c, restapipkg.ParameterOutputID)
 	if err != nil {
-		return nil, ierrors.Wrapf(err, "failed to parse the %s parameter", restapipkg.ParameterOutputID)
+		return nil, ierrors.Wrapf(err, "failed to parse output ID %s", c.Param(restapipkg.ParameterOutputID))
 	}
 
 	utxoOutput, err := deps.Protocol.MainEngineInstance().Ledger.Output(outputID)
 	if err != nil {
-		return nil, ierrors.Wrapf(err, "failed to get output %s from ledger", outputID)
+		return nil, ierrors.Wrapf(echo.ErrInternalServerError, "failed to get output %s from ledger: %s", outputID.ToHex(), err)
 	}
 
 	var reward iotago.Mana
@@ -158,7 +147,7 @@ func rewardsByOutputID(c echo.Context) (*apimodels.ManaRewardsResponse, error) {
 		accountOutput := utxoOutput.Output().(*iotago.AccountOutput)
 		feature, exists := accountOutput.FeatureSet()[iotago.FeatureStaking]
 		if !exists {
-			return nil, ierrors.Errorf("account %s is not a validator", outputID)
+			return nil, ierrors.Wrapf(echo.ErrBadRequest, "account %s is not a validator", outputID.ToHex())
 		}
 
 		//nolint:forcetypeassert
@@ -175,15 +164,21 @@ func rewardsByOutputID(c echo.Context) (*apimodels.ManaRewardsResponse, error) {
 	case iotago.OutputDelegation:
 		//nolint:forcetypeassert
 		delegationOutput := utxoOutput.Output().(*iotago.DelegationOutput)
+		latestCommittedSlot := deps.Protocol.MainEngineInstance().SyncManager.LatestCommitment().Slot()
+		stakingEnd := delegationOutput.EndEpoch
+		// the output is in delayed calaiming state if endEpoch is set, otherwise we use latest possible epoch
+		if delegationOutput.EndEpoch == 0 {
+			stakingEnd = deps.Protocol.APIForSlot(latestCommittedSlot).TimeProvider().EpochFromSlot(deps.Protocol.MainEngineInstance().SyncManager.LatestCommitment().Slot())
+		}
 		reward, actualStart, actualEnd, err = deps.Protocol.MainEngineInstance().SybilProtection.DelegatorReward(
-			delegationOutput.ValidatorID,
+			delegationOutput.ValidatorAddress.AccountID(),
 			delegationOutput.DelegatedAmount,
 			delegationOutput.StartEpoch,
-			delegationOutput.EndEpoch,
+			stakingEnd,
 		)
 	}
 	if err != nil {
-		return nil, ierrors.Wrapf(err, "failed to calculate reward for output %s", outputID)
+		return nil, ierrors.Wrapf(echo.ErrInternalServerError, "failed to calculate reward for output %s: %s", outputID.ToHex(), err)
 	}
 
 	return &apimodels.ManaRewardsResponse{
@@ -193,23 +188,34 @@ func rewardsByOutputID(c echo.Context) (*apimodels.ManaRewardsResponse, error) {
 	}, nil
 }
 
-func selectedCommittee(c echo.Context) *apimodels.CommitteeResponse {
-	timeProvider := deps.Protocol.CurrentAPI().TimeProvider()
+func selectedCommittee(c echo.Context) (*apimodels.CommitteeResponse, error) {
+	timeProvider := deps.Protocol.CommittedAPI().TimeProvider()
 
-	var slotIndex iotago.SlotIndex
+	var slot iotago.SlotIndex
 
-	epochIndex, err := httpserver.ParseEpochQueryParam(c, restapipkg.ParameterEpochIndex)
+	epoch, err := httpserver.ParseEpochQueryParam(c, restapipkg.ParameterEpochIndex)
 	if err != nil {
 		// by default we return current epoch
-		slotIndex = timeProvider.SlotFromTime(time.Now())
-		epochIndex = timeProvider.EpochFromSlot(slotIndex)
+		slot = timeProvider.SlotFromTime(time.Now())
+		epoch = timeProvider.EpochFromSlot(slot)
 	} else {
-		slotIndex = timeProvider.EpochEnd(epochIndex)
+		slot = timeProvider.EpochEnd(epoch)
 	}
 
-	seatedAccounts := deps.Protocol.MainEngineInstance().SybilProtection.SeatManager().Committee(slotIndex)
-	committee := make([]*apimodels.CommitteeMemberResponse, 0, seatedAccounts.Accounts().Size())
-	seatedAccounts.Accounts().ForEach(func(accountID iotago.AccountID, seat *account.Pool) bool {
+	seatedAccounts, exists := deps.Protocol.MainEngineInstance().SybilProtection.SeatManager().CommitteeInSlot(slot)
+	if !exists {
+		return &apimodels.CommitteeResponse{
+			Epoch: epoch,
+		}, nil
+	}
+
+	accounts, err := seatedAccounts.Accounts()
+	if err != nil {
+		return nil, ierrors.Wrapf(err, "failed to get accounts from committee for slot %d", slot)
+	}
+
+	committee := make([]*apimodels.CommitteeMemberResponse, 0, accounts.Size())
+	accounts.ForEach(func(accountID iotago.AccountID, seat *account.Pool) bool {
 		committee = append(committee, &apimodels.CommitteeMemberResponse{
 			AccountID:      accountID,
 			PoolStake:      seat.PoolStake,
@@ -221,9 +227,9 @@ func selectedCommittee(c echo.Context) *apimodels.CommitteeResponse {
 	})
 
 	return &apimodels.CommitteeResponse{
-		EpochIndex:          epochIndex,
+		Epoch:               epoch,
 		Committee:           committee,
-		TotalStake:          seatedAccounts.Accounts().TotalStake(),
-		TotalValidatorStake: seatedAccounts.Accounts().TotalValidatorStake(),
-	}
+		TotalStake:          accounts.TotalStake(),
+		TotalValidatorStake: accounts.TotalValidatorStake(),
+	}, nil
 }

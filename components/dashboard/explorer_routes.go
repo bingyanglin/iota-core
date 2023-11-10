@@ -57,7 +57,7 @@ func setupExplorerRoutes(routeGroup *echo.Group) {
 		search := c.Param("search")
 		result := &SearchResult{}
 
-		blockID, err := iotago.SlotIdentifierFromHexString(search)
+		blockID, err := iotago.BlockIDFromHexString(search)
 		if err != nil {
 			return ierrors.Wrapf(ErrInvalidParameter, "search ID %s", search)
 		}
@@ -105,7 +105,7 @@ func createExplorerBlock(block *model.Block, cachedBlock *blocks.Block, metadata
 	var payloadJSON []byte
 	basicBlock, isBasic := block.BasicBlock()
 	if isBasic {
-		payloadJSON, err = lo.PanicOnErr(deps.Protocol.APIForVersion(iotaBlk.ProtocolVersion)).JSONEncode(basicBlock.Payload)
+		payloadJSON, err = lo.PanicOnErr(deps.Protocol.APIForVersion(iotaBlk.Header.ProtocolVersion)).JSONEncode(basicBlock.Payload)
 		if err != nil {
 			return nil
 		}
@@ -113,16 +113,16 @@ func createExplorerBlock(block *model.Block, cachedBlock *blocks.Block, metadata
 
 	t := &ExplorerBlock{
 		ID:                      block.ID().ToHex(),
-		NetworkID:               iotaBlk.NetworkID,
-		ProtocolVersion:         iotaBlk.ProtocolVersion,
+		NetworkID:               iotaBlk.Header.NetworkID,
+		ProtocolVersion:         iotaBlk.Header.ProtocolVersion,
 		SolidificationTimestamp: 0,
-		IssuanceTimestamp:       iotaBlk.IssuingTime.Unix(),
+		IssuanceTimestamp:       iotaBlk.Header.IssuingTime.Unix(),
 		SequenceNumber:          0,
-		IssuerID:                iotaBlk.IssuerID.String(),
+		IssuerID:                iotaBlk.Header.IssuerID.ToHex(),
 		Signature:               hexutil.EncodeHex(sigBytes),
-		StrongParents:           iotaBlk.Block.StrongParentIDs().ToHex(),
-		WeakParents:             iotaBlk.Block.WeakParentIDs().ToHex(),
-		ShallowLikedParents:     iotaBlk.Block.ShallowLikeParentIDs().ToHex(),
+		StrongParents:           iotaBlk.Body.StrongParentIDs().ToHex(),
+		WeakParents:             iotaBlk.Body.WeakParentIDs().ToHex(),
+		ShallowLikedParents:     iotaBlk.Body.ShallowLikeParentIDs().ToHex(),
 
 		PayloadType: func() iotago.PayloadType {
 			if isBasic && basicBlock.Payload != nil {
@@ -132,8 +132,8 @@ func createExplorerBlock(block *model.Block, cachedBlock *blocks.Block, metadata
 			return iotago.PayloadType(0)
 		}(),
 		Payload: func() json.RawMessage {
-			if isBasic && basicBlock.Payload != nil && basicBlock.Payload.PayloadType() == iotago.PayloadTransaction {
-				tx, _ := basicBlock.Payload.(*iotago.Transaction)
+			if isBasic && basicBlock.Payload != nil && basicBlock.Payload.PayloadType() == iotago.PayloadSignedTransaction {
+				tx, _ := basicBlock.Payload.(*iotago.SignedTransaction)
 				txResponse := NewTransaction(tx)
 				bytes, _ := json.Marshal(txResponse)
 
@@ -143,17 +143,17 @@ func createExplorerBlock(block *model.Block, cachedBlock *blocks.Block, metadata
 			return payloadJSON
 		}(),
 		TransactionID: func() string {
-			if isBasic && basicBlock.Payload != nil && basicBlock.Payload.PayloadType() == iotago.PayloadTransaction {
-				tx, _ := basicBlock.Payload.(*iotago.Transaction)
-				id, _ := tx.ID(lo.PanicOnErr(deps.Protocol.APIForVersion(iotaBlk.ProtocolVersion)))
+			if isBasic && basicBlock.Payload != nil && basicBlock.Payload.PayloadType() == iotago.PayloadSignedTransaction {
+				tx, _ := basicBlock.Payload.(*iotago.SignedTransaction)
+				id, _ := tx.ID()
 
 				return id.ToHex()
 			}
 
 			return ""
 		}(),
-		CommitmentID:        iotaBlk.SlotCommitmentID.ToHex(),
-		LatestConfirmedSlot: uint64(iotaBlk.LatestFinalizedSlot),
+		CommitmentID:        iotaBlk.Header.SlotCommitmentID.ToHex(),
+		LatestConfirmedSlot: uint64(iotaBlk.Header.LatestFinalizedSlot),
 	}
 
 	if cachedBlock != nil {
@@ -164,16 +164,16 @@ func createExplorerBlock(block *model.Block, cachedBlock *blocks.Block, metadata
 		t.Scheduled = cachedBlock.IsScheduled()
 		t.ObjectivelyInvalid = cachedBlock.IsInvalid()
 		t.StrongChildren = lo.Map(cachedBlock.StrongChildren(), func(childBlock *blocks.Block) string {
-			return childBlock.ID().String()
+			return childBlock.ID().ToHex()
 		})
 		t.WeakChildren = lo.Map(cachedBlock.WeakChildren(), func(childBlock *blocks.Block) string {
-			return childBlock.ID().String()
+			return childBlock.ID().ToHex()
 		})
 		t.LikedInsteadChildren = lo.Map(cachedBlock.ShallowLikeChildren(), func(childBlock *blocks.Block) string {
-			return childBlock.ID().String()
+			return childBlock.ID().ToHex()
 		})
 		t.ConflictIDs = lo.Map(cachedBlock.ConflictIDs().ToSlice(), func(conflictID iotago.TransactionID) string {
-			return conflictID.String()
+			return conflictID.ToHex()
 		})
 	} else {
 		switch metadata.BlockState {
@@ -211,9 +211,9 @@ func getTransaction(c echo.Context) error {
 		return ierrors.Errorf("block not found: %s", output.BlockID().ToHex())
 	}
 
-	iotaTX, isTX := block.Transaction()
+	iotaTX, isTX := block.SignedTransaction()
 	if !isTX {
-		return ierrors.Errorf("payload is not a transaction: %s", output.BlockID().ToHex())
+		return ierrors.Errorf("payload is not a signed transaction: %s", output.BlockID().ToHex())
 	}
 
 	return httpserver.JSONResponse(c, http.StatusOK, NewTransaction(iotaTX))
@@ -258,12 +258,12 @@ func getSlotDetailsByID(c echo.Context) error {
 		return err
 	}
 
-	commitment, err := deps.Protocol.MainEngineInstance().Storage.Commitments().Load(commitmentID.Index())
+	commitment, err := deps.Protocol.MainEngineInstance().Storage.Commitments().Load(commitmentID.Slot())
 	if err != nil {
 		return err
 	}
 
-	diffs, err := deps.Protocol.MainEngineInstance().Ledger.SlotDiffs(commitmentID.Index())
+	diffs, err := deps.Protocol.MainEngineInstance().Ledger.SlotDiffs(commitmentID.Slot())
 	if err != nil {
 		return err
 	}

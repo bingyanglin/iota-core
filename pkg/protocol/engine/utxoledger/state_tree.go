@@ -6,17 +6,16 @@ import (
 	"github.com/iotaledger/hive.go/ads"
 	"github.com/iotaledger/hive.go/ierrors"
 	"github.com/iotaledger/hive.go/kvstore/mapdb"
-	"github.com/iotaledger/hive.go/serializer/v2/marshalutil"
 	iotago "github.com/iotaledger/iota.go/v4"
 )
 
 type stateTreeMetadata struct {
-	Time iotago.SlotIndex
+	Slot iotago.SlotIndex
 }
 
 func newStateMetadata(output *Output) *stateTreeMetadata {
 	return &stateTreeMetadata{
-		Time: output.SlotCreated(),
+		Slot: output.SlotCreated(),
 	}
 }
 
@@ -25,7 +24,7 @@ func stateMetadataFromBytes(b []byte) (*stateTreeMetadata, int, error) {
 
 	var err error
 	var n int
-	s.Time, n, err = iotago.SlotIndexFromBytes(b)
+	s.Slot, n, err = iotago.SlotIndexFromBytes(b)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -34,18 +33,17 @@ func stateMetadataFromBytes(b []byte) (*stateTreeMetadata, int, error) {
 }
 
 func (s *stateTreeMetadata) Bytes() ([]byte, error) {
-	ms := marshalutil.New(8)
-	ms.WriteBytes(s.Time.MustBytes())
-
-	return ms.Bytes(), nil
+	return s.Slot.Bytes()
 }
 
 func (m *Manager) StateTreeRoot() iotago.Identifier {
-	return iotago.Identifier(m.stateTree.Root())
+	return m.stateTree.Root()
 }
 
 func (m *Manager) CheckStateTree() bool {
-	comparisonTree := ads.NewMap(mapdb.NewMapDB(),
+	comparisonTree := ads.NewMap[iotago.Identifier](mapdb.NewMapDB(),
+		iotago.Identifier.Bytes,
+		iotago.IdentifierFromBytes,
 		iotago.OutputID.Bytes,
 		iotago.OutputIDFromBytes,
 		(*stateTreeMetadata).Bytes,

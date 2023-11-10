@@ -3,9 +3,9 @@ package performance
 import (
 	"testing"
 
-	"github.com/orcaman/writerseeker"
 	"github.com/stretchr/testify/require"
 
+	"github.com/iotaledger/hive.go/serializer/v2/stream"
 	iotago "github.com/iotaledger/iota.go/v4"
 )
 
@@ -14,16 +14,22 @@ func TestManager_Import_Export(t *testing.T) {
 	epochsCount := 3
 	epochActions := map[string]*EpochActions{
 		"A": {
-			PoolStake:            10,
-			ValidatorStake:       4,
-			FixedCost:            1,
-			ValidationBlocksSent: 10,
+			PoolStake:                   10,
+			ValidatorStake:              4,
+			Delegators:                  []iotago.BaseToken{3, 3},
+			FixedCost:                   1,
+			ActiveSlotsCount:            8, // we have 8 slots in epoch
+			ValidationBlocksSentPerSlot: 10,
+			SlotPerformance:             7,
 		},
 		"B": {
-			PoolStake:            20,
-			ValidatorStake:       8,
-			FixedCost:            100,
-			ValidationBlocksSent: 3,
+			PoolStake:                   20,
+			ValidatorStake:              8,
+			Delegators:                  []iotago.BaseToken{1, 2, 4, 5},
+			FixedCost:                   100,
+			ActiveSlotsCount:            6,
+			ValidationBlocksSentPerSlot: 3,
+			SlotPerformance:             3,
 		},
 	}
 	for i := 1; i <= epochsCount; i++ {
@@ -31,34 +37,34 @@ func TestManager_Import_Export(t *testing.T) {
 	}
 
 	{
-		writer := &writerseeker.WriterSeeker{}
+		writer := stream.NewByteBuffer()
 
 		delegatorRewardBeforeImport, validatorRewardBeforeImport := ts.calculateExpectedRewards(epochsCount, epochActions)
 		// export two full epochs
-		targetSlot := ts.API.TimeProvider().EpochEnd(3)
+		targetSlot := ts.api.TimeProvider().EpochEnd(3)
 		err := ts.Instance.Export(writer, targetSlot)
 		require.NoError(t, err)
 
-		ts.InitRewardManager()
+		ts.InitPerformanceTracker()
 
-		err = ts.Instance.Import(writer.BytesReader())
+		err = ts.Instance.Import(writer.Reader())
 		require.NoError(t, err)
 		delegatorRewardAfterImport, validatorRewardAfterImport := ts.calculateExpectedRewards(epochsCount, epochActions)
 		require.Equal(t, delegatorRewardBeforeImport, delegatorRewardAfterImport)
 		require.Equal(t, validatorRewardBeforeImport, validatorRewardAfterImport)
 	}
 	{
-		writer := &writerseeker.WriterSeeker{}
+		writer := stream.NewByteBuffer()
 
 		delegatorRewardBeforeImport, validatorRewardBeforeImport := ts.calculateExpectedRewards(epochsCount, epochActions)
 		// export at the beginning of epoch 2, skip epoch 3 at all
-		targetSlot := ts.API.TimeProvider().EpochStart(2)
+		targetSlot := ts.api.TimeProvider().EpochStart(2)
 		err := ts.Instance.Export(writer, targetSlot)
 		require.NoError(t, err)
 
-		ts.InitRewardManager()
+		ts.InitPerformanceTracker()
 
-		err = ts.Instance.Import(writer.BytesReader())
+		err = ts.Instance.Import(writer.Reader())
 		require.NoError(t, err)
 		delegatorRewardAfterImport, validatorRewardAfterImport := ts.calculateExpectedRewards(epochsCount, epochActions)
 

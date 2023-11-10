@@ -4,15 +4,19 @@ import iotago "github.com/iotaledger/iota.go/v4"
 
 type MockedOutput struct{}
 
+func (m *MockedOutput) Equal(_ iotago.Output) bool {
+	panic("implement me")
+}
+
 func (m *MockedOutput) Size() int {
 	panic("implement me")
 }
 
-func (m *MockedOutput) WorkScore(_ *iotago.WorkScoreStructure) (iotago.WorkScore, error) {
+func (m *MockedOutput) WorkScore(_ *iotago.WorkScoreParameters) (iotago.WorkScore, error) {
 	panic("implement me")
 }
 
-func (m *MockedOutput) VBytes(_ *iotago.RentStructure, _ iotago.VBytesFunc) iotago.VBytes {
+func (m *MockedOutput) StorageScore(_ *iotago.StorageScoreStructure, _ iotago.StorageScoreFunc) iotago.StorageScore {
 	panic("implement me")
 }
 
@@ -21,10 +25,6 @@ func (m *MockedOutput) BaseTokenAmount() iotago.BaseToken {
 }
 
 func (m *MockedOutput) StoredMana() iotago.Mana {
-	panic("implement me")
-}
-
-func (m *MockedOutput) NativeTokenList() iotago.NativeTokens {
 	panic("implement me")
 }
 

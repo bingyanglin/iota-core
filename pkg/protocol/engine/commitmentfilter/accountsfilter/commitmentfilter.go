@@ -1,7 +1,6 @@
 package accountsfilter
 
 import (
-	"github.com/iotaledger/hive.go/core/safemath"
 	hiveEd25519 "github.com/iotaledger/hive.go/crypto/ed25519"
 	"github.com/iotaledger/hive.go/ierrors"
 	"github.com/iotaledger/hive.go/runtime/module"
@@ -12,20 +11,13 @@ import (
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/blocks"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/commitmentfilter"
 	iotago "github.com/iotaledger/iota.go/v4"
-	"github.com/iotaledger/iota.go/v4/api"
-)
-
-var (
-	ErrInvalidSignature = ierrors.New("invalid signature")
-	ErrNegativeBIC      = ierrors.New("negative BIC")
-	ErrAccountExpired   = ierrors.New("account expired")
 )
 
 type CommitmentFilter struct {
 	// Events contains the Events of the CommitmentFilter
 	events *commitmentfilter.Events
 
-	apiProvider api.Provider
+	apiProvider iotago.APIProvider
 
 	// commitmentFunc is a function that returns the commitment corresponding to the given slot index.
 	commitmentFunc func(iotago.SlotIndex) (*model.Commitment, error)
@@ -59,7 +51,7 @@ func NewProvider(opts ...options.Option[CommitmentFilter]) module.Provider[*engi
 	})
 }
 
-func New(apiProvider api.Provider, opts ...options.Option[CommitmentFilter]) *CommitmentFilter {
+func New(apiProvider iotago.APIProvider, opts ...options.Option[CommitmentFilter]) *CommitmentFilter {
 	return options.Apply(&CommitmentFilter{
 		apiProvider: apiProvider,
 		events:      commitmentfilter.NewEvents(),
@@ -73,11 +65,11 @@ func (c *CommitmentFilter) ProcessPreFilteredBlock(block *blocks.Block) {
 
 func (c *CommitmentFilter) evaluateBlock(block *blocks.Block) {
 	// check if the account exists in the specified slot.
-	accountData, exists, err := c.accountRetrieveFunc(block.ProtocolBlock().IssuerID, block.SlotCommitmentID().Index())
+	accountData, exists, err := c.accountRetrieveFunc(block.ProtocolBlock().Header.IssuerID, block.SlotCommitmentID().Slot())
 	if err != nil {
 		c.events.BlockFiltered.Trigger(&commitmentfilter.BlockFilteredEvent{
 			Block:  block,
-			Reason: ierrors.Wrapf(err, "could not retrieve account information for block issuer %s", block.ProtocolBlock().IssuerID),
+			Reason: ierrors.Join(iotago.ErrIssuerAccountNotFound, ierrors.Wrapf(err, "could not retrieve account information for block issuer %s", block.ProtocolBlock().Header.IssuerID)),
 		})
 
 		return
@@ -85,47 +77,44 @@ func (c *CommitmentFilter) evaluateBlock(block *blocks.Block) {
 	if !exists {
 		c.events.BlockFiltered.Trigger(&commitmentfilter.BlockFilteredEvent{
 			Block:  block,
-			Reason: ierrors.Errorf("block issuer account %s does not exist in slot commitment %s", block.ProtocolBlock().IssuerID, block.ProtocolBlock().SlotCommitmentID.Index()),
+			Reason: ierrors.Join(iotago.ErrIssuerAccountNotFound, ierrors.Errorf("block issuer account %s does not exist in slot commitment %s", block.ProtocolBlock().Header.IssuerID, block.ProtocolBlock().Header.SlotCommitmentID.Slot())),
 		})
 
 		return
 	}
 
 	// get the api for the block
-	blockAPI, err := c.apiProvider.APIForVersion(block.ProtocolBlock().BlockHeader.ProtocolVersion)
+	blockAPI, err := c.apiProvider.APIForVersion(block.ProtocolBlock().Header.ProtocolVersion)
 	if err != nil {
 		c.events.BlockFiltered.Trigger(&commitmentfilter.BlockFilteredEvent{
 			Block:  block,
-			Reason: ierrors.Wrapf(err, "could not retrieve API for block version %d", block.ProtocolBlock().BlockHeader.ProtocolVersion),
+			Reason: ierrors.Join(iotago.ErrBlockVersionInvalid, ierrors.Wrapf(err, "could not retrieve API for block version %d", block.ProtocolBlock().Header.ProtocolVersion)),
 		})
 	}
-	// check that the block burns sufficient Mana
-	blockSlot := blockAPI.TimeProvider().SlotFromTime(block.ProtocolBlock().IssuingTime)
-	rmcSlot, err := safemath.SafeSub(blockSlot, blockAPI.ProtocolParameters().MaxCommittableAge())
-	if err != nil {
-		rmcSlot = 0
-	}
+	// check that the block burns sufficient Mana, use slot index of the commitment
+	rmcSlot := block.ProtocolBlock().Header.SlotCommitmentID.Slot()
+
 	rmc, err := c.rmcRetrieveFunc(rmcSlot)
 	if err != nil {
 		c.events.BlockFiltered.Trigger(&commitmentfilter.BlockFilteredEvent{
 			Block:  block,
-			Reason: ierrors.Wrapf(err, "could not retrieve RMC for slot commitment %s", rmcSlot),
+			Reason: ierrors.Join(iotago.ErrRMCNotFound, ierrors.Wrapf(err, "could not retrieve RMC for slot commitment %s", rmcSlot)),
 		})
 
 		return
 	}
 	if basicBlock, isBasic := block.BasicBlock(); isBasic {
-		manaCost, err := basicBlock.ManaCost(rmc, blockAPI.ProtocolParameters().WorkScoreStructure())
+		manaCost, err := basicBlock.ManaCost(rmc, blockAPI.ProtocolParameters().WorkScoreParameters())
 		if err != nil {
 			c.events.BlockFiltered.Trigger(&commitmentfilter.BlockFilteredEvent{
 				Block:  block,
-				Reason: ierrors.Wrapf(err, "could not calculate Mana cost for block"),
+				Reason: ierrors.Join(iotago.ErrFailedToCalculateManaCost, ierrors.Wrapf(err, "could not calculate Mana cost for block")),
 			})
 		}
-		if basicBlock.BurnedMana < manaCost {
+		if basicBlock.MaxBurnedMana < manaCost {
 			c.events.BlockFiltered.Trigger(&commitmentfilter.BlockFilteredEvent{
 				Block:  block,
-				Reason: ierrors.Errorf("block issuer account %s burned insufficient Mana, required %d, burned %d", block.ProtocolBlock().IssuerID, manaCost, basicBlock.BurnedMana),
+				Reason: ierrors.Join(iotago.ErrBurnedInsufficientMana, ierrors.Errorf("block issuer account %s burned insufficient Mana, required %d, burned %d", block.ProtocolBlock().Header.IssuerID, manaCost, basicBlock.MaxBurnedMana)),
 			})
 
 			return
@@ -136,17 +125,17 @@ func (c *CommitmentFilter) evaluateBlock(block *blocks.Block) {
 	if accountData.Credits.Value < 0 {
 		c.events.BlockFiltered.Trigger(&commitmentfilter.BlockFilteredEvent{
 			Block:  block,
-			Reason: ierrors.Wrapf(ErrNegativeBIC, "block issuer account %s is locked due to negative BIC", block.ProtocolBlock().IssuerID),
+			Reason: ierrors.Wrapf(iotago.ErrNegativeBIC, "block issuer account %s is locked due to negative BIC", block.ProtocolBlock().Header.IssuerID),
 		})
 
 		return
 	}
 
 	// Check that the account is not expired
-	if accountData.ExpirySlot < block.ProtocolBlock().SlotCommitmentID.Index() {
+	if accountData.ExpirySlot < block.ProtocolBlock().Header.SlotCommitmentID.Slot() {
 		c.events.BlockFiltered.Trigger(&commitmentfilter.BlockFilteredEvent{
 			Block:  block,
-			Reason: ierrors.Wrapf(ErrAccountExpired, "block issuer account %s is expired, expiry slot %d in commitment %d", block.ProtocolBlock().IssuerID, accountData.ExpirySlot, block.ProtocolBlock().SlotCommitmentID.Index()),
+			Reason: ierrors.Wrapf(iotago.ErrAccountExpired, "block issuer account %s is expired, expiry slot %d in commitment %d", block.ProtocolBlock().Header.IssuerID, accountData.ExpirySlot, block.ProtocolBlock().Header.SlotCommitmentID.Slot()),
 		})
 
 		return
@@ -154,19 +143,29 @@ func (c *CommitmentFilter) evaluateBlock(block *blocks.Block) {
 
 	switch signature := block.ProtocolBlock().Signature.(type) {
 	case *iotago.Ed25519Signature:
-		if !accountData.BlockIssuerKeys.Has(iotago.BlockIssuerKeyEd25519FromPublicKey(signature.PublicKey)) {
-			c.events.BlockFiltered.Trigger(&commitmentfilter.BlockFilteredEvent{
-				Block:  block,
-				Reason: ierrors.Wrapf(ErrInvalidSignature, "block issuer account %s does not have public key %s in slot %d", block.ProtocolBlock().IssuerID, signature.PublicKey, block.ProtocolBlock().SlotCommitmentID.Index()),
-			})
+		if !accountData.BlockIssuerKeys.Has(iotago.Ed25519PublicKeyBlockIssuerKeyFromPublicKey(signature.PublicKey)) {
+			// If the block issuer does not have the public key in the slot commitment, check if it is an implicit account with the corresponding address.
+			// There must be at least one block issuer key on any account, so extracting index 0 is fine.
+			// For implicit accounts there is exactly one key, so we do not have to check any other indices.
+			blockIssuerKey := accountData.BlockIssuerKeys[0]
+			// Implicit Accounts can only have Block Issuer Keys of type Ed25519PublicKeyHashBlockIssuerKey.
+			bikPubKeyHash, isBikPubKeyHash := blockIssuerKey.(*iotago.Ed25519PublicKeyHashBlockIssuerKey)
 
-			return
+			// Filter the block if it's not a Block Issuer Key from an Implicit Account or if the Pub Key Hashes do not match.
+			if !isBikPubKeyHash || bikPubKeyHash.PublicKeyHash != iotago.Ed25519PublicKeyHashBlockIssuerKeyFromPublicKey(signature.PublicKey[:]).PublicKeyHash {
+				c.events.BlockFiltered.Trigger(&commitmentfilter.BlockFilteredEvent{
+					Block:  block,
+					Reason: ierrors.Wrapf(iotago.ErrInvalidSignature, "block issuer account %s does not have block issuer key corresponding to public key %s in slot %d", block.ProtocolBlock().Header.IssuerID, signature.PublicKey, block.ProtocolBlock().Header.SlotCommitmentID.Index()),
+				})
+
+				return
+			}
 		}
-		signingMessage, err := block.ProtocolBlock().SigningMessage(blockAPI)
+		signingMessage, err := block.ProtocolBlock().SigningMessage()
 		if err != nil {
 			c.events.BlockFiltered.Trigger(&commitmentfilter.BlockFilteredEvent{
 				Block:  block,
-				Reason: ierrors.Wrapf(ErrInvalidSignature, "error: %s", err.Error()),
+				Reason: ierrors.Wrapf(iotago.ErrInvalidSignature, "error: %s", err.Error()),
 			})
 
 			return
@@ -174,7 +173,7 @@ func (c *CommitmentFilter) evaluateBlock(block *blocks.Block) {
 		if !hiveEd25519.Verify(signature.PublicKey[:], signingMessage, signature.Signature[:]) {
 			c.events.BlockFiltered.Trigger(&commitmentfilter.BlockFilteredEvent{
 				Block:  block,
-				Reason: ErrInvalidSignature,
+				Reason: iotago.ErrInvalidSignature,
 			})
 
 			return
@@ -182,7 +181,7 @@ func (c *CommitmentFilter) evaluateBlock(block *blocks.Block) {
 	default:
 		c.events.BlockFiltered.Trigger(&commitmentfilter.BlockFilteredEvent{
 			Block:  block,
-			Reason: ierrors.Wrapf(ErrInvalidSignature, "only ed25519 signatures supported, got %s", block.ProtocolBlock().Signature.Type()),
+			Reason: ierrors.Wrapf(iotago.ErrInvalidSignature, "only ed25519 signatures supported, got %s", block.ProtocolBlock().Signature.Type()),
 		})
 
 		return

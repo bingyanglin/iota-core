@@ -14,7 +14,7 @@ import (
 func blockIDByTransactionID(c echo.Context) (iotago.BlockID, error) {
 	txID, err := httpserver.ParseTransactionIDParam(c, restapipkg.ParameterTransactionID)
 	if err != nil {
-		return iotago.EmptyBlockID(), ierrors.Wrapf(err, "failed to parse transaction ID: %s", c.Param(restapipkg.ParameterTransactionID))
+		return iotago.EmptyBlockID, ierrors.Wrapf(err, "failed to parse transaction ID %s", c.Param(restapipkg.ParameterTransactionID))
 	}
 
 	return blockIDFromTransactionID(txID)
@@ -22,26 +22,29 @@ func blockIDByTransactionID(c echo.Context) (iotago.BlockID, error) {
 
 func blockIDFromTransactionID(transactionID iotago.TransactionID) (iotago.BlockID, error) {
 	// Get the first output of that transaction (using index 0)
-	outputID := iotago.OutputID{}
-	copy(outputID[:], transactionID[:])
+	outputID := iotago.OutputIDFromTransactionIDAndIndex(transactionID, 0)
 
-	output, err := deps.Protocol.MainEngineInstance().Ledger.Output(outputID)
+	output, spent, err := deps.Protocol.MainEngineInstance().Ledger.OutputOrSpent(outputID)
 	if err != nil {
-		return iotago.EmptyBlockID(), ierrors.Wrapf(err, "failed to get output: %s", outputID.String())
+		return iotago.EmptyBlockID, ierrors.Wrapf(echo.ErrInternalServerError, "failed to get output %s: %s", outputID.ToHex(), err)
 	}
 
-	return output.BlockID(), nil
+	if output != nil {
+		return output.BlockID(), nil
+	}
+
+	return spent.BlockID(), nil
 }
 
 func blockByTransactionID(c echo.Context) (*model.Block, error) {
 	blockID, err := blockIDByTransactionID(c)
 	if err != nil {
-		return nil, ierrors.Wrapf(err, "failed to get block ID by transaction ID")
+		return nil, ierrors.Wrapf(echo.ErrBadRequest, "failed to get block ID by transaction ID: %s", err)
 	}
 
 	block, exists := deps.Protocol.MainEngineInstance().Block(blockID)
 	if !exists {
-		return nil, ierrors.Errorf("block not found: %s", blockID.String())
+		return nil, ierrors.Wrapf(echo.ErrNotFound, "block not found: %s", blockID.ToHex())
 	}
 
 	return block, nil
@@ -50,7 +53,7 @@ func blockByTransactionID(c echo.Context) (*model.Block, error) {
 func blockMetadataFromTransactionID(c echo.Context) (*apimodels.BlockMetadataResponse, error) {
 	blockID, err := blockIDByTransactionID(c)
 	if err != nil {
-		return nil, ierrors.Wrapf(err, "failed to get block ID by transaction ID")
+		return nil, ierrors.Wrapf(echo.ErrBadRequest, "failed to get block ID by transaction ID: %s", err)
 	}
 
 	return blockMetadataByBlockID(blockID)

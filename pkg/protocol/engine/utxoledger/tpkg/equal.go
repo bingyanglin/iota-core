@@ -24,7 +24,7 @@ func EqualOutput(t *testing.T, expected *utxoledger.Output, actual *utxoledger.O
 	case iotago.TransIndepIdentOutput:
 		expectedIdent = output.Ident()
 	case iotago.TransDepIdentOutput:
-		expectedIdent = output.Chain().ToAddress()
+		expectedIdent = output.ChainID().ToAddress()
 	default:
 		require.Fail(t, "unsupported output type")
 	}
@@ -34,7 +34,7 @@ func EqualOutput(t *testing.T, expected *utxoledger.Output, actual *utxoledger.O
 	case iotago.TransIndepIdentOutput:
 		actualIdent = output.Ident()
 	case iotago.TransDepIdentOutput:
-		actualIdent = output.Chain().ToAddress()
+		actualIdent = output.ChainID().ToAddress()
 	default:
 		require.Fail(t, "unsupported output type")
 	}
@@ -49,7 +49,7 @@ func EqualOutput(t *testing.T, expected *utxoledger.Output, actual *utxoledger.O
 func EqualSpent(t *testing.T, expected *utxoledger.Spent, actual *utxoledger.Spent) {
 	require.Equal(t, expected.OutputID(), actual.OutputID())
 	require.Equal(t, expected.TransactionIDSpent(), actual.TransactionIDSpent())
-	require.Equal(t, expected.SlotIndexSpent(), actual.SlotIndexSpent())
+	require.Equal(t, expected.SlotSpent(), actual.SlotSpent())
 	EqualOutput(t, expected.Output(), actual.Output())
 }
 
@@ -57,13 +57,13 @@ func EqualOutputs(t *testing.T, expected utxoledger.Outputs, actual utxoledger.O
 	require.Equal(t, len(expected), len(actual))
 
 	// Sort Outputs by output ID.
-	sort.Slice(expected, func(i, j int) bool {
+	sort.Slice(expected, func(i int, j int) bool {
 		iOutputID := expected[i].OutputID()
 		jOutputID := expected[j].OutputID()
 
 		return bytes.Compare(iOutputID[:], jOutputID[:]) == -1
 	})
-	sort.Slice(actual, func(i, j int) bool {
+	sort.Slice(actual, func(i int, j int) bool {
 		iOutputID := actual[i].OutputID()
 		jOutputID := actual[j].OutputID()
 
@@ -79,13 +79,13 @@ func EqualSpents(t *testing.T, expected utxoledger.Spents, actual utxoledger.Spe
 	require.Equal(t, len(expected), len(actual))
 
 	// Sort Spents by output ID.
-	sort.Slice(expected, func(i, j int) bool {
+	sort.Slice(expected, func(i int, j int) bool {
 		iOutputID := expected[i].OutputID()
 		jOutputID := expected[j].OutputID()
 
 		return bytes.Compare(iOutputID[:], jOutputID[:]) == -1
 	})
-	sort.Slice(actual, func(i, j int) bool {
+	sort.Slice(actual, func(i int, j int) bool {
 		iOutputID := actual[i].OutputID()
 		jOutputID := actual[j].OutputID()
 

@@ -9,14 +9,17 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/iotaledger/hive.go/ds/shrinkingmap"
+	"github.com/iotaledger/hive.go/kvstore"
 	"github.com/iotaledger/hive.go/kvstore/mapdb"
 	"github.com/iotaledger/hive.go/lo"
+	"github.com/iotaledger/iota-core/pkg/core/account"
 	"github.com/iotaledger/iota-core/pkg/model"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/blocks"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/consensus/blockgadget"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/consensus/blockgadget/thresholdblockgadget"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/eviction"
 	"github.com/iotaledger/iota-core/pkg/protocol/sybilprotection/seatmanager/mock"
+	"github.com/iotaledger/iota-core/pkg/storage/prunable/epochstore"
 	"github.com/iotaledger/iota-core/pkg/storage/prunable/slotstore"
 	iotago "github.com/iotaledger/iota.go/v4"
 	"github.com/iotaledger/iota.go/v4/api"
@@ -40,24 +43,29 @@ func NewTestFramework(test *testing.T) *TestFramework {
 		T:      test,
 		blocks: shrinkingmap.New[string, *blocks.Block](),
 
-		SeatManager: mock.NewManualPOA(),
+		SeatManager: mock.NewManualPOA(api.SingleVersionProvider(tpkg.TestAPI), epochstore.NewStore(kvstore.Realm{}, kvstore.Realm{}, mapdb.NewMapDB(), 0, (*account.Accounts).Bytes, account.AccountsFromBytes)),
 	}
 
-	evictionState := eviction.NewState(mapdb.NewMapDB(), func(index iotago.SlotIndex) (*slotstore.Store[iotago.BlockID, iotago.CommitmentID], error) {
-		return slotstore.NewStore(index, mapdb.NewMapDB(),
-			iotago.SlotIdentifier.Bytes,
-			iotago.SlotIdentifierFromBytes,
-			iotago.SlotIdentifier.Bytes,
-			iotago.SlotIdentifierFromBytes,
+	evictionState := eviction.NewState(mapdb.NewMapDB(), func(slot iotago.SlotIndex) (*slotstore.Store[iotago.BlockID, iotago.CommitmentID], error) {
+		return slotstore.NewStore(slot, mapdb.NewMapDB(),
+			iotago.BlockID.Bytes,
+			iotago.BlockIDFromBytes,
+			iotago.CommitmentID.Bytes,
+			iotago.CommitmentIDFromBytes,
 		), nil
+	}, func() iotago.BlockID {
+		return tpkg.TestAPI.ProtocolParameters().GenesisBlockID()
 	})
 
 	t.blockCache = blocks.New(evictionState, api.SingleVersionProvider(tpkg.TestAPI))
-	instance := thresholdblockgadget.New(t.blockCache, t.SeatManager)
+	instance := thresholdblockgadget.New(t.blockCache, t.SeatManager, func(err error) {
+		fmt.Printf(">> Gadget.Error: %s\n", err)
+	})
+
 	t.Events = instance.Events()
 	t.Instance = instance
 
-	genesisBlock := blocks.NewRootBlock(iotago.EmptyBlockID(), iotago.NewEmptyCommitment(tpkg.TestAPI.Version()).MustID(), time.Unix(int64(tpkg.TestAPI.ProtocolParameters().TimeProvider().GenesisUnixTime()), 0))
+	genesisBlock := blocks.NewRootBlock(tpkg.TestAPI.ProtocolParameters().GenesisBlockID(), iotago.NewEmptyCommitment(tpkg.TestAPI).MustID(), time.Unix(tpkg.TestAPI.TimeProvider().GenesisUnixTime(), 0))
 	t.blocks.Set("Genesis", genesisBlock)
 	genesisBlock.ID().RegisterAlias("Genesis")
 	evictionState.AddRootBlock(genesisBlock.ID(), genesisBlock.SlotCommitmentID())
@@ -106,7 +114,7 @@ func (t *TestFramework) CreateBlock(alias string, issuerAlias string, parents ..
 		Build()
 	require.NoError(t, err)
 
-	modelBlock, err := model.BlockFromBlock(block, tpkg.TestAPI)
+	modelBlock, err := model.BlockFromBlock(block)
 	require.NoError(t, err)
 
 	blocksBlock := blocks.NewBlock(modelBlock)

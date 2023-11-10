@@ -19,53 +19,42 @@ type CommitmentVerifier struct {
 	validatorAccountsAtFork map[iotago.AccountID]*accounts.AccountData
 }
 
-func NewCommitmentVerifier(mainEngine *engine.Engine, lastCommonCommitmentBeforeFork *model.Commitment) *CommitmentVerifier {
-	committeeAtForkingPoint := mainEngine.SybilProtection.SeatManager().Committee(lastCommonCommitmentBeforeFork.Index()).Accounts().IDs()
+func NewCommitmentVerifier(mainEngine *engine.Engine, lastCommonCommitmentBeforeFork *model.Commitment) (*CommitmentVerifier, error) {
+	committeeAtForkingPoint, exists := mainEngine.SybilProtection.SeatManager().CommitteeInSlot(lastCommonCommitmentBeforeFork.Slot())
+	if !exists {
+		return nil, ierrors.Errorf("committee in slot %d does not exist", lastCommonCommitmentBeforeFork.Slot())
+	}
+
+	accountsAtForkingPoint, err := committeeAtForkingPoint.Accounts()
+	if err != nil {
+		return nil, ierrors.Wrapf(err, "failed to get accounts from committee for slot %d", lastCommonCommitmentBeforeFork.Slot())
+	}
 
 	return &CommitmentVerifier{
 		engine:                  mainEngine,
 		cumulativeWeight:        lastCommonCommitmentBeforeFork.CumulativeWeight(),
-		validatorAccountsAtFork: lo.PanicOnErr(mainEngine.Ledger.PastAccounts(committeeAtForkingPoint, lastCommonCommitmentBeforeFork.Index())),
+		validatorAccountsAtFork: lo.PanicOnErr(mainEngine.Ledger.PastAccounts(accountsAtForkingPoint.IDs(), lastCommonCommitmentBeforeFork.Slot())),
 		// TODO: what happens if the committee rotated after the fork?
-	}
+	}, nil
 }
 
 func (c *CommitmentVerifier) verifyCommitment(commitment *model.Commitment, attestations []*iotago.Attestation, merkleProof *merklehasher.Proof[iotago.Identifier]) (blockIDsFromAttestations iotago.BlockIDs, cumulativeWeight uint64, err error) {
 	// 1. Verify that the provided attestations are indeed the ones that were included in the commitment.
-	tree := ads.NewMap(mapdb.NewMapDB(),
+	tree := ads.NewMap[iotago.Identifier](mapdb.NewMapDB(),
 		iotago.Identifier.Bytes,
 		iotago.IdentifierFromBytes,
-		func(attestation *iotago.Attestation) ([]byte, error) {
-			apiForVersion, err := c.engine.APIForVersion(attestation.ProtocolVersion)
-			if err != nil {
-				return nil, ierrors.Wrapf(err, "failed to get API for version %d", attestation.ProtocolVersion)
-			}
-
-			return apiForVersion.Encode(attestation)
-		},
-		func(bytes []byte) (*iotago.Attestation, int, error) {
-			version, _, err := iotago.VersionFromBytes(bytes)
-			if err != nil {
-				return nil, 0, ierrors.Wrap(err, "failed to determine version")
-			}
-
-			a := new(iotago.Attestation)
-			apiForVersion, err := c.engine.APIForVersion(version)
-			if err != nil {
-				return nil, 0, ierrors.Wrapf(err, "failed to get API for version %d", version)
-			}
-			n, err := apiForVersion.Decode(bytes, a)
-
-			return a, n, err
-		},
+		iotago.AccountID.Bytes,
+		iotago.AccountIDFromBytes,
+		(*iotago.Attestation).Bytes,
+		iotago.AttestationFromBytes(c.engine),
 	)
 
 	for _, att := range attestations {
-		if err := tree.Set(att.IssuerID, att); err != nil {
-			return nil, 0, ierrors.Wrapf(err, "failed to set attestation for issuerID %s", att.IssuerID)
+		if err := tree.Set(att.Header.IssuerID, att); err != nil {
+			return nil, 0, ierrors.Wrapf(err, "failed to set attestation for issuerID %s", att.Header.IssuerID)
 		}
 	}
-	if !iotago.VerifyProof(merkleProof, iotago.Identifier(tree.Root()), commitment.RootsID()) {
+	if !iotago.VerifyProof(merkleProof, tree.Root(), commitment.RootsID()) {
 		return nil, 0, ierrors.Errorf("invalid merkle proof for attestations for commitment %s", commitment.ID())
 	}
 
@@ -116,17 +105,17 @@ func (c *CommitmentVerifier) verifyAttestations(attestations []*iotago.Attestati
 		//    1. The attestation might be fake.
 		//    2. The issuer might have added a new public key in the meantime, but we don't know about it yet
 		//       since we only have the ledger state at the forking point.
-		accountData, exists := c.validatorAccountsAtFork[att.IssuerID]
+		accountData, exists := c.validatorAccountsAtFork[att.Header.IssuerID]
 
 		// We always need to have the accountData for a validator.
 		if !exists {
-			return nil, 0, ierrors.Errorf("accountData for issuerID %s does not exist", att.IssuerID)
+			return nil, 0, ierrors.Errorf("accountData for issuerID %s does not exist", att.Header.IssuerID)
 		}
 
 		switch signature := att.Signature.(type) {
 		case *iotago.Ed25519Signature:
 			// We found the accountData, but we don't know the public key used to sign this block/attestation. Ignore.
-			if !accountData.BlockIssuerKeys.Has(iotago.BlockIssuerKeyEd25519FromPublicKey(signature.PublicKey)) {
+			if !accountData.BlockIssuerKeys.Has(iotago.Ed25519PublicKeyBlockIssuerKeyFromPublicKey(signature.PublicKey)) {
 				continue
 			}
 
@@ -134,13 +123,8 @@ func (c *CommitmentVerifier) verifyAttestations(attestations []*iotago.Attestati
 			return nil, 0, ierrors.Errorf("only ed25519 signatures supported, got %s", att.Signature.Type())
 		}
 
-		api, err := c.engine.APIForVersion(att.ProtocolVersion)
-		if err != nil {
-			return nil, 0, ierrors.Wrap(err, "error determining API for attestation")
-		}
-
 		// 2. Verify the signature of the attestation.
-		if valid, err := att.VerifySignature(api); !valid {
+		if valid, err := att.VerifySignature(); !valid {
 			if err != nil {
 				return nil, 0, ierrors.Wrap(err, "error validating attestation signature")
 			}
@@ -149,22 +133,28 @@ func (c *CommitmentVerifier) verifyAttestations(attestations []*iotago.Attestati
 		}
 
 		// 3. A valid set of attestations can't contain multiple attestations from the same issuerID.
-		if visitedIdentities.Has(att.IssuerID) {
-			return nil, 0, ierrors.Errorf("issuerID %s contained in multiple attestations", att.IssuerID)
+		if visitedIdentities.Has(att.Header.IssuerID) {
+			return nil, 0, ierrors.Errorf("issuerID %s contained in multiple attestations", att.Header.IssuerID)
 		}
 
-		// TODO: this might differ if we have a Accounts with changing weights depending on the SlotIndex/epoch
-		attestationBlockID, err := att.BlockID(api)
+		// TODO: this might differ if we have a Accounts with changing weights depending on the Slot/epoch
+		attestationBlockID, err := att.BlockID()
 		if err != nil {
 			return nil, 0, ierrors.Wrap(err, "error calculating blockID from attestation")
 		}
-		if _, seatExists := c.engine.SybilProtection.SeatManager().Committee(attestationBlockID.Index()).GetSeat(att.IssuerID); seatExists {
+
+		committee, exists := c.engine.SybilProtection.SeatManager().CommitteeInSlot(attestationBlockID.Slot())
+		if !exists {
+			return nil, 0, ierrors.Errorf("committee for slot %d does not exist", attestationBlockID.Slot())
+		}
+
+		if _, seatExists := committee.GetSeat(att.Header.IssuerID); seatExists {
 			seatCount++
 		}
 
-		visitedIdentities.Add(att.IssuerID)
+		visitedIdentities.Add(att.Header.IssuerID)
 
-		blockID, err := att.BlockID(api)
+		blockID, err := att.BlockID()
 		if err != nil {
 			return nil, 0, ierrors.Wrap(err, "error calculating blockID from attestation")
 		}

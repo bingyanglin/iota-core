@@ -37,16 +37,16 @@ type (
 	}
 
 	Validator struct {
-		AccountID      iotago.AccountID `serix:"0,mapKey=accountId"`
-		SeatIndex      uint8            `serix:"1,mapKey=seatIndex"`
-		PoolStake      iotago.BaseToken `serix:"2,mapKey=poolStake"`
-		ValidatorStake iotago.BaseToken `serix:"3,mapKey=validatorStake"`
-		FixedCost      iotago.Mana      `serix:"4,mapKey=fixedCost"`
+		AccountID      iotago.AccountID `serix:""`
+		SeatIndex      uint8            `serix:""`
+		PoolStake      iotago.BaseToken `serix:""`
+		ValidatorStake iotago.BaseToken `serix:""`
+		FixedCost      iotago.Mana      `serix:""`
 	}
 
 	ValidatorsSummaryResponse struct {
-		ValidatorSeats []*Validator `serix:"0,lengthPrefixType=uint8,mapKey=validatorSeats"`
-		ActiveSeats    []uint32     `serix:"1,lengthPrefixType=uint8,mapKey=activeSeats"`
+		ValidatorSeats []*Validator `serix:"lenPrefix=uint8"`
+		ActiveSeats    []uint32     `serix:"lenPrefix=uint8"`
 	}
 
 	BlockChangesResponse struct {
@@ -72,8 +72,8 @@ func BlockMetadataResponseFromBlock(block *blocks.Block) *BlockMetadataResponse 
 	return &BlockMetadataResponse{
 		BlockID:            block.ID().String(),
 		StrongParents:      lo.Map(block.StrongParents(), func(blockID iotago.BlockID) string { return blockID.String() }),
-		WeakParents:        lo.Map(block.ProtocolBlock().Block.WeakParentIDs(), func(blockID iotago.BlockID) string { return blockID.String() }),
-		ShallowLikeParents: lo.Map(block.ProtocolBlock().Block.ShallowLikeParentIDs(), func(blockID iotago.BlockID) string { return blockID.String() }),
+		WeakParents:        lo.Map(block.ProtocolBlock().Body.WeakParentIDs(), func(blockID iotago.BlockID) string { return blockID.String() }),
+		ShallowLikeParents: lo.Map(block.ProtocolBlock().Body.ShallowLikeParentIDs(), func(blockID iotago.BlockID) string { return blockID.String() }),
 		Solid:              block.IsSolid(),
 		Invalid:            block.IsInvalid(),
 		Booked:             block.IsBooked(),

@@ -8,21 +8,28 @@ import (
 	"github.com/iotaledger/hive.go/ierrors"
 	"github.com/iotaledger/hive.go/runtime/module"
 	"github.com/iotaledger/hive.go/runtime/options"
+	"github.com/iotaledger/iota-core/pkg/core/account"
 	"github.com/iotaledger/iota-core/pkg/model"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/filter"
-	"github.com/iotaledger/iota.go/v4/api"
+	iotago "github.com/iotaledger/iota.go/v4"
 )
 
-var ErrBlockTimeTooFarAheadInFuture = ierrors.New("a block cannot be too far ahead in the future")
+var (
+	ErrBlockTimeTooFarAheadInFuture = ierrors.New("a block cannot be too far ahead in the future")
+	ErrValidatorNotInCommittee      = ierrors.New("validation block issuer is not in the committee")
+	ErrInvalidBlockVersion          = ierrors.New("block has invalid protocol version")
+)
 
 // Filter filters blocks.
 type Filter struct {
 	events *filter.Events
 
-	apiProvider api.Provider
+	apiProvider iotago.APIProvider
 
 	optsMaxAllowedWallClockDrift time.Duration
+
+	committeeFunc func(iotago.SlotIndex) (*account.SeatedAccounts, bool)
 
 	module.Module
 }
@@ -34,7 +41,9 @@ func NewProvider(opts ...options.Option[Filter]) module.Provider[*engine.Engine,
 
 		e.HookConstructed(func() {
 			e.Events.Filter.LinkTo(f.events)
-
+			e.SybilProtection.HookInitialized(func() {
+				f.committeeFunc = e.SybilProtection.SeatManager().CommitteeInSlot
+			})
 			f.TriggerInitialized()
 		})
 
@@ -45,7 +54,7 @@ func NewProvider(opts ...options.Option[Filter]) module.Provider[*engine.Engine,
 var _ filter.Filter = new(Filter)
 
 // New creates a new Filter.
-func New(apiProvider api.Provider, opts ...options.Option[Filter]) *Filter {
+func New(apiProvider iotago.APIProvider, opts ...options.Option[Filter]) *Filter {
 	return options.Apply(&Filter{
 		events:      filter.NewEvents(),
 		apiProvider: apiProvider,
@@ -57,8 +66,20 @@ func New(apiProvider api.Provider, opts ...options.Option[Filter]) *Filter {
 
 // ProcessReceivedBlock processes block from the given source.
 func (f *Filter) ProcessReceivedBlock(block *model.Block, source peer.ID) {
+	// Verify the block's version corresponds to the protocol version for the slot.
+	apiForSlot := f.apiProvider.APIForSlot(block.ID().Slot())
+	if apiForSlot.Version() != block.ProtocolBlock().Header.ProtocolVersion {
+		f.events.BlockPreFiltered.Trigger(&filter.BlockPreFilteredEvent{
+			Block:  block,
+			Reason: ierrors.Wrapf(ErrInvalidBlockVersion, "invalid protocol version %d (expected %d) for epoch %d", block.ProtocolBlock().Header.ProtocolVersion, apiForSlot.Version(), apiForSlot.TimeProvider().EpochFromSlot(block.ID().Slot())),
+			Source: source,
+		})
+
+		return
+	}
+
 	// Verify the timestamp is not too far in the future.
-	timeDelta := time.Since(block.ProtocolBlock().IssuingTime)
+	timeDelta := time.Since(block.ProtocolBlock().Header.IssuingTime)
 	if timeDelta < -f.optsMaxAllowedWallClockDrift {
 		f.events.BlockPreFiltered.Trigger(&filter.BlockPreFilteredEvent{
 			Block:  block,
@@ -67,6 +88,30 @@ func (f *Filter) ProcessReceivedBlock(block *model.Block, source peer.ID) {
 		})
 
 		return
+	}
+
+	if _, isValidation := block.ValidationBlock(); isValidation {
+		blockSlot := block.ProtocolBlock().API.TimeProvider().SlotFromTime(block.ProtocolBlock().Header.IssuingTime)
+		committee, exists := f.committeeFunc(blockSlot)
+		if !exists {
+			f.events.BlockPreFiltered.Trigger(&filter.BlockPreFilteredEvent{
+				Block:  block,
+				Reason: ierrors.Wrapf(ErrValidatorNotInCommittee, "no committee for slot %d", blockSlot),
+				Source: source,
+			})
+
+			return
+		}
+
+		if !committee.HasAccount(block.ProtocolBlock().Header.IssuerID) {
+			f.events.BlockPreFiltered.Trigger(&filter.BlockPreFilteredEvent{
+				Block:  block,
+				Reason: ierrors.Wrapf(ErrValidatorNotInCommittee, "validation block issuer %s is not part of the committee for slot %d", block.ProtocolBlock().Header.IssuerID, blockSlot),
+				Source: source,
+			})
+
+			return
+		}
 	}
 
 	f.events.BlockPreAllowed.Trigger(block)

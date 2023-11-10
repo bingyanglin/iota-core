@@ -29,12 +29,24 @@ func (s *Storage) Committee() *epochstore.Store[*account.Accounts] {
 	return s.prunable.Committee()
 }
 
+func (s *Storage) CommitteeCandidates(epoch iotago.EpochIndex) (kvstore.KVStore, error) {
+	return s.prunable.CommitteeCandidates(epoch)
+}
+
 func (s *Storage) Blocks(slot iotago.SlotIndex) (*slotstore.Blocks, error) {
 	return s.prunable.Blocks(slot)
 }
 
 func (s *Storage) RootBlocks(slot iotago.SlotIndex) (*slotstore.Store[iotago.BlockID, iotago.CommitmentID], error) {
 	return s.prunable.RootBlocks(slot)
+}
+
+func (s *Storage) GenesisRootBlockID() iotago.BlockID {
+	return s.Settings().APIProvider().CommittedAPI().ProtocolParameters().GenesisBlockID()
+}
+
+func (s *Storage) Mutations(slot iotago.SlotIndex) (kvstore.KVStore, error) {
+	return s.prunable.Mutations(slot)
 }
 
 func (s *Storage) Attestations(slot iotago.SlotIndex) (kvstore.KVStore, error) {
@@ -45,8 +57,8 @@ func (s *Storage) AccountDiffs(slot iotago.SlotIndex) (*slotstore.AccountDiffs, 
 	return s.prunable.AccountDiffs(slot)
 }
 
-func (s *Storage) PerformanceFactors(slot iotago.SlotIndex) (*slotstore.Store[iotago.AccountID, uint64], error) {
-	return s.prunable.PerformanceFactors(slot)
+func (s *Storage) ValidatorPerformances(slot iotago.SlotIndex) (*slotstore.Store[iotago.AccountID, *model.ValidatorPerformance], error) {
+	return s.prunable.ValidatorPerformances(slot)
 }
 
 func (s *Storage) UpgradeSignals(slot iotago.SlotIndex) (*slotstore.Store[account.SeatIndex, *model.SignaledBlock], error) {
@@ -72,4 +84,8 @@ func (s *Storage) RestoreFromDisk() {
 	}
 
 	s.lastPrunedEpoch.MarkEvicted(lastPrunedEpoch)
+}
+
+func (s *Storage) RollbackPrunable(targetIndex iotago.SlotIndex) error {
+	return s.prunable.Rollback(targetIndex)
 }

@@ -11,9 +11,9 @@ type TransactionMetadata interface {
 
 	Transaction() Transaction
 
-	Inputs() ds.Set[OutputStateMetadata]
+	Inputs() ds.Set[StateMetadata]
 
-	Outputs() ds.Set[OutputStateMetadata]
+	Outputs() ds.Set[StateMetadata]
 
 	ConflictIDs() reactive.Set[iotago.TransactionID]
 
@@ -39,7 +39,7 @@ type TransactionMetadata interface {
 
 	OnConflicting(func())
 
-	Attachments() []iotago.BlockID
+	ValidAttachments() []iotago.BlockID
 
 	EarliestIncludedAttachment() iotago.BlockID
 
@@ -57,15 +57,15 @@ type inclusionFlags interface {
 
 	OnAccepted(callback func())
 
-	IsCommitted() bool
+	CommittedSlot() (slot iotago.SlotIndex, isCommitted bool)
 
-	OnCommitted(callback func())
+	OnCommittedSlotUpdated(callback func(slot iotago.SlotIndex))
 
 	IsRejected() bool
 
 	OnRejected(callback func())
 
-	IsOrphaned() bool
+	OrphanedSlot() (slot iotago.SlotIndex, isOrphaned bool)
 
-	OnOrphaned(callback func())
+	OnOrphanedSlotUpdated(callback func(slot iotago.SlotIndex))
 }

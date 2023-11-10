@@ -16,7 +16,13 @@ func getSlotBlockIDs(index iotago.SlotIndex) (*BlockChangesResponse, error) {
 	}
 
 	includedBlocks := make([]string, 0)
-	tangleTree := ads.NewSet(mapdb.NewMapDB(), iotago.SlotIdentifier.Bytes, iotago.SlotIdentifierFromBytes)
+	tangleTree := ads.NewSet[iotago.Identifier](
+		mapdb.NewMapDB(),
+		iotago.Identifier.Bytes,
+		iotago.IdentifierFromBytes,
+		iotago.BlockID.Bytes,
+		iotago.BlockIDFromBytes,
+	)
 
 	_ = blocksForSlot.StreamKeys(func(blockID iotago.BlockID) error {
 		includedBlocks = append(includedBlocks, blockID.String())
@@ -32,6 +38,6 @@ func getSlotBlockIDs(index iotago.SlotIndex) (*BlockChangesResponse, error) {
 	return &BlockChangesResponse{
 		Index:          index,
 		IncludedBlocks: includedBlocks,
-		TangleRoot:     iotago.Identifier(tangleTree.Root()).String(),
+		TangleRoot:     tangleTree.Root().String(),
 	}, nil
 }

@@ -1,7 +1,7 @@
 package testsuite
 
 import (
-	"github.com/google/go-cmp/cmp"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/iotaledger/hive.go/ds"
 	"github.com/iotaledger/hive.go/ierrors"
@@ -24,7 +24,7 @@ func (t *TestSuite) AssertBlock(block *blocks.Block, node *mock.Node) *model.Blo
 		if block.ID() != loadedBlock.ID() {
 			return ierrors.Errorf("AssertBlock: %s: expected %s, got %s", node.Name, block.ID(), loadedBlock.ID())
 		}
-		if !cmp.Equal(block.ModelBlock().Data(), loadedBlock.Data()) {
+		if !assert.Equal(t.fakeTesting, block.ModelBlock().Data(), loadedBlock.Data()) {
 			return ierrors.Errorf("AssertBlock: %s: expected %s, got %s", node.Name, block.ModelBlock().Data(), loadedBlock.Data())
 		}
 
@@ -39,7 +39,7 @@ func (t *TestSuite) AssertBlocksExist(blocks []*blocks.Block, expectedExist bool
 
 	for _, node := range nodes {
 		for _, block := range blocks {
-			if block.ID() == iotago.EmptyBlockID() {
+			if block.ID() == iotago.EmptyBlockID {
 				continue
 			}
 
@@ -109,6 +109,14 @@ func (t *TestSuite) AssertBlocksInCacheRootBlock(expectedBlocks []*blocks.Block,
 	t.assertBlocksInCacheWithFunc(expectedBlocks, "root-block", expectedRootBlock, (*blocks.Block).IsRootBlock, nodes...)
 }
 
+func (t *TestSuite) AssertBlocksInCacheBooked(expectedBlocks []*blocks.Block, expectedBooked bool, nodes ...*mock.Node) {
+	t.assertBlocksInCacheWithFunc(expectedBlocks, "booked", expectedBooked, (*blocks.Block).IsBooked, nodes...)
+}
+
+func (t *TestSuite) AssertBlocksInCacheInvalid(expectedBlocks []*blocks.Block, expectedInvalid bool, nodes ...*mock.Node) {
+	t.assertBlocksInCacheWithFunc(expectedBlocks, "valid", expectedInvalid, (*blocks.Block).IsInvalid, nodes...)
+}
+
 func (t *TestSuite) AssertBlocksInCacheConflicts(blockConflicts map[*blocks.Block][]string, nodes ...*mock.Node) {
 	for _, node := range nodes {
 		for block, conflictAliases := range blockConflicts {
@@ -122,7 +130,7 @@ func (t *TestSuite) AssertBlocksInCacheConflicts(blockConflicts map[*blocks.Bloc
 					return ierrors.Errorf("AssertBlocksInCacheConflicts: %s: block %s is root block", node.Name, blockFromCache.ID())
 				}
 
-				expectedConflictIDs := ds.NewSet(lo.Map(conflictAliases, t.TransactionFramework.TransactionID)...)
+				expectedConflictIDs := ds.NewSet(lo.Map(conflictAliases, t.DefaultWallet().TransactionID)...)
 				actualConflictIDs := blockFromCache.ConflictIDs()
 
 				if expectedConflictIDs.Size() != actualConflictIDs.Size() {
@@ -135,7 +143,6 @@ func (t *TestSuite) AssertBlocksInCacheConflicts(blockConflicts map[*blocks.Bloc
 
 				return nil
 			})
-
 		}
 	}
 }

@@ -17,7 +17,7 @@ type EpochKVStore struct {
 	lastPrunedEpoch *model.PruningIndex
 }
 
-func NewEpochKVStore(storeRealm, pruningRealm kvstore.Realm, kv kvstore.KVStore, pruningDelay iotago.EpochIndex) *EpochKVStore {
+func NewEpochKVStore(storeRealm kvstore.Realm, pruningRealm kvstore.Realm, kv kvstore.KVStore, pruningDelay iotago.EpochIndex) *EpochKVStore {
 
 	return &EpochKVStore{
 		realm:           storeRealm,
@@ -47,6 +47,10 @@ func (e *EpochKVStore) GetEpoch(epoch iotago.EpochIndex) (kvstore.KVStore, error
 	}
 
 	return lo.PanicOnErr(e.kv.WithExtendedRealm(epoch.MustBytes())), nil
+}
+
+func (e *EpochKVStore) DeleteEpoch(epoch iotago.EpochIndex) error {
+	return e.kv.DeletePrefix(epoch.MustBytes())
 }
 
 func (e *EpochKVStore) Prune(epoch iotago.EpochIndex, defaultPruningDelay iotago.EpochIndex) error {

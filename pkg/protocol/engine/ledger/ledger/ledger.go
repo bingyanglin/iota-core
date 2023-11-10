@@ -23,18 +23,16 @@ import (
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/mempool/conflictdag"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/mempool/conflictdag/conflictdagv1"
 	mempoolv1 "github.com/iotaledger/iota-core/pkg/protocol/engine/mempool/v1"
-	"github.com/iotaledger/iota-core/pkg/protocol/engine/notarization"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/utxoledger"
 	"github.com/iotaledger/iota-core/pkg/protocol/sybilprotection"
 	"github.com/iotaledger/iota-core/pkg/storage/prunable/slotstore"
 	iotago "github.com/iotaledger/iota.go/v4"
-	"github.com/iotaledger/iota.go/v4/api"
 )
 
 type Ledger struct {
 	events *ledger.Events
 
-	apiProvider api.Provider
+	apiProvider iotago.APIProvider
 
 	utxoLedger               *utxoledger.Manager
 	accountsLedger           *accountsledger.Manager
@@ -43,8 +41,8 @@ type Ledger struct {
 	sybilProtection          sybilprotection.SybilProtection
 	commitmentLoader         func(iotago.SlotIndex) (*model.Commitment, error)
 	memPool                  mempool.MemPool[ledger.BlockVoteRank]
-	conflictDAG              conflictdag.ConflictDAG[iotago.TransactionID, iotago.OutputID, ledger.BlockVoteRank]
-	retainTransactionFailure func(iotago.SlotIdentifier, error)
+	conflictDAG              conflictdag.ConflictDAG[iotago.TransactionID, mempool.StateID, ledger.BlockVoteRank]
+	retainTransactionFailure func(iotago.BlockID, error)
 	errorHandler             func(error)
 
 	module.Module
@@ -65,24 +63,25 @@ func NewProvider() module.Provider[*engine.Engine, ledger.Ledger] {
 
 		e.HookConstructed(func() {
 			e.Events.Ledger.LinkTo(l.events)
-			l.conflictDAG = conflictdagv1.New[iotago.TransactionID, iotago.OutputID, ledger.BlockVoteRank](l.sybilProtection.SeatManager().OnlineCommittee().Size)
+			l.conflictDAG = conflictdagv1.New[iotago.TransactionID, mempool.StateID, ledger.BlockVoteRank](l.sybilProtection.SeatManager().OnlineCommittee().Size)
 			e.Events.ConflictDAG.LinkTo(l.conflictDAG.Events())
 
 			l.setRetainTransactionFailureFunc(e.Retainer.RetainTransactionFailure)
 
-			l.memPool = mempoolv1.New(l.executeStardustVM, l.resolveState, e.Workers.CreateGroup("MemPool"), l.conflictDAG, e, l.errorHandler, mempoolv1.WithForkAllTransactions[ledger.BlockVoteRank](true))
+			l.memPool = mempoolv1.New(NewVM(l), l.resolveState, e.Storage.Mutations, e.Workers.CreateGroup("MemPool"), l.conflictDAG, l.apiProvider, l.errorHandler, mempoolv1.WithForkAllTransactions[ledger.BlockVoteRank](true))
 			e.EvictionState.Events.SlotEvicted.Hook(l.memPool.Evict)
 
-			l.manaManager = mana.NewManager(l.apiProvider, l.resolveAccountOutput)
-			latestCommittedSlot := e.Storage.Settings().LatestCommitment().Index()
+			l.manaManager = mana.NewManager(l.apiProvider, l.resolveAccountOutput, l.accountsLedger.Account)
+			latestCommittedSlot := e.Storage.Settings().LatestCommitment().Slot()
 			l.accountsLedger.SetLatestCommittedSlot(latestCommittedSlot)
 			l.rmcManager.SetLatestCommittedSlot(latestCommittedSlot)
 
 			e.Events.BlockGadget.BlockPreAccepted.Hook(l.blockPreAccepted)
 
-			e.Events.Notarization.SlotCommitted.Hook(func(scd *notarization.SlotCommittedDetails) {
-				l.memPool.PublishCommitmentState(scd.Commitment.Commitment())
-			})
+			// TODO: CHECK IF STILL NECESSARY
+			// e.Events.Notarization.SlotCommitted.Hook(func(scd *notarization.SlotCommittedDetails) {
+			//	l.memPool.PublishRequestedState(scd.Commitment.Commitment())
+			// })
 
 			l.TriggerConstructed()
 			l.TriggerInitialized()
@@ -98,7 +97,7 @@ func New(
 	commitmentLoader func(iotago.SlotIndex) (*model.Commitment, error),
 	blocksFunc func(id iotago.BlockID) (*blocks.Block, bool),
 	slotDiffFunc func(iotago.SlotIndex) (*slotstore.AccountDiffs, error),
-	apiProvider api.Provider,
+	apiProvider iotago.APIProvider,
 	sybilProtection sybilprotection.SybilProtection,
 	errorHandler func(error),
 ) *Ledger {
@@ -111,11 +110,11 @@ func New(
 		commitmentLoader: commitmentLoader,
 		sybilProtection:  sybilProtection,
 		errorHandler:     errorHandler,
-		conflictDAG:      conflictdagv1.New[iotago.TransactionID, iotago.OutputID, ledger.BlockVoteRank](sybilProtection.SeatManager().OnlineCommittee().Size),
+		conflictDAG:      conflictdagv1.New[iotago.TransactionID, mempool.StateID, ledger.BlockVoteRank](sybilProtection.SeatManager().OnlineCommittee().Size),
 	}
 }
 
-func (l *Ledger) setRetainTransactionFailureFunc(retainTransactionFailure func(iotago.SlotIdentifier, error)) {
+func (l *Ledger) setRetainTransactionFailureFunc(retainTransactionFailure func(iotago.BlockID, error)) {
 	l.retainTransactionFailure = retainTransactionFailure
 }
 
@@ -123,9 +122,9 @@ func (l *Ledger) OnTransactionAttached(handler func(transaction mempool.Transact
 	l.memPool.OnTransactionAttached(handler, opts...)
 }
 
-func (l *Ledger) AttachTransaction(block *blocks.Block) (transactionMetadata mempool.TransactionMetadata, containsTransaction bool) {
-	if transaction, hasTransaction := block.Transaction(); hasTransaction {
-		transactionMetadata, err := l.memPool.AttachTransaction(transaction, block.ID())
+func (l *Ledger) AttachTransaction(block *blocks.Block) (attachedTransaction mempool.SignedTransactionMetadata, containsTransaction bool) {
+	if signedTransaction, hasTransaction := block.SignedTransaction(); hasTransaction {
+		signedTransactionMetadata, err := l.memPool.AttachSignedTransaction(signedTransaction, signedTransaction.Transaction, block.ID())
 		if err != nil {
 			l.retainTransactionFailure(block.ID(), err)
 			l.errorHandler(err)
@@ -133,30 +132,33 @@ func (l *Ledger) AttachTransaction(block *blocks.Block) (transactionMetadata mem
 			return nil, true
 		}
 
-		return transactionMetadata, true
+		return signedTransactionMetadata, true
 	}
 
 	return nil, false
 }
 
-func (l *Ledger) CommitSlot(index iotago.SlotIndex) (stateRoot iotago.Identifier, mutationRoot iotago.Identifier, accountRoot iotago.Identifier, err error) {
-	ledgerIndex, err := l.utxoLedger.ReadLedgerIndex()
+func (l *Ledger) CommitSlot(slot iotago.SlotIndex) (stateRoot iotago.Identifier, mutationRoot iotago.Identifier, accountRoot iotago.Identifier, err error) {
+	ledgerIndex, err := l.utxoLedger.ReadLedgerSlot()
 	if err != nil {
 		return iotago.Identifier{}, iotago.Identifier{}, iotago.Identifier{}, err
 	}
 
-	if index != ledgerIndex+1 {
-		panic(ierrors.Errorf("there is a gap in the ledgerstate %d vs %d", ledgerIndex+1, index))
+	if slot != ledgerIndex+1 {
+		panic(ierrors.Errorf("there is a gap in the ledgerstate %d vs %d", ledgerIndex+1, slot))
 	}
 
-	stateDiff := l.memPool.StateDiff(index)
+	stateDiff, err := l.memPool.StateDiff(slot)
+	if err != nil {
+		return iotago.Identifier{}, iotago.Identifier{}, iotago.Identifier{}, ierrors.Errorf("failed to retrieve state diff for slot %d: %w", slot, err)
+	}
 
 	// collect outputs and allotments from the "uncompacted" stateDiff
 	// outputs need to be processed in the "uncompacted" version of the state diff, as we need to be able to store
 	// and retrieve intermediate outputs to show to the user
 	spends, outputs, accountDiffs, err := l.processStateDiffTransactions(stateDiff)
 	if err != nil {
-		return iotago.Identifier{}, iotago.Identifier{}, iotago.Identifier{}, ierrors.Errorf("failed to process state diff transactions in slot %d: %w", index, err)
+		return iotago.Identifier{}, iotago.Identifier{}, iotago.Identifier{}, ierrors.Errorf("failed to process state diff transactions in slot %d: %w", slot, err)
 	}
 
 	// Now we process the collected account changes, for that we consume the "compacted" state diff to get the overall
@@ -165,30 +167,35 @@ func (l *Ledger) CommitSlot(index iotago.SlotIndex) (stateRoot iotago.Identifier
 	// output side
 	createdAccounts, consumedAccounts, destroyedAccounts, err := l.processCreatedAndConsumedAccountOutputs(stateDiff, accountDiffs)
 	if err != nil {
-		return iotago.Identifier{}, iotago.Identifier{}, iotago.Identifier{}, ierrors.Errorf("failed to process outputs consumed and created in slot %d: %w", index, err)
+		return iotago.Identifier{}, iotago.Identifier{}, iotago.Identifier{}, ierrors.Errorf("failed to process outputs consumed and created in slot %d: %w", slot, err)
 	}
 
-	l.prepareAccountDiffs(accountDiffs, index, consumedAccounts, createdAccounts)
+	l.prepareAccountDiffs(accountDiffs, slot, consumedAccounts, createdAccounts)
 
 	// Commit the changes
-	// Update the mana manager's cache
-	l.manaManager.ApplyDiff(index, destroyedAccounts, createdAccounts)
-
 	// Update the UTXO ledger
-	if err = l.utxoLedger.ApplyDiff(index, outputs, spends); err != nil {
-		return iotago.Identifier{}, iotago.Identifier{}, iotago.Identifier{}, ierrors.Errorf("failed to apply diff to UTXO ledger for index %d: %w", index, err)
+	if err = l.utxoLedger.ApplyDiff(slot, outputs, spends); err != nil {
+		return iotago.Identifier{}, iotago.Identifier{}, iotago.Identifier{}, ierrors.Errorf("failed to apply diff to UTXO ledger for slot %d: %w", slot, err)
 	}
 
 	// Update the Accounts ledger
 	// first, get the RMC corresponding to this slot
-	maxCommittableAge := l.apiProvider.APIForSlot(index).ProtocolParameters().MaxCommittableAge()
-	rmcIndex, _ := safemath.SafeSub(index, maxCommittableAge)
-	rmcForSlot, err := l.rmcManager.RMC(rmcIndex)
-	if err != nil {
-		return iotago.Identifier{}, iotago.Identifier{}, iotago.Identifier{}, ierrors.Errorf("failed to get RMC for index %d: %w", index, err)
+	protocolParams := l.apiProvider.APIForSlot(slot).ProtocolParameters()
+	rmcSlot, _ := safemath.SafeSub(slot, protocolParams.MaxCommittableAge()) // We can safely ignore the underflow error and use the default 0 return value
+	if rmcSlot < protocolParams.GenesisSlot() {
+		rmcSlot = protocolParams.GenesisSlot()
 	}
-	if err = l.accountsLedger.ApplyDiff(index, rmcForSlot, accountDiffs, destroyedAccounts); err != nil {
-		return iotago.Identifier{}, iotago.Identifier{}, iotago.Identifier{}, ierrors.Errorf("failed to apply diff to Accounts ledger for index %d: %w", index, err)
+	rmcForSlot, err := l.rmcManager.RMC(rmcSlot)
+	if err != nil {
+		return iotago.Identifier{}, iotago.Identifier{}, iotago.Identifier{}, ierrors.Errorf("ledger failed to get RMC for slot %d: %w", rmcSlot, err)
+	}
+	if err = l.accountsLedger.ApplyDiff(slot, rmcForSlot, accountDiffs, destroyedAccounts); err != nil {
+		return iotago.Identifier{}, iotago.Identifier{}, iotago.Identifier{}, ierrors.Errorf("failed to apply diff to Accounts ledger for slot %d: %w", slot, err)
+	}
+
+	// Update the mana manager's cache
+	if err = l.manaManager.ApplyDiff(slot, destroyedAccounts, createdAccounts, accountDiffs); err != nil {
+		return iotago.Identifier{}, iotago.Identifier{}, iotago.Identifier{}, ierrors.Errorf("failed to apply diff to mana manager for slot %d: %w", slot, err)
 	}
 
 	// Mark each transaction as committed so the mempool can evict it
@@ -197,9 +204,9 @@ func (l *Ledger) CommitSlot(index iotago.SlotIndex) (stateRoot iotago.Identifier
 		return true
 	})
 
-	l.events.StateDiffApplied.Trigger(index, outputs, spends)
+	l.events.StateDiffApplied.Trigger(slot, outputs, spends)
 
-	return l.utxoLedger.StateTreeRoot(), iotago.Identifier(stateDiff.Mutations().Root()), l.accountsLedger.AccountsTreeRoot(), nil
+	return l.utxoLedger.StateTreeRoot(), stateDiff.Mutations().Root(), l.accountsLedger.AccountsTreeRoot(), nil
 }
 
 func (l *Ledger) AddAccount(output *utxoledger.Output, blockIssuanceCredits iotago.BlockIssuanceCredits) error {
@@ -213,7 +220,7 @@ func (l *Ledger) AddGenesisUnspentOutput(unspentOutput *utxoledger.Output) error
 func (l *Ledger) TrackBlock(block *blocks.Block) {
 	l.accountsLedger.TrackBlock(block)
 
-	if _, hasTransaction := block.Transaction(); hasTransaction {
+	if _, hasTransaction := block.SignedTransaction(); hasTransaction {
 		l.memPool.MarkAttachmentIncluded(block.ID())
 	}
 
@@ -230,78 +237,68 @@ func (l *Ledger) PastAccounts(accountIDs iotago.AccountIDs, targetIndex iotago.S
 	return l.accountsLedger.PastAccounts(accountIDs, targetIndex)
 }
 
-func (l *Ledger) Output(outputID iotago.OutputID) (*utxoledger.Output, error) {
-	stateWithMetadata, err := l.memPool.OutputStateMetadata(outputID.UTXOInput())
-	if err != nil {
-		return nil, err
-	}
-
-	switch castState := stateWithMetadata.State().(type) {
+func (l *Ledger) outputFromState(state mempool.State) *utxoledger.Output {
+	switch output := state.(type) {
 	case *utxoledger.Output:
-		return castState, nil
-	case *ExecutionOutput:
-		txWithMetadata, exists := l.memPool.TransactionMetadata(outputID.TransactionID())
-		// If the transaction is not in the mempool, we need to load the output from the ledger
-		if !exists {
-			var output *utxoledger.Output
-			stateRequest := l.resolveState(outputID.UTXOInput())
-			stateRequest.OnSuccess(func(loadedState mempool.State) {
-				concreteOutput, ok := loadedState.(*utxoledger.Output)
-				if !ok {
-					err = iotago.ErrUnknownOutputType
-					return
-				}
-				output = concreteOutput
-			})
-			stateRequest.OnError(func(requestErr error) { err = ierrors.Errorf("failed to request state: %w", requestErr) })
-			stateRequest.WaitComplete()
+		// If this output was not booked yet, then it came directly from the mempool, so we need to set the earliest attachment and the booking slot
+		if output.SlotBooked() == 0 {
+			txWithMetadata, exists := l.memPool.TransactionMetadata(output.OutputID().TransactionID())
+			if exists {
+				earliestAttachment := txWithMetadata.EarliestIncludedAttachment()
 
-			return output, nil
+				return output.CopyWithBlockIDAndSlotBooked(earliestAttachment, earliestAttachment.Slot())
+			}
 		}
 
-		earliestAttachment := txWithMetadata.EarliestIncludedAttachment()
-
-		tx, ok := txWithMetadata.Transaction().(*iotago.Transaction)
-		if !ok {
-			return nil, iotago.ErrTxTypeInvalid
-		}
-
-		return utxoledger.CreateOutput(l.apiProvider, stateWithMetadata.State().OutputID(), earliestAttachment, earliestAttachment.Index(), tx.Essence.CreationSlot, stateWithMetadata.State().Output()), nil
+		return output
 	default:
 		panic("unexpected State type")
 	}
 }
 
-func (l *Ledger) OutputOrSpent(outputID iotago.OutputID) (*utxoledger.Output, *utxoledger.Spent, error) {
-	l.utxoLedger.ReadLockLedger()
+func (l *Ledger) Output(outputID iotago.OutputID) (*utxoledger.Output, error) {
+	//nolint:revive //false positive
+	if output, spent, err := l.OutputOrSpent(outputID); err != nil {
+		return nil, err
+	} else if spent != nil {
+		return spent.Output(), nil
+	} else {
+		return output, nil
+	}
+}
 
-	unspent, err := l.utxoLedger.IsOutputIDUnspentWithoutLocking(outputID)
+func (l *Ledger) OutputOrSpent(outputID iotago.OutputID) (*utxoledger.Output, *utxoledger.Spent, error) {
+	stateWithMetadata, err := l.memPool.StateMetadata(outputID.UTXOInput())
 	if err != nil {
-		l.utxoLedger.ReadUnlockLedger()
+		if ierrors.Is(iotago.ErrInputAlreadySpent, err) {
+			l.utxoLedger.ReadLockLedger()
+			defer l.utxoLedger.ReadUnlockLedger()
+
+			spent, err := l.utxoLedger.ReadSpentForOutputIDWithoutLocking(outputID)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			return nil, spent, err
+		}
+
 		return nil, nil, err
 	}
 
-	if !unspent {
-		spent, err := l.utxoLedger.ReadSpentForOutputIDWithoutLocking(outputID)
-		l.utxoLedger.ReadUnlockLedger()
-
-		return nil, spent, err
+	spender, spent := stateWithMetadata.AcceptedSpender()
+	if spent {
+		return nil, utxoledger.NewSpent(l.outputFromState(stateWithMetadata.State()), spender.ID(), spender.ID().Slot()), nil
 	}
 
-	l.utxoLedger.ReadUnlockLedger()
-
-	// l.Output might read-lock the ledger again if the mem-pool needs to resolve the output, so we cannot be in a locked state
-	output, err := l.Output(outputID)
-
-	return output, nil, err
+	return l.outputFromState(stateWithMetadata.State()), nil, nil
 }
 
 func (l *Ledger) ForEachUnspentOutput(consumer func(output *utxoledger.Output) bool) error {
 	return l.utxoLedger.ForEachUnspentOutput(consumer)
 }
 
-func (l *Ledger) SlotDiffs(index iotago.SlotIndex) (*utxoledger.SlotDiff, error) {
-	return l.utxoLedger.SlotDiffWithoutLocking(index)
+func (l *Ledger) SlotDiffs(slot iotago.SlotIndex) (*utxoledger.SlotDiff, error) {
+	return l.utxoLedger.SlotDiffWithoutLocking(slot)
 }
 
 func (l *Ledger) TransactionMetadata(transactionID iotago.TransactionID) (mempool.TransactionMetadata, bool) {
@@ -312,7 +309,7 @@ func (l *Ledger) TransactionMetadataByAttachment(blockID iotago.BlockID) (mempoo
 	return l.memPool.TransactionMetadataByAttachment(blockID)
 }
 
-func (l *Ledger) ConflictDAG() conflictdag.ConflictDAG[iotago.TransactionID, iotago.OutputID, ledger.BlockVoteRank] {
+func (l *Ledger) ConflictDAG() conflictdag.ConflictDAG[iotago.TransactionID, mempool.StateID, ledger.BlockVoteRank] {
 	return l.conflictDAG
 }
 
@@ -365,18 +362,18 @@ func (l *Ledger) Shutdown() {
 // 2. The account was consumed and created in the same slot, the account was transitioned, and we have to store the
 // changes in the diff.
 // 3. The account was only created in this slot, in this case we need to track the output's values as the diff.
-func (l *Ledger) prepareAccountDiffs(accountDiffs map[iotago.AccountID]*model.AccountDiff, index iotago.SlotIndex, consumedAccounts map[iotago.AccountID]*utxoledger.Output, createdAccounts map[iotago.AccountID]*utxoledger.Output) {
+func (l *Ledger) prepareAccountDiffs(accountDiffs map[iotago.AccountID]*model.AccountDiff, slot iotago.SlotIndex, consumedAccounts map[iotago.AccountID]*utxoledger.Output, createdAccounts map[iotago.AccountID]*utxoledger.Output) {
 	for consumedAccountID, consumedOutput := range consumedAccounts {
 		// We might have had an allotment on this account, and the diff already exists
 		accountDiff := getAccountDiff(accountDiffs, consumedAccountID)
 
-		// Obtain account state at the current latest committed slot, which is index-1
-		accountData, exists, err := l.accountsLedger.Account(consumedAccountID, index-1)
+		// Obtain account state at the current latest committed slot, which is slot-1
+		accountData, exists, err := l.accountsLedger.Account(consumedAccountID, slot-1)
 		if err != nil {
-			panic(ierrors.Errorf("error loading account %s in slot %d: %w", consumedAccountID, index-1, err))
+			panic(ierrors.Errorf("error loading account %s in slot %d: %w", consumedAccountID, slot-1, err))
 		}
 		if !exists {
-			panic(ierrors.Errorf("could not find destroyed account %s in slot %d", consumedAccountID, index-1))
+			panic(ierrors.Errorf("could not find destroyed account %s in slot %d", consumedAccountID, slot-1))
 		}
 
 		// case 1. the account was destroyed, the diff will be created inside accountLedger on account deletion
@@ -388,27 +385,42 @@ func (l *Ledger) prepareAccountDiffs(accountDiffs map[iotago.AccountID]*model.Ac
 			// case 1.
 			continue
 		}
-		accountDiff.NewOutputID = createdOutput.OutputID()
-		accountDiff.PreviousOutputID = consumedOutput.OutputID()
 
+		// case 2.
+		// created output can never be an implicit account as these can not be transitioned, but consumed output can be.
+		switch consumedOutput.Output().Type() {
+		case iotago.OutputAccount:
+			accountDiff.PreviousExpirySlot = consumedOutput.Output().FeatureSet().BlockIssuer().ExpirySlot
+		case iotago.OutputBasic:
+			accountDiff.PreviousExpirySlot = iotago.MaxSlotIndex
+		}
+
+		accountDiff.PreviousOutputID = consumedOutput.OutputID()
+		accountDiff.NewOutputID = createdOutput.OutputID()
 		accountDiff.NewExpirySlot = createdOutput.Output().FeatureSet().BlockIssuer().ExpirySlot
-		accountDiff.PreviousExpirySlot = consumedOutput.Output().FeatureSet().BlockIssuer().ExpirySlot
 
 		oldPubKeysSet := accountData.BlockIssuerKeys
-		newPubKeysSet := ds.NewSet[iotago.BlockIssuerKey]()
-		for _, pubKey := range createdOutput.Output().FeatureSet().BlockIssuer().BlockIssuerKeys {
-			newPubKeysSet.Add(pubKey)
+		newPubKeysSet := iotago.NewBlockIssuerKeys()
+		for _, blockIssuerKey := range createdOutput.Output().FeatureSet().BlockIssuer().BlockIssuerKeys {
+			k := blockIssuerKey
+			newPubKeysSet.Add(k)
 		}
 
 		// Add public keys that are not in the old set
-		accountDiff.BlockIssuerKeysAdded = newPubKeysSet.Filter(func(key iotago.BlockIssuerKey) bool {
-			return !oldPubKeysSet.Has(key)
-		}).ToSlice()
+		accountDiff.BlockIssuerKeysAdded = iotago.NewBlockIssuerKeys()
+		for _, newKey := range newPubKeysSet {
+			if !oldPubKeysSet.Has(newKey) {
+				accountDiff.BlockIssuerKeysAdded.Add(newKey)
+			}
+		}
 
 		// Remove the keys that are not in the new set
-		accountDiff.BlockIssuerKeysRemoved = oldPubKeysSet.Filter(func(key iotago.BlockIssuerKey) bool {
-			return !newPubKeysSet.Has(key)
-		}).ToSlice()
+		accountDiff.BlockIssuerKeysRemoved = iotago.NewBlockIssuerKeys()
+		for _, oldKey := range oldPubKeysSet {
+			if !newPubKeysSet.Has(oldKey) {
+				accountDiff.BlockIssuerKeysRemoved.Add(oldKey)
+			}
+		}
 
 		if stakingFeature := createdOutput.Output().FeatureSet().Staking(); stakingFeature != nil {
 			// staking feature is created or updated - create the diff between the account data and new account
@@ -437,14 +449,24 @@ func (l *Ledger) prepareAccountDiffs(accountDiffs map[iotago.AccountID]*model.Ac
 		// have some values from the allotment, so no need to set them explicitly.
 		accountDiff.NewOutputID = createdOutput.OutputID()
 		accountDiff.PreviousOutputID = iotago.EmptyOutputID
-		accountDiff.NewExpirySlot = createdOutput.Output().FeatureSet().BlockIssuer().ExpirySlot
 		accountDiff.PreviousExpirySlot = 0
-		accountDiff.BlockIssuerKeysAdded = createdOutput.Output().FeatureSet().BlockIssuer().BlockIssuerKeys
 
-		if stakingFeature := createdOutput.Output().FeatureSet().Staking(); stakingFeature != nil {
-			accountDiff.ValidatorStakeChange = int64(stakingFeature.StakedAmount)
-			accountDiff.StakeEndEpochChange = int64(stakingFeature.EndEpoch)
-			accountDiff.FixedCostChange = int64(stakingFeature.FixedCost)
+		switch createdOutput.Output().Type() {
+		// for account outputs, get block issuer keys from the block issuer feature, and check for staking info.
+		case iotago.OutputAccount:
+			accountDiff.BlockIssuerKeysAdded = createdOutput.Output().FeatureSet().BlockIssuer().BlockIssuerKeys
+			accountDiff.NewExpirySlot = createdOutput.Output().FeatureSet().BlockIssuer().ExpirySlot
+			if stakingFeature := createdOutput.Output().FeatureSet().Staking(); stakingFeature != nil {
+				accountDiff.ValidatorStakeChange = int64(stakingFeature.StakedAmount)
+				accountDiff.StakeEndEpochChange = int64(stakingFeature.EndEpoch)
+				accountDiff.FixedCostChange = int64(stakingFeature.FixedCost)
+			}
+		// for basic outputs (implicit accounts), get block issuer keys from the address in the unlock conditions.
+		case iotago.OutputBasic:
+			// If the Output is a Basic Output it can only be here if the address is an ImplicitAccountCreationAddress.
+			address, _ := createdOutput.Output().UnlockConditionSet().Address().Address.(*iotago.ImplicitAccountCreationAddress)
+			accountDiff.BlockIssuerKeysAdded = iotago.NewBlockIssuerKeys(iotago.Ed25519PublicKeyHashBlockIssuerKeyFromImplicitAccountCreationAddress(address))
+			accountDiff.NewExpirySlot = iotago.MaxSlotIndex
 		}
 	}
 }
@@ -454,12 +476,12 @@ func (l *Ledger) processCreatedAndConsumedAccountOutputs(stateDiff mempool.State
 	consumedAccounts = make(map[iotago.AccountID]*utxoledger.Output)
 	destroyedAccounts = ds.NewSet[iotago.AccountID]()
 
-	createdAccountDelegation := make(map[iotago.ChainID]*iotago.DelegationOutput)
+	newAccountDelegation := make(map[iotago.ChainID]*iotago.DelegationOutput)
 
-	stateDiff.CreatedStates().ForEachKey(func(outputID iotago.OutputID) bool {
-		createdOutput, errOutput := l.Output(outputID)
-		if errOutput != nil {
-			err = ierrors.Errorf("failed to retrieve output %s: %w", outputID, errOutput)
+	stateDiff.CreatedStates().ForEach(func(_ mempool.StateID, output mempool.StateMetadata) bool {
+		createdOutput, ok := output.State().(*utxoledger.Output)
+		if !ok {
+			err = ierrors.Errorf("unexpected state type %T while processing created states", output.State())
 			return false
 		}
 
@@ -475,16 +497,30 @@ func (l *Ledger) processCreatedAndConsumedAccountOutputs(stateDiff mempool.State
 
 			accountID := createdAccount.AccountID
 			if accountID.Empty() {
-				accountID = iotago.AccountIDFromOutputID(outputID)
+				accountID = iotago.AccountIDFromOutputID(createdOutput.OutputID())
 				l.events.AccountCreated.Trigger(accountID)
 			}
 
 			createdAccounts[accountID] = createdOutput
-
 		case iotago.OutputDelegation:
-			// the delegation output was created => determine later if we need to add the stake to the validator
-			delegation, _ := createdOutput.Output().(*iotago.DelegationOutput)
-			createdAccountDelegation[delegation.DelegationID] = delegation
+			// The DelegationOutput was created or transitioned => determine later if we need to add the stake to the validator.
+			delegationOutput, _ := createdOutput.Output().(*iotago.DelegationOutput)
+			delegationID := delegationOutput.DelegationID
+			// Check if the output was newly created or if it was transitioned to delayed claiming.
+			// Zeroed Delegation ID => newly created.
+			// Non-Zero Delegation ID => delayed claiming transition.
+			if delegationID == iotago.EmptyDelegationID() {
+				delegationID = iotago.DelegationIDFromOutputID(createdOutput.OutputID())
+				newAccountDelegation[delegationID] = delegationOutput
+			}
+
+		case iotago.OutputBasic:
+			// if a basic output is sent to an implicit account creation address, we need to create the account
+			if createdOutput.Output().UnlockConditionSet().Address().Address.Type() == iotago.AddressImplicitAccountCreation {
+				accountID := iotago.AccountIDFromOutputID(createdOutput.OutputID())
+				l.events.AccountCreated.Trigger(accountID)
+				createdAccounts[accountID] = createdOutput
+			}
 		}
 
 		return true
@@ -495,17 +531,17 @@ func (l *Ledger) processCreatedAndConsumedAccountOutputs(stateDiff mempool.State
 	}
 
 	// input side
-	stateDiff.DestroyedStates().ForEachKey(func(outputID iotago.OutputID) bool {
-		spentOutput, errOutput := l.Output(outputID)
-		if errOutput != nil {
-			err = ierrors.Errorf("failed to retrieve output %s: %w", outputID, errOutput)
+	stateDiff.DestroyedStates().ForEach(func(_ mempool.StateID, stateMetadata mempool.StateMetadata) bool {
+		spentOutput, ok := stateMetadata.State().(*utxoledger.Output)
+		if !ok {
+			err = ierrors.Errorf("unexpected state type %T while processing destroyed states", stateMetadata.State())
 			return false
 		}
 
 		switch spentOutput.OutputType() {
 		case iotago.OutputAccount:
 			consumedAccount, _ := spentOutput.Output().(*iotago.AccountOutput)
-			// if we transition / destroy an account that doesn't have a block issuer feature or staking, we don't need to track the changes.
+			// if we transition / destroy an account output that doesn't have a block issuer feature or staking, we don't need to track the changes.
 			if consumedAccount.FeatureSet().BlockIssuer() == nil && consumedAccount.FeatureSet().Staking() == nil {
 				return true
 			}
@@ -518,24 +554,37 @@ func (l *Ledger) processCreatedAndConsumedAccountOutputs(stateDiff mempool.State
 
 		case iotago.OutputDelegation:
 			delegationOutput, _ := spentOutput.Output().(*iotago.DelegationOutput)
+			delegationID := delegationOutput.DelegationID
+			if delegationID == iotago.EmptyDelegationID() {
+				delegationID = iotago.DelegationIDFromOutputID(spentOutput.OutputID())
+			}
 
 			// TODO: do we have a testcase that checks transitioning a delegation output twice in the same slot?
-			if _, createdDelegationExists := createdAccountDelegation[delegationOutput.DelegationID]; createdDelegationExists {
+			if _, createdDelegationExists := newAccountDelegation[delegationID]; createdDelegationExists {
 				// the delegation output was created and destroyed in the same slot => do not track the delegation as newly created
-				delete(createdAccountDelegation, delegationOutput.DelegationID)
-			} else {
-				// the delegation output was destroyed => subtract the stake from the validator account
-				accountDiff := getAccountDiff(accountDiffs, delegationOutput.ValidatorID)
+				delete(newAccountDelegation, delegationID)
+			} else if delegationOutput.DelegationID.Empty() {
+				// The Delegation Output was destroyed or transitioned to delayed claiming => subtract the stake from the validator account.
+				// We check for a non-zero Delegation ID so we don't remove the stake twice when the output was destroyed
+				// in delayed claiming, since we already subtract it when the output is transitioned.
+				accountDiff := getAccountDiff(accountDiffs, delegationOutput.ValidatorAddress.AccountID())
 				accountDiff.DelegationStakeChange -= int64(delegationOutput.DelegatedAmount)
+			}
+
+		case iotago.OutputBasic:
+			// if a basic output (implicit account) is consumed, get the accountID as hash of the output ID.
+			if spentOutput.Output().UnlockConditionSet().Address().Address.Type() == iotago.AddressImplicitAccountCreation {
+				accountID := iotago.AccountIDFromOutputID(spentOutput.OutputID())
+				consumedAccounts[accountID] = spentOutput
 			}
 		}
 
 		return true
 	})
 
-	for _, delegationOutput := range createdAccountDelegation {
+	for _, delegationOutput := range newAccountDelegation {
 		// the delegation output was newly created and not transitioned/destroyed => add the stake to the validator account
-		accountDiff := getAccountDiff(accountDiffs, delegationOutput.ValidatorID)
+		accountDiff := getAccountDiff(accountDiffs, delegationOutput.ValidatorAddress.AccountID())
 		accountDiff.DelegationStakeChange += int64(delegationOutput.DelegatedAmount)
 	}
 
@@ -546,7 +595,7 @@ func (l *Ledger) processCreatedAndConsumedAccountOutputs(stateDiff mempool.State
 	return createdAccounts, consumedAccounts, destroyedAccounts, nil
 }
 
-func (l *Ledger) processStateDiffTransactions(stateDiff mempool.StateDiff) (spends utxoledger.Spents, outputs utxoledger.Outputs, accountDiffs map[iotago.AccountID]*model.AccountDiff, err error) {
+func (l *Ledger) processStateDiffTransactions(stateDiff mempool.StateDiff) (spents utxoledger.Spents, outputs utxoledger.Outputs, accountDiffs map[iotago.AccountID]*model.AccountDiff, err error) {
 	accountDiffs = make(map[iotago.AccountID]*model.AccountDiff)
 
 	stateDiff.ExecutedTransactions().ForEach(func(txID iotago.TransactionID, txWithMeta mempool.TransactionMetadata) bool {
@@ -555,7 +604,6 @@ func (l *Ledger) processStateDiffTransactions(stateDiff mempool.StateDiff) (spen
 			err = iotago.ErrTxTypeInvalid
 			return false
 		}
-		txCreationSlot := tx.Essence.CreationSlot
 
 		inputRefs, errInput := tx.Inputs()
 		if errInput != nil {
@@ -567,33 +615,42 @@ func (l *Ledger) processStateDiffTransactions(stateDiff mempool.StateDiff) (spen
 		{
 			// input side
 			for _, inputRef := range inputRefs {
-				inputState, outputErr := l.Output(inputRef.OutputID())
-				if outputErr != nil {
+				stateWithMetadata, stateError := l.memPool.StateMetadata(inputRef)
+				if stateError != nil {
 					err = ierrors.Errorf("failed to retrieve outputs of %s: %w", txID, errInput)
 					return false
 				}
-
-				spend := utxoledger.NewSpent(inputState, txWithMeta.ID(), stateDiff.Index())
-				spends = append(spends, spend)
+				spent := utxoledger.NewSpent(l.outputFromState(stateWithMetadata.State()), txWithMeta.ID(), stateDiff.Slot())
+				spents = append(spents, spent)
 			}
 
 			// output side
-			txWithMeta.Outputs().Range(func(stateMetadata mempool.OutputStateMetadata) {
-				output := utxoledger.CreateOutput(l.apiProvider, stateMetadata.State().OutputID(), txWithMeta.EarliestIncludedAttachment(), stateDiff.Index(), txCreationSlot, stateMetadata.State().Output())
+			if err = txWithMeta.Outputs().ForEach(func(stateMetadata mempool.StateMetadata) error {
+				typedOutput, ok := stateMetadata.State().(*utxoledger.Output)
+				if !ok {
+					err = ierrors.Errorf("unexpected state type %T while processing state diff transactions", stateMetadata.State())
+					return err
+				}
+
+				output := typedOutput.CopyWithBlockIDAndSlotBooked(txWithMeta.EarliestIncludedAttachment(), stateDiff.Slot())
 				outputs = append(outputs, output)
-			})
+
+				return nil
+			}); err != nil {
+				return false
+			}
 		}
 
 		// process allotments
 		{
-			for _, allotment := range tx.Essence.Allotments {
+			for _, allotment := range tx.Allotments {
 				// in case it didn't exist, allotments won't change the outputID of the Account,
 				// so the diff defaults to empty new and previous outputIDs
 				accountDiff := getAccountDiff(accountDiffs, allotment.AccountID)
 
-				accountData, exists, accountErr := l.accountsLedger.Account(allotment.AccountID, stateDiff.Index()-1)
+				accountData, exists, accountErr := l.accountsLedger.Account(allotment.AccountID, stateDiff.Slot()-1)
 				if accountErr != nil {
-					panic(ierrors.Errorf("error loading account %s in slot %d: %w", allotment.AccountID, stateDiff.Index()-1, accountErr))
+					panic(ierrors.Errorf("error loading account %s in slot %d: %w", allotment.AccountID, stateDiff.Slot()-1, accountErr))
 				}
 				// if the account does not exist in our AccountsLedger it means it doesn't have a BIC feature, so
 				// we burn this allotment.
@@ -601,8 +658,8 @@ func (l *Ledger) processStateDiffTransactions(stateDiff mempool.StateDiff) (spen
 					continue
 				}
 
-				accountDiff.BICChange += iotago.BlockIssuanceCredits(allotment.Value)
-				accountDiff.PreviousUpdatedTime = accountData.Credits.UpdateTime
+				accountDiff.BICChange += iotago.BlockIssuanceCredits(allotment.Mana)
+				accountDiff.PreviousUpdatedSlot = accountData.Credits.UpdateSlot
 
 				// we are not transitioning the allotted account, so the new and previous expiry slots are the same
 				accountDiff.PreviousExpirySlot = accountData.ExpirySlot
@@ -617,16 +674,16 @@ func (l *Ledger) processStateDiffTransactions(stateDiff mempool.StateDiff) (spen
 		return true
 	})
 
-	return spends, outputs, accountDiffs, nil
+	return spents, outputs, accountDiffs, nil
 }
 
-func (l *Ledger) resolveAccountOutput(accountID iotago.AccountID, slotIndex iotago.SlotIndex) (*utxoledger.Output, error) {
-	accountMetadata, exists, err := l.accountsLedger.Account(accountID, slotIndex)
+func (l *Ledger) resolveAccountOutput(accountID iotago.AccountID, slot iotago.SlotIndex) (*utxoledger.Output, error) {
+	accountMetadata, exists, err := l.accountsLedger.Account(accountID, slot)
 	if err != nil {
-		return nil, ierrors.Errorf("could not get account information for account %s in slot %d: %w", accountID, slotIndex, err)
+		return nil, ierrors.Errorf("could not get account information for account %s in slot %d: %w", accountID, slot, err)
 	}
 	if !exists {
-		return nil, ierrors.Errorf("account %s does not exist in slot %d: %w", accountID, slotIndex, mempool.ErrStateNotFound)
+		return nil, ierrors.Errorf("account %s does not exist in slot %d: %w", accountID, slot, mempool.ErrStateNotFound)
 	}
 
 	l.utxoLedger.ReadLockLedger()
@@ -648,7 +705,7 @@ func (l *Ledger) resolveAccountOutput(accountID iotago.AccountID, slotIndex iota
 	return accountOutput, nil
 }
 
-func (l *Ledger) resolveState(stateRef iotago.Input) *promise.Promise[mempool.State] {
+func (l *Ledger) resolveState(stateRef mempool.StateReference) *promise.Promise[mempool.State] {
 	p := promise.New[mempool.State]()
 
 	l.utxoLedger.ReadLockLedger()
@@ -684,17 +741,22 @@ func (l *Ledger) resolveState(stateRef iotago.Input) *promise.Promise[mempool.St
 
 		return p.Resolve(loadedCommitment)
 	case iotago.InputBlockIssuanceCredit, iotago.InputReward:
-		// these are always resolved as they depend on the commitment or UTXO inputs
-		return p.Resolve(stateRef)
+		//nolint:forcetypeassert
+		return p.Resolve(stateRef.(mempool.State))
 	default:
 		return p.Reject(ierrors.Errorf("unsupported input type %s", stateRef.Type()))
 	}
 }
 
 func (l *Ledger) blockPreAccepted(block *blocks.Block) {
-	voteRank := ledger.NewBlockVoteRank(block.ID(), block.ProtocolBlock().IssuingTime)
+	voteRank := ledger.NewBlockVoteRank(block.ID(), block.ProtocolBlock().Header.IssuingTime)
 
-	seat, exists := l.sybilProtection.SeatManager().Committee(block.ID().Index()).GetSeat(block.ProtocolBlock().IssuerID)
+	committee, exists := l.sybilProtection.SeatManager().CommitteeInSlot(block.ID().Slot())
+	if !exists {
+		panic("committee should exist because we pre-accepted the block")
+	}
+
+	seat, exists := committee.GetSeat(block.ProtocolBlock().Header.IssuerID)
 	if !exists {
 		return
 	}
@@ -705,13 +767,13 @@ func (l *Ledger) blockPreAccepted(block *blocks.Block) {
 }
 
 func (l *Ledger) loadCommitment(inputCommitmentID iotago.CommitmentID) (*iotago.Commitment, error) {
-	c, err := l.commitmentLoader(inputCommitmentID.Index())
+	c, err := l.commitmentLoader(inputCommitmentID.Slot())
 	if err != nil {
 		return nil, ierrors.Wrap(err, "could not get commitment inputs")
 	}
 	// The commitment with the specified ID was not found at that index: we are on a different chain.
 	if c == nil {
-		return nil, ierrors.Errorf("commitment with ID %s not found at index %d: engine on different chain", inputCommitmentID, inputCommitmentID.Index())
+		return nil, ierrors.Errorf("commitment with ID %s not found at index %d: engine on different chain", inputCommitmentID, inputCommitmentID.Slot())
 	}
 	storedCommitmentID, err := c.Commitment().ID()
 	if err != nil {

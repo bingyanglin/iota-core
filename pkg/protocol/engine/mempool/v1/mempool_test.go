@@ -9,6 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/iotaledger/hive.go/ds/shrinkingmap"
+	"github.com/iotaledger/hive.go/kvstore"
+	"github.com/iotaledger/hive.go/kvstore/mapdb"
 	"github.com/iotaledger/hive.go/runtime/memanalyzer"
 	"github.com/iotaledger/hive.go/runtime/workerpool"
 	"github.com/iotaledger/iota-core/pkg/core/account"
@@ -34,22 +36,27 @@ func TestMemPoolV1_InterfaceWithForkingEverything(t *testing.T) {
 func TestMempoolV1_ResourceCleanup(t *testing.T) {
 	workers := workerpool.NewGroup(t.Name())
 
-	ledgerState := ledgertests.New(ledgertests.NewMockedState(iotago.TransactionID{}, 0))
-	conflictDAG := conflictdagv1.New[iotago.TransactionID, iotago.OutputID, vote.MockedRank](func() int { return 0 })
-	mempoolInstance := New[vote.MockedRank](mempooltests.VM, func(reference iotago.Input) *promise.Promise[mempool.State] {
-		return ledgerState.ResolveOutputState(reference.(*iotago.UTXOInput).OutputID())
-	}, workers, conflictDAG, api.SingleVersionProvider(tpkg.TestAPI), func(error) {})
+	mutationsFunc := func(index iotago.SlotIndex) (kvstore.KVStore, error) {
+		return mapdb.NewMapDB(), nil
+	}
 
-	tf := mempooltests.NewTestFramework(t, mempoolInstance, conflictDAG, ledgerState, workers)
+	ledgerState := ledgertests.New(ledgertests.NewMockedState(iotago.EmptyTransactionID, 0))
+	conflictDAG := conflictdagv1.New[iotago.TransactionID, mempool.StateID, vote.MockedRank](func() int { return 0 })
+	memPoolInstance := New[vote.MockedRank](new(mempooltests.VM), func(reference mempool.StateReference) *promise.Promise[mempool.State] {
+		return ledgerState.ResolveOutputState(reference)
+	}, mutationsFunc, workers, conflictDAG, api.SingleVersionProvider(tpkg.TestAPI), func(error) {})
+
+	tf := mempooltests.NewTestFramework(t, memPoolInstance, conflictDAG, ledgerState, workers)
 
 	issueTransactions := func(startIndex, transactionCount int, prevStateAlias string) (int, string) {
 		index := startIndex
 		for ; index < startIndex+transactionCount; index++ {
+			signedTxAlias := fmt.Sprintf("tx%d-signed", index)
 			txAlias := fmt.Sprintf("tx%d", index)
 			blockAlias := fmt.Sprintf("block%d", index)
-			tf.CreateTransaction(txAlias, []string{prevStateAlias}, 2)
+			tf.CreateSignedTransaction(txAlias, []string{prevStateAlias}, 2)
 
-			require.NoError(t, tf.AttachTransaction(txAlias, blockAlias, iotago.SlotIndex(index)))
+			require.NoError(t, tf.AttachTransaction(signedTxAlias, txAlias, blockAlias, iotago.SlotIndex(index)))
 			tf.RequireBooked(txAlias)
 
 			tf.MarkAttachmentIncluded(blockAlias)
@@ -59,7 +66,7 @@ func TestMempoolV1_ResourceCleanup(t *testing.T) {
 			tf.CommitSlot(iotago.SlotIndex(index))
 			tf.Instance.Evict(iotago.SlotIndex(index))
 
-			require.Nil(t, mempoolInstance.attachments.Get(iotago.SlotIndex(index), false))
+			require.Nil(t, memPoolInstance.attachments.Get(iotago.SlotIndex(index), false))
 
 		}
 		return index, prevStateAlias
@@ -71,19 +78,55 @@ func TestMempoolV1_ResourceCleanup(t *testing.T) {
 	txIndex, prevStateAlias := issueTransactions(1, 10, "genesis")
 	tf.WaitChildren()
 
-	require.Equal(t, 0, mempoolInstance.cachedTransactions.Size())
-	require.Equal(t, 0, mempoolInstance.stateDiffs.Size())
-	require.Equal(t, 0, mempoolInstance.cachedStateRequests.Size())
+	require.Equal(t, 10, memPoolInstance.cachedTransactions.Size())
+	require.Equal(t, 10, memPoolInstance.delayedTransactionEviction.Size())
+	require.Equal(t, 0, memPoolInstance.stateDiffs.Size())
+	require.Equal(t, 10, memPoolInstance.delayedOutputStateEviction.Size())
+	// genesis output is never committed or orphaned, so it is not evicted as it has still a non-evicted spender.
+	require.Equal(t, 11, memPoolInstance.cachedStateRequests.Size())
 
 	txIndex, prevStateAlias = issueTransactions(txIndex, 10, prevStateAlias)
 	tf.WaitChildren()
 
-	require.Equal(t, 0, mempoolInstance.cachedTransactions.Size())
-	require.Equal(t, 0, mempoolInstance.stateDiffs.Size())
-	require.Equal(t, 0, mempoolInstance.cachedStateRequests.Size())
+	require.Equal(t, 20, memPoolInstance.cachedTransactions.Size())
+	require.Equal(t, 20, memPoolInstance.delayedTransactionEviction.Size())
+	require.Equal(t, 0, memPoolInstance.stateDiffs.Size())
+	require.Equal(t, 20, memPoolInstance.delayedOutputStateEviction.Size())
+	require.Equal(t, 21, memPoolInstance.cachedStateRequests.Size())
+
+	txIndex, prevStateAlias = issueTransactions(txIndex, 10, prevStateAlias)
+	tf.WaitChildren()
+
+	// Cached transactions stop increasing after 20, because eviction is delayed by MCA.
+	require.Equal(t, 20, memPoolInstance.cachedTransactions.Size())
+	require.Equal(t, 20, memPoolInstance.delayedTransactionEviction.Size())
+	require.Equal(t, 0, memPoolInstance.stateDiffs.Size())
+	require.Equal(t, 20, memPoolInstance.delayedOutputStateEviction.Size())
+	require.Equal(t, 21, memPoolInstance.cachedStateRequests.Size())
+
+	txIndex, _ = issueTransactions(txIndex, 10, prevStateAlias)
+	tf.WaitChildren()
+
+	require.Equal(t, 20, memPoolInstance.cachedTransactions.Size())
+	require.Equal(t, 20, memPoolInstance.delayedTransactionEviction.Size())
+	require.Equal(t, 0, memPoolInstance.stateDiffs.Size())
+	require.Equal(t, 20, memPoolInstance.delayedOutputStateEviction.Size())
+	require.Equal(t, 21, memPoolInstance.cachedStateRequests.Size())
+
+	for index := txIndex; index <= txIndex+20; index++ {
+		tf.CommitSlot(iotago.SlotIndex(index))
+		tf.Instance.Evict(iotago.SlotIndex(index))
+	}
+
+	// Genesis output is also finally evicted thanks to the fact that all its spenders got evicted.
+	require.Equal(t, 0, memPoolInstance.cachedTransactions.Size())
+	require.Equal(t, 0, memPoolInstance.delayedTransactionEviction.Size())
+	require.Equal(t, 0, memPoolInstance.stateDiffs.Size())
+	require.Equal(t, 0, memPoolInstance.delayedOutputStateEviction.Size())
+	require.Equal(t, 0, memPoolInstance.cachedStateRequests.Size())
 
 	attachmentsSlotCount := 0
-	mempoolInstance.attachments.ForEach(func(index iotago.SlotIndex, storage *shrinkingmap.ShrinkingMap[iotago.BlockID, *TransactionMetadata]) {
+	memPoolInstance.attachments.ForEach(func(index iotago.SlotIndex, storage *shrinkingmap.ShrinkingMap[iotago.BlockID, *SignedTransactionMetadata]) {
 		attachmentsSlotCount++
 	})
 
@@ -101,21 +144,29 @@ func TestMempoolV1_ResourceCleanup(t *testing.T) {
 func newTestFramework(t *testing.T) *mempooltests.TestFramework {
 	workers := workerpool.NewGroup(t.Name())
 
-	ledgerState := ledgertests.New(ledgertests.NewMockedState(iotago.TransactionID{}, 0))
-	conflictDAG := conflictdagv1.New[iotago.TransactionID, iotago.OutputID, vote.MockedRank](account.NewAccounts().SelectCommittee().SeatCount)
+	ledgerState := ledgertests.New(ledgertests.NewMockedState(iotago.EmptyTransactionID, 0))
+	conflictDAG := conflictdagv1.New[iotago.TransactionID, mempool.StateID, vote.MockedRank](account.NewAccounts().SelectCommittee().SeatCount)
 
-	return mempooltests.NewTestFramework(t, New[vote.MockedRank](mempooltests.VM, func(reference iotago.Input) *promise.Promise[mempool.State] {
-		return ledgerState.ResolveOutputState(reference.(*iotago.UTXOInput).OutputID())
-	}, workers, conflictDAG, api.SingleVersionProvider(tpkg.TestAPI), func(error) {}), conflictDAG, ledgerState, workers)
+	mutationsFunc := func(index iotago.SlotIndex) (kvstore.KVStore, error) {
+		return mapdb.NewMapDB(), nil
+	}
+
+	return mempooltests.NewTestFramework(t, New[vote.MockedRank](new(mempooltests.VM), func(reference mempool.StateReference) *promise.Promise[mempool.State] {
+		return ledgerState.ResolveOutputState(reference)
+	}, mutationsFunc, workers, conflictDAG, api.SingleVersionProvider(tpkg.TestAPI), func(error) {}), conflictDAG, ledgerState, workers)
 }
 
 func newForkingTestFramework(t *testing.T) *mempooltests.TestFramework {
 	workers := workerpool.NewGroup(t.Name())
 
-	ledgerState := ledgertests.New(ledgertests.NewMockedState(iotago.TransactionID{}, 0))
-	conflictDAG := conflictdagv1.New[iotago.TransactionID, iotago.OutputID, vote.MockedRank](account.NewAccounts().SelectCommittee().SeatCount)
+	ledgerState := ledgertests.New(ledgertests.NewMockedState(iotago.EmptyTransactionID, 0))
+	conflictDAG := conflictdagv1.New[iotago.TransactionID, mempool.StateID, vote.MockedRank](account.NewAccounts().SelectCommittee().SeatCount)
 
-	return mempooltests.NewTestFramework(t, New[vote.MockedRank](mempooltests.VM, func(reference iotago.Input) *promise.Promise[mempool.State] {
-		return ledgerState.ResolveOutputState(reference.(*iotago.UTXOInput).OutputID())
-	}, workers, conflictDAG, api.SingleVersionProvider(tpkg.TestAPI), func(error) {}, WithForkAllTransactions[vote.MockedRank](true)), conflictDAG, ledgerState, workers)
+	mutationsFunc := func(index iotago.SlotIndex) (kvstore.KVStore, error) {
+		return mapdb.NewMapDB(), nil
+	}
+
+	return mempooltests.NewTestFramework(t, New[vote.MockedRank](new(mempooltests.VM), func(reference mempool.StateReference) *promise.Promise[mempool.State] {
+		return ledgerState.ResolveOutputState(reference)
+	}, mutationsFunc, workers, conflictDAG, api.SingleVersionProvider(tpkg.TestAPI), func(error) {}, WithForkAllTransactions[vote.MockedRank](true)), conflictDAG, ledgerState, workers)
 }
