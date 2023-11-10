@@ -3,6 +3,7 @@ package mempoolv1
 import (
 	"context"
 	"sync/atomic"
+	"time"
 
 	"github.com/iotaledger/hive.go/ds"
 	"github.com/iotaledger/hive.go/ds/reactive"
@@ -26,10 +27,12 @@ type TransactionMetadata struct {
 	// lifecycle events
 	unsolidInputsCount uint64
 	solid              reactive.Event
+	solidTimestamp     time.Time
 	executionContext   reactive.Variable[context.Context]
 	executed           reactive.Event
 	invalid            reactive.Variable[error]
 	booked             reactive.Event
+	bookedTimestamp    time.Time
 	evicted            reactive.Event
 
 	// predecessors for acceptance
@@ -152,6 +155,13 @@ func (t *TransactionMetadata) IsSolid() bool {
 	return t.solid.WasTriggered()
 }
 
+func (t *TransactionMetadata) SolidTimestamp() time.Time {
+	t.mutex.RLock()
+	defer t.mutex.RUnlock()
+
+	return t.solidTimestamp
+}
+
 func (t *TransactionMetadata) OnSolid(callback func()) {
 	t.solid.OnTrigger(callback)
 }
@@ -178,6 +188,13 @@ func (t *TransactionMetadata) IsBooked() bool {
 	return t.booked.WasTriggered()
 }
 
+func (t *TransactionMetadata) BookedTimestamp() time.Time {
+	t.mutex.RLock()
+	defer t.mutex.RUnlock()
+
+	return t.bookedTimestamp
+}
+
 func (t *TransactionMetadata) OnBooked(callback func()) {
 	t.booked.OnTrigger(callback)
 }
@@ -195,10 +212,20 @@ func (t *TransactionMetadata) setEvicted() {
 }
 
 func (t *TransactionMetadata) setSolid() bool {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+
+	t.solidTimestamp = time.Now()
+
 	return t.solid.Trigger()
 }
 
 func (t *TransactionMetadata) setBooked() bool {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+
+	t.bookedTimestamp = time.Now()
+
 	return t.booked.Trigger()
 }
 

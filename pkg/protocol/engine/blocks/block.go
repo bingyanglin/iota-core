@@ -20,14 +20,16 @@ type Block struct {
 	missing             bool
 	missingBlockID      iotago.BlockID
 	solid               reactive.Variable[bool]
+	solidTimestamp      time.Time
 	invalid             reactive.Variable[bool]
 	strongChildren      []*Block
 	weakChildren        []*Block
 	shallowLikeChildren []*Block
 
 	// Booker block
-	booked    reactive.Variable[bool]
-	witnesses ds.Set[account.SeatIndex]
+	booked          reactive.Variable[bool]
+	bookedTimestamp time.Time
+	witnesses       ds.Set[account.SeatIndex]
 	// conflictIDs are the all conflictIDs of the block inherited from the parents + payloadConflictIDs.
 	conflictIDs ds.Set[iotago.TransactionID]
 	// payloadConflictIDs are the conflictIDs of the block's payload (in case it is a transaction, otherwise empty).
@@ -35,20 +37,28 @@ type Block struct {
 
 	// BlockGadget block
 	preAccepted           bool
+	preAcceptedTimestamp  time.Time
 	acceptanceRatifiers   ds.Set[account.SeatIndex]
 	accepted              reactive.Variable[bool]
+	acceptedTimestamp     time.Time
 	preConfirmed          bool
+	preConfirmedTimestamp time.Time
 	confirmationRatifiers ds.Set[account.SeatIndex]
 	confirmed             bool
+	confirmedTimestamp    time.Time
 
 	// Scheduler block
-	scheduled bool
-	skipped   bool
-	enqueued  bool
-	dropped   bool
+	scheduled          bool
+	scheduledTimestamp time.Time
+	skipped            bool
+	enqueued           bool
+	enqueuedTimestamp  time.Time
+	dropped            bool
+	droppedTimestamp   time.Time
 
 	// Notarization
-	notarized reactive.Variable[bool]
+	notarized          reactive.Variable[bool]
+	notarizedTimestamp time.Time
 
 	mutex syncutils.RWMutex
 
@@ -278,7 +288,19 @@ func (b *Block) IsSolid() (isSolid bool) {
 
 // SetSolid marks the Block as solid.
 func (b *Block) SetSolid() (wasUpdated bool) {
+	b.mutex.Lock()
+	defer b.mutex.Unlock()
+
+	b.solidTimestamp = time.Now()
+
 	return !b.solid.Set(true)
+}
+
+func (b *Block) SolidificationTime() time.Time {
+	b.mutex.RLock()
+	defer b.mutex.RUnlock()
+
+	return b.solidTimestamp
 }
 
 // Invalid returns a reactive variable that is true if the Block was marked as invalid.
@@ -379,7 +401,19 @@ func (b *Block) IsBooked() (isBooked bool) {
 }
 
 func (b *Block) SetBooked() (wasUpdated bool) {
+	b.mutex.Lock()
+	defer b.mutex.Unlock()
+
+	b.bookedTimestamp = time.Now()
+
 	return !b.booked.Set(true)
+}
+
+func (b *Block) BookedTime() time.Time {
+	b.mutex.RLock()
+	defer b.mutex.RUnlock()
+
+	return b.bookedTimestamp
 }
 
 func (b *Block) AddWitness(seat account.SeatIndex) (added bool) {
@@ -445,10 +479,18 @@ func (b *Block) SetPreAccepted() (wasUpdated bool) {
 	defer b.mutex.Unlock()
 
 	if wasUpdated = !b.preAccepted; wasUpdated {
+		b.preAcceptedTimestamp = time.Now()
 		b.preAccepted = true
 	}
 
 	return wasUpdated
+}
+
+func (b *Block) PreAcceptedTime() time.Time {
+	b.mutex.RLock()
+	defer b.mutex.RUnlock()
+
+	return b.preAcceptedTimestamp
 }
 
 func (b *Block) AddAcceptanceRatifier(seat account.SeatIndex) (added bool) {
@@ -477,7 +519,19 @@ func (b *Block) IsAccepted() bool {
 
 // SetAccepted sets the Block as accepted.
 func (b *Block) SetAccepted() (wasUpdated bool) {
+	b.mutex.Lock()
+	defer b.mutex.Unlock()
+
+	b.acceptedTimestamp = time.Now()
+
 	return !b.accepted.Set(true)
+}
+
+func (b *Block) AcceptedTime() time.Time {
+	b.mutex.RLock()
+	defer b.mutex.RUnlock()
+
+	return b.acceptedTimestamp
 }
 
 // IsScheduled returns true if the Block was scheduled.
@@ -494,11 +548,19 @@ func (b *Block) SetScheduled() (wasUpdated bool) {
 	defer b.mutex.Unlock()
 
 	if wasUpdated = !b.scheduled; wasUpdated && b.enqueued {
+		b.scheduledTimestamp = time.Now()
 		b.scheduled = true
 		b.enqueued = false
 	}
 
 	return wasUpdated
+}
+
+func (b *Block) ScheduledTime() time.Time {
+	b.mutex.RLock()
+	defer b.mutex.RUnlock()
+
+	return b.scheduledTimestamp
 }
 
 // IsSkipped returns true if the Block was skipped.
@@ -536,11 +598,19 @@ func (b *Block) SetDropped() (wasUpdated bool) {
 	defer b.mutex.Unlock()
 
 	if wasUpdated = !b.dropped; wasUpdated && b.enqueued {
+		b.droppedTimestamp = time.Now()
 		b.dropped = true
 		b.enqueued = false
 	}
 
 	return wasUpdated
+}
+
+func (b *Block) DroppedTime() time.Time {
+	b.mutex.RLock()
+	defer b.mutex.RUnlock()
+
+	return b.droppedTimestamp
 }
 
 // IsEnqueued returns true if the Block is currently enqueued in the scheduler.
@@ -557,10 +627,18 @@ func (b *Block) SetEnqueued() (wasUpdated bool) {
 	defer b.mutex.Unlock()
 
 	if wasUpdated = !b.enqueued; wasUpdated {
+		b.enqueuedTimestamp = time.Now()
 		b.enqueued = true
 	}
 
 	return wasUpdated
+}
+
+func (b *Block) QueuedTime() time.Time {
+	b.mutex.RLock()
+	defer b.mutex.RUnlock()
+
+	return b.enqueuedTimestamp
 }
 
 func (b *Block) AddConfirmationRatifier(seat account.SeatIndex) (added bool) {
@@ -589,6 +667,7 @@ func (b *Block) SetConfirmed() (wasUpdated bool) {
 	defer b.mutex.Unlock()
 
 	if wasUpdated = !b.confirmed; wasUpdated {
+		b.confirmedTimestamp = time.Now()
 		b.confirmed = true
 	}
 
@@ -607,10 +686,18 @@ func (b *Block) SetPreConfirmed() (wasUpdated bool) {
 	defer b.mutex.Unlock()
 
 	if wasUpdated = !b.preConfirmed; wasUpdated {
+		b.preConfirmedTimestamp = time.Now()
 		b.preConfirmed = true
 	}
 
 	return wasUpdated
+}
+
+func (b *Block) PreConfirmedTime() time.Time {
+	b.mutex.RLock()
+	defer b.mutex.RUnlock()
+
+	return b.preConfirmedTimestamp
 }
 
 func (b *Block) Notarized() reactive.Variable[bool] {
@@ -622,7 +709,19 @@ func (b *Block) IsNotarized() (isBooked bool) {
 }
 
 func (b *Block) SetNotarized() (wasUpdated bool) {
+	b.mutex.Lock()
+	defer b.mutex.Unlock()
+
+	b.notarizedTimestamp = time.Now()
+
 	return !b.notarized.Set(true)
+}
+
+func (b *Block) NotarizedTime() time.Time {
+	b.mutex.RLock()
+	defer b.mutex.RUnlock()
+
+	return b.notarizedTimestamp
 }
 
 func (b *Block) String() string {

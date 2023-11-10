@@ -3,38 +3,38 @@ package remotemetrics
 import (
 	"time"
 
+	"github.com/iotaledger/iota-core/pkg/protocol/engine/syncmanager"
 	"go.uber.org/atomic"
-
-	"github.com/iotaledger/goshimmer/packages/app/remotemetrics"
 )
 
 var isTangleTimeSynced atomic.Bool
 
-func checkSynced() {
+func checkSynced(newStatus *syncmanager.SyncStatus) {
 	oldTangleTimeSynced := isTangleTimeSynced.Load()
 	clSnapshot := deps.Protocol.MainEngineInstance().Clock.Snapshot()
-	tts := deps.Protocol.MainEngineInstance().SyncManager.SyncStatus()
-	if oldTangleTimeSynced != tts.NodeSynced {
-		var myID string
-		if deps.Local != nil {
-			myID = deps.Local.ID().String()
-		}
-		syncStatusChangedEvent := &remotemetrics.TangleTimeSyncChangedEvent{
+	if oldTangleTimeSynced != newStatus.NodeSynced {
+		nodeID := deps.Host.ID().String()
+
+		syncStatusChangedEvent := &TangleTimeSyncChangedEvent{
 			Type:           "sync",
-			NodeID:         myID,
+			NodeID:         nodeID,
 			MetricsLevel:   ParamsRemoteMetrics.MetricsLevel,
 			Time:           time.Now(),
 			ATT:            clSnapshot.AcceptedTime,
 			RATT:           clSnapshot.RelativeAcceptedTime,
 			CTT:            clSnapshot.ConfirmedTime,
 			RCTT:           clSnapshot.RelativeConfirmedTime,
-			CurrentStatus:  tts,
+			CurrentStatus:  newStatus.NodeSynced,
 			PreviousStatus: oldTangleTimeSynced,
 		}
-		remotemetrics.Events.TangleTimeSyncChanged.Trigger(syncStatusChangedEvent)
+		// remotemetrics.Events.TangleTimeSyncChanged.Trigger(syncStatusChangedEvent)
+
+		isTangleTimeSynced.Store(newStatus.NodeSynced)
+
+		_ = deps.RemoteLogger.Send(syncStatusChangedEvent)
 	}
 }
 
-func sendSyncStatusChangedEvent(syncUpdate *remotemetrics.TangleTimeSyncChangedEvent) {
+func sendSyncStatusChangedEvent(syncUpdate *TangleTimeSyncChangedEvent) {
 	// _ = deps.RemoteLogger.Send(syncUpdate)
 }

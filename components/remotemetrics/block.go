@@ -1,25 +1,27 @@
 package remotemetrics
 
 import (
-	"github.com/iotaledger/goshimmer/packages/app/remotemetrics"
+	"time"
+
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/blocks"
+	mempoolv1 "github.com/iotaledger/iota-core/pkg/protocol/engine/mempool/v1"
+	iotago "github.com/iotaledger/iota.go/v4"
 )
 
 func sendBlockSchedulerRecord(block *blocks.Block, recordType string) {
-	// if !deps.Protocol.Engine().IsSynced() {
 	if !deps.Protocol.MainEngineInstance().SyncManager.IsNodeSynced() {
 		return
 	}
 	var nodeID = deps.Host.ID().String()
 
-	record := &remotemetrics.BlockScheduledMetrics{
+	record := &BlockScheduledMetrics{
 		Type:         recordType,
 		NodeID:       nodeID,
 		MetricsLevel: ParamsRemoteMetrics.MetricsLevel,
 		BlockID:      block.ID().ToHex(),
 	}
 
-	issuerID := block.ModelBlock().ProtocolBlock().IssuerID
+	issuerID := block.ModelBlock().ProtocolBlock().Header.IssuerID
 	record.IssuedTimestamp = block.IssuingTime()
 	record.IssuerID = issuerID.String()
 	// TODO: implement when mana is refactored
@@ -32,45 +34,48 @@ func sendBlockSchedulerRecord(block *blocks.Block, recordType string) {
 		record.StrongEdgeCount = likeParentsCount
 	}
 
-	// TODO: implement when retainer plugin is ready
-	// deps.Tangle.Storage.BlockMetadata(blockID).Consume(func(blockMetadata *tangleold.BlockMetadata) {
-	//	record.ReceivedTimestamp = blockMetadata.ReceivedTime()
-	//	record.ScheduledTimestamp = blockMetadata.ScheduledTime()
-	//	record.DroppedTimestamp = blockMetadata.DiscardedTime()
-	//	record.BookedTimestamp = blockMetadata.BookedTime()
-	//	// may be overridden by tx data
-	//	record.SolidTimestamp = blockMetadata.SolidificationTime()
-	//	record.DeltaSolid = blockMetadata.SolidificationTime().Sub(record.IssuedTimestamp).Nanoseconds()
-	//	record.QueuedTimestamp = blockMetadata.QueuedTime()
-	//	record.DeltaBooked = blockMetadata.BookedTime().Sub(record.IssuedTimestamp).Nanoseconds()
-	//	record.ConfirmationState = uint8(blockMetadata.ConfirmationState())
-	//	record.ConfirmationStateTimestamp = blockMetadata.ConfirmationStateTime()
-	//	if !blockMetadata.ConfirmationStateTime().IsZero() {
-	//		record.DeltaConfirmationStateTime = blockMetadata.ConfirmationStateTime().Sub(record.IssuedTimestamp).Nanoseconds()
-	//	}
-	//
-	//	var scheduleDoneTime time.Time
-	//	// one of those conditions must be true
-	//	if !record.ScheduledTimestamp.IsZero() {
-	//		scheduleDoneTime = record.ScheduledTimestamp
-	//	} else if !record.DroppedTimestamp.IsZero() {
-	//		scheduleDoneTime = record.DroppedTimestamp
-	//	}
-	//	record.DeltaScheduledIssued = scheduleDoneTime.Sub(record.IssuedTimestamp).Nanoseconds()
-	//	record.DeltaScheduledReceived = scheduleDoneTime.Sub(blockMetadata.ReceivedTime()).Nanoseconds()
-	//	record.DeltaReceivedIssued = blockMetadata.ReceivedTime().Sub(record.IssuedTimestamp).Nanoseconds()
-	//	record.SchedulingTime = scheduleDoneTime.Sub(blockMetadata.QueuedTime()).Nanoseconds()
-	// })
+	record.ScheduledTimestamp = block.ScheduledTime()
+	record.BookedTimestamp = block.BookedTime()
+	record.DroppedTimestamp = block.DroppedTime()
+	// may be overridden by tx data
+	record.SolidTimestamp = block.SolidificationTime()
+	record.DeltaSolid = block.SolidificationTime().Sub(record.IssuedTimestamp).Nanoseconds()
+	record.DeltaBooked = block.BookedTime().Sub(record.IssuedTimestamp).Nanoseconds()
+
+	var scheduleDoneTime time.Time
+	// one of those conditions must be true
+	if !record.ScheduledTimestamp.IsZero() {
+		scheduleDoneTime = record.ScheduledTimestamp
+	} else if !record.DroppedTimestamp.IsZero() {
+		scheduleDoneTime = record.DroppedTimestamp
+	}
+	record.DeltaScheduledIssued = scheduleDoneTime.Sub(record.IssuedTimestamp).Nanoseconds()
+	// record.DeltaScheduledReceived = scheduleDoneTime.Sub(block.ReceivedTime()).Nanoseconds()
+	// record.DeltaReceivedIssued = block.ReceivedTime().Sub(record.IssuedTimestamp).Nanoseconds()
+	record.SchedulingTime = scheduleDoneTime.Sub(block.QueuedTime()).Nanoseconds()
 
 	// override block solidification data if block contains a transaction
-	// if block.ModelBlock().Payload().PayloadType() == iotago.PayloadTransaction {
-	// 	transaction := block.ModelBlock().Payload().(*iotago.Transaction)
-	// 	deps.Protocol.Engine().Ledger.MemPool().Storage().CachedTransactionMetadata(transaction.ID()).Consume(func(transactionMetadata *mempool.TransactionMetadata) {
-	// 		record.SolidTimestamp = transactionMetadata.BookingTime()
-	// 		record.TransactionID = transaction.ID().Base58()
-	// 		record.DeltaSolid = transactionMetadata.BookingTime().Sub(record.IssuedTimestamp).Nanoseconds()
-	// 	})
-	// }
+	signedTx, isSignedTx := block.ModelBlock().Payload().(*iotago.SignedTransaction)
+	if isSignedTx {
+		txID, err := signedTx.Transaction.ID()
+		if err != nil {
+			return
+		}
+		txMetadata, exist := deps.Protocol.MainEngineInstance().Ledger.MemPool().TransactionMetadata(txID)
+		if !exist {
+			return
+		}
+
+		metadataImpl, isImpl := txMetadata.(*mempoolv1.TransactionMetadata)
+		if !isImpl {
+			return
+		}
+
+		record.SolidTimestamp = metadataImpl.SolidTimestamp()
+		record.TransactionID = txID.ToHex()
+		record.DeltaSolid = metadataImpl.BookedTimestamp().Sub(record.IssuedTimestamp).Nanoseconds()
+
+	}
 
 	// _ = deps.RemoteLogger.Send(record)
 }
@@ -86,67 +91,17 @@ func sendBlockSchedulerRecord(block *blocks.Block, recordType string) {
 // 	onBlockFinalized(earliestAttachment.ModelsBlock)
 // }
 
-// func onBlockFinalized(block *models.Block) {
-// 	if !deps.Protocol.Engine().IsSynced() {
-// 		return
-// 	}
+func sendMissingBlockRecord(block *blocks.Block, recordType string) {
+	if !deps.Protocol.MainEngineInstance().SyncManager.IsNodeSynced() {
+		return
+	}
+	nodeID := deps.Host.ID().String()
 
-// 	blockID := block.ID()
-
-// 	var nodeID string
-// 	if deps.Local != nil {
-// 		nodeID = deps.Local.Identity.ID().String()
-// 	}
-
-// 	record := &remotemetrics.BlockFinalizedMetrics{
-// 		Type:         "blockFinalized",
-// 		NodeID:       nodeID,
-// 		MetricsLevel: Parameters.MetricsLevel,
-// 		BlockID:      blockID.Base58(),
-// 	}
-
-// 	issuerID := identity.NewID(block.IssuerPublicKey())
-// 	record.IssuedTimestamp = block.IssuingTime()
-// 	record.IssuerID = issuerID.String()
-// 	record.StrongEdgeCount = len(block.ParentsByType(models.StrongParentType))
-// 	if weakParentsCount := len(block.ParentsByType(models.WeakParentType)); weakParentsCount > 0 {
-// 		record.WeakEdgeCount = weakParentsCount
-// 	}
-// 	if shallowLikeParentsCount := len(block.ParentsByType(models.ShallowLikeParentType)); shallowLikeParentsCount > 0 {
-// 		record.ShallowLikeEdgeCount = shallowLikeParentsCount
-// 	}
-
-// 	// TODO: implement when retainer plugin is ready
-// 	// deps.Tangle.Storage.BlockMetadata(blockID).Consume(func(blockMetadata *tangleold.BlockMetadata) {
-// 	//	record.ScheduledTimestamp = blockMetadata.ScheduledTime()
-// 	//	record.DeltaScheduled = blockMetadata.ScheduledTime().Sub(record.IssuedTimestamp).Nanoseconds()
-// 	//	record.BookedTimestamp = blockMetadata.BookedTime()
-// 	//	record.DeltaBooked = blockMetadata.BookedTime().Sub(record.IssuedTimestamp).Nanoseconds()
-// 	// })
-
-// 	if block.Payload().Type() == devnetvm.TransactionType {
-// 		transaction := block.Payload().(utxo.Transaction)
-// 		deps.Protocol.Engine().Ledger.MemPool().Storage().CachedTransactionMetadata(transaction.ID()).Consume(func(transactionMetadata *mempool.TransactionMetadata) {
-// 			record.SolidTimestamp = transactionMetadata.BookingTime()
-// 			record.TransactionID = transaction.ID().Base58()
-// 			record.DeltaSolid = transactionMetadata.BookingTime().Sub(record.IssuedTimestamp).Nanoseconds()
-// 		})
-// 	}
-
-// 	_ = deps.RemoteLogger.Send(record)
-// }
-
-// func sendMissingBlockRecord(block *blocks.Block, recordType string) {
-// 	if !deps.Protocol.MainEngineInstance().SyncManager.IsNodeSynced() {
-// 		return
-// 	}
-// 	var nodeID = deps.Host.ID().String()
-
-// 	_ = deps.RemoteLogger.Send(&remotemetrics.MissingBlockMetrics{
-// 		Type:         recordType,
-// 		NodeID:       nodeID,
-// 		MetricsLevel: Parameters.MetricsLevel,
-// 		BlockID:      block.ID().Base58(),
-// 		IssuerID:     identity.NewID(block.IssuerPublicKey()).String(),
-// 	})
-// }
+	_ = deps.RemoteLogger.Send(&MissingBlockMetrics{
+		Type:         recordType,
+		NodeID:       nodeID,
+		MetricsLevel: ParamsRemoteMetrics.MetricsLevel,
+		BlockID:      block.ID().ToHex(),
+		IssuerID:     block.ModelBlock().ProtocolBlock().Header.IssuerID.ToHex(),
+	})
+}

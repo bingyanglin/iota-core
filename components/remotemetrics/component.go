@@ -15,6 +15,7 @@ import (
 	"github.com/iotaledger/iota-core/pkg/daemon"
 	"github.com/iotaledger/iota-core/pkg/protocol"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/blocks"
+	"github.com/iotaledger/iota-core/pkg/protocol/engine/syncmanager"
 	iotago "github.com/iotaledger/iota.go/v4"
 	"github.com/libp2p/go-libp2p/core/host"
 )
@@ -66,7 +67,6 @@ func init() {
 func configure() error {
 	configureSyncMetrics()
 	configureConflictConfirmationMetrics()
-	configureBlockFinalizedMetrics()
 	configureBlockScheduledMetrics()
 	configureMissingBlockMetrics()
 	configureSchedulerQueryMetrics()
@@ -85,7 +85,6 @@ func run() error {
 
 		// Do not block until the Ticker is shutdown because we might want to start multiple Tickers and we can
 		// safely ignore the last execution when shutting down.
-		timeutil.NewTicker(func() { checkSynced() }, syncUpdateTime, ctx)
 		timeutil.NewTicker(func() {
 			// remotemetrics.Events.SchedulerQuery.Trigger(&remotemetrics.SchedulerQueryEvent{Time: time.Now()})
 		}, schedulerQueryUpdateTime, ctx)
@@ -104,15 +103,9 @@ func configureSyncMetrics() {
 		return
 	}
 
-	// TODO: we only have event from syncmanager when anything is updated.
-	// deps.Protocol.Events.Engine.SyncManager.UpdatedStatus.Hook(func(event *protocol.SyncStatus) {})
-
-	// deps.Protocol.Events.Engine.SyncManager.Events.TangleTimeSyncChanged.Hook(func(event *remotemetrics.TangleTimeSyncChangedEvent) {
-	// 	isTangleTimeSynced.Store(event.CurrentStatus)
-	// }, event.WithWorkerPool(Component.WorkerPool))
-	// remotemetrics.Events.TangleTimeSyncChanged.Hook(func(event *remotemetrics.TangleTimeSyncChangedEvent) {
-	// 	sendSyncStatusChangedEvent(event)
-	// }, event.WithWorkerPool(Component.WorkerPool))
+	deps.Protocol.Events.Engine.SyncManager.UpdatedStatus.Hook(func(event *syncmanager.SyncStatus) {
+		checkSynced(event)
+	}, event.WithWorkerPool(Component.WorkerPool))
 }
 
 func configureSchedulerQueryMetrics() {
@@ -128,11 +121,11 @@ func configureConflictConfirmationMetrics() {
 		return
 	}
 
-	deps.Protocol.Events.Engine.ConflictDAG.ConflictAccepted.Hook(func(conflictID iotago.Identifier) {
+	deps.Protocol.Events.Engine.ConflictDAG.ConflictAccepted.Hook(func(conflictID iotago.TransactionID) {
 		onConflictConfirmed(conflictID)
 	}, event.WithWorkerPool(Component.WorkerPool))
 
-	deps.Protocol.Events.Engine.ConflictDAG.ConflictCreated.Hook(func(conflictID iotago.Identifier) {
+	deps.Protocol.Events.Engine.ConflictDAG.ConflictCreated.Hook(func(conflictID iotago.TransactionID) {
 		activeConflictsMutex.Lock()
 		defer activeConflictsMutex.Unlock()
 
@@ -142,21 +135,6 @@ func configureConflictConfirmationMetrics() {
 			sendConflictMetrics()
 		}
 	}, event.WithWorkerPool(Component.WorkerPool))
-}
-
-func configureBlockFinalizedMetrics() {
-	if ParamsRemoteMetrics.MetricsLevel > Info {
-		return
-	}
-
-	if ParamsRemoteMetrics.MetricsLevel == Info {
-		// noo transaction accepted event now, need to do it like retainer: iota-core/pkg/retainer/retainer/retainer.go
-		// deps.Protocol.Events.Engine.Ledger.TransactionAccepted.Hook(onTransactionAccepted, event.WithWorkerPool(Component.WorkerPool))
-	} else {
-		deps.Protocol.Events.Engine.BlockGadget.BlockConfirmed.Hook(func(block *blocks.Block) {
-			onBlockFinalized(block.ModelBlock())
-		}, event.WithWorkerPool(Component.WorkerPool))
-	}
 }
 
 func configureBlockScheduledMetrics() {
@@ -184,9 +162,9 @@ func configureMissingBlockMetrics() {
 	}
 
 	deps.Protocol.Events.Engine.BlockDAG.BlockMissing.Hook(func(block *blocks.Block) {
-		sendMissingBlockRecord(block.ModelBlock(), "missingBlock")
+		sendMissingBlockRecord(block, "missingBlock")
 	}, event.WithWorkerPool(Component.WorkerPool))
 	deps.Protocol.Events.Engine.BlockDAG.MissingBlockAttached.Hook(func(block *blocks.Block) {
-		sendMissingBlockRecord(block.ModelBlock(), "missingBlockStored")
+		sendMissingBlockRecord(block, "missingBlockStored")
 	}, event.WithWorkerPool(Component.WorkerPool))
 }
