@@ -16,7 +16,6 @@ import (
 	"github.com/iotaledger/iota-core/pkg/protocol"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/blocks"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/syncmanager"
-	iotago "github.com/iotaledger/iota.go/v4"
 	"github.com/libp2p/go-libp2p/core/host"
 )
 
@@ -66,7 +65,6 @@ func init() {
 
 func configure() error {
 	configureSyncMetrics()
-	configureConflictConfirmationMetrics()
 	configureBlockScheduledMetrics()
 	configureMissingBlockMetrics()
 	configureSchedulerQueryMetrics()
@@ -80,8 +78,6 @@ func run() error {
 	// create a background worker that update the metrics every second
 	if err := Component.Daemon().BackgroundWorker("RemoteMetrics", func(ctx context.Context) {
 		Component.LogInfo("Starting RemoteMetrics server ... done")
-
-		measureInitialConflictCounts()
 
 		// Do not block until the Ticker is shutdown because we might want to start multiple Tickers and we can
 		// safely ignore the last execution when shutting down.
@@ -114,27 +110,6 @@ func configureSchedulerQueryMetrics() {
 	}
 
 	// remotemetrics.Events.SchedulerQuery.Hook(func(event *remotemetrics.SchedulerQueryEvent) { obtainSchedulerStats(event.Time) }, event.WithWorkerPool(Component.WorkerPool))
-}
-
-func configureConflictConfirmationMetrics() {
-	if ParamsRemoteMetrics.MetricsLevel > Info {
-		return
-	}
-
-	deps.Protocol.Events.Engine.ConflictDAG.ConflictAccepted.Hook(func(conflictID iotago.TransactionID) {
-		onConflictConfirmed(conflictID)
-	}, event.WithWorkerPool(Component.WorkerPool))
-
-	deps.Protocol.Events.Engine.ConflictDAG.ConflictCreated.Hook(func(conflictID iotago.TransactionID) {
-		activeConflictsMutex.Lock()
-		defer activeConflictsMutex.Unlock()
-
-		if !activeConflicts.Has(conflictID) {
-			conflictTotalCountDB.Inc()
-			activeConflicts.Add(conflictID)
-			sendConflictMetrics()
-		}
-	}, event.WithWorkerPool(Component.WorkerPool))
 }
 
 func configureBlockScheduledMetrics() {
