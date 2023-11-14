@@ -2,6 +2,7 @@ package remotelog
 
 import (
 	"encoding/json"
+	"fmt"
 	"net"
 	"time"
 
@@ -47,8 +48,10 @@ func (r *RemoteLoggerConn) Send(msg interface{}) error {
 	if err != nil {
 		return err
 	}
+	fmt.Println(string(b), ParamsRemoteLog.ServerAddress, r.conn.RemoteAddr())
 	_, err = r.conn.Write(b)
 	if err != nil {
+		fmt.Println("send remote log failed", err)
 		return err
 	}
 

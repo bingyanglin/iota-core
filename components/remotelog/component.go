@@ -62,6 +62,7 @@ func init() {
 
 func provide(c *dig.Container) error {
 	if err := c.Provide(func() *RemoteLoggerConn {
+		Component.LogWarn("RemoteLog is enabled. All events will be sent to the configured server.: ", ParamsRemoteLog.ServerAddress)
 		remoteLogger, err := newRemoteLoggerConn(ParamsRemoteLog.ServerAddress)
 		if err != nil {
 			Component.LogFatalAndExit(err)

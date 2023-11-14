@@ -114,22 +114,14 @@ func configureSchedulerQueryMetrics() {
 }
 
 func configureBlockScheduledMetrics() {
-	if ParamsRemoteMetrics.MetricsLevel > Info {
-		return
-	}
+	deps.Protocol.Events.Engine.Scheduler.BlockScheduled.Hook(func(block *blocks.Block) {
+		sendBlockSchedulerRecord(block, "blockScheduled")
+		// Component.LogWarn("send data to remote logger: blockScheduled")
+	}, event.WithWorkerPool(Component.WorkerPool))
+	deps.Protocol.Events.Engine.Scheduler.BlockDropped.Hook(func(block *blocks.Block, err error) {
+		sendBlockSchedulerRecord(block, "blockDiscarded")
+	}, event.WithWorkerPool(Component.WorkerPool))
 
-	if ParamsRemoteMetrics.MetricsLevel == Info {
-		deps.Protocol.Events.Engine.Scheduler.BlockDropped.Hook(func(block *blocks.Block, err error) {
-			sendBlockSchedulerRecord(block, "blockDiscarded")
-		}, event.WithWorkerPool(Component.WorkerPool))
-	} else {
-		deps.Protocol.Events.Engine.Scheduler.BlockScheduled.Hook(func(block *blocks.Block) {
-			sendBlockSchedulerRecord(block, "blockScheduled")
-		}, event.WithWorkerPool(Component.WorkerPool))
-		deps.Protocol.Events.Engine.Scheduler.BlockDropped.Hook(func(block *blocks.Block, err error) {
-			sendBlockSchedulerRecord(block, "blockDiscarded")
-		}, event.WithWorkerPool(Component.WorkerPool))
-	}
 }
 
 func configureMissingBlockMetrics() {

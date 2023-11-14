@@ -77,7 +77,10 @@ func sendBlockSchedulerRecord(block *blocks.Block, recordType string) {
 
 	}
 
-	// _ = deps.RemoteLogger.Send(record)
+	err := deps.RemoteLogger.Send(record)
+	if err != nil {
+		Component.LogError(err)
+	}
 }
 
 // func onTransactionAccepted(transactionEvent *mempool.TransactionEvent) {
