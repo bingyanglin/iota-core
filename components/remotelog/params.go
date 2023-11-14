@@ -4,7 +4,7 @@ import "github.com/iotaledger/hive.go/app"
 
 // ParametersRemoteLog contains the definition of the parameters used by the remotelog plugin.
 type ParametersRemoteLog struct {
-	// Enabled defines whether the remote metrics plugin is enabled.
+	// Enabled defines whether the remote log plugin is enabled.
 	Enabled bool `default:"false" usage:"whether the remote log component is enabled"`
 	// RemoteLog defines the parameters to reach the remote logging server.
 	RemoteLog struct {
