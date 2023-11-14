@@ -12,6 +12,7 @@ import (
 	"github.com/iotaledger/hive.go/app"
 	"github.com/iotaledger/hive.go/runtime/event"
 	"github.com/iotaledger/hive.go/runtime/timeutil"
+	"github.com/iotaledger/iota-core/components/remotelog"
 	"github.com/iotaledger/iota-core/pkg/daemon"
 	"github.com/iotaledger/iota-core/pkg/protocol"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/blocks"
@@ -44,8 +45,8 @@ type dependencies struct {
 	dig.In
 	Host host.Host
 
-	Protocol *protocol.Protocol
-	// RemoteLogger *remotelog.RemoteLoggerConn `optional:"true"`
+	Protocol     *protocol.Protocol
+	RemoteLogger *remotelog.RemoteLoggerConn `optional:"true"`
 }
 
 // TODO: De-factor the Plugin to be Component
@@ -87,7 +88,7 @@ func run() error {
 
 		// Wait before terminating so we get correct log blocks from the daemon regarding the shutdown order.
 		<-ctx.Done()
-	}, daemon.PriorityRestAPI); err != nil {
+	}, daemon.PriorityRemoteMetrics); err != nil {
 		Component.LogPanicf("Failed to start as daemon: %s", err)
 	}
 

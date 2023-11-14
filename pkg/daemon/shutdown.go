@@ -16,4 +16,6 @@ const (
 	PriorityDashboardMetrics
 	PriorityDashboard
 	PriorityMetrics
+	PriorityRemoteLog
+	PriorityRemoteMetrics // depends on RemoteLog
 )
