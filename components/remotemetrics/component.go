@@ -46,7 +46,7 @@ type dependencies struct {
 	Host host.Host
 
 	Protocol     *protocol.Protocol
-	RemoteLogger *remotelog.RemoteLoggerConn `optional:"true"`
+	RemoteLogger *remotelog.RemoteLoggerConn
 }
 
 // TODO: De-factor the Plugin to be Component
