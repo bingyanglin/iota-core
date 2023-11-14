@@ -48,7 +48,7 @@ type dependencies struct {
 
 func init() {
 	Component = &app.Component{
-		Name:      "RemoteLogMetrics",
+		Name:      "RemoteLogger",
 		DepsFunc:  func(cDeps dependencies) { deps = cDeps },
 		Params:    params,
 		Provide:   provide,
@@ -62,7 +62,7 @@ func init() {
 
 func provide(c *dig.Container) error {
 	if err := c.Provide(func() *RemoteLoggerConn {
-		remoteLogger, err := newRemoteLoggerConn(ParamsRemoteLog.RemoteLog.ServerAddress)
+		remoteLogger, err := newRemoteLoggerConn(ParamsRemoteLog.ServerAddress)
 		if err != nil {
 			Component.LogFatalAndExit(err)
 			return nil

@@ -15,6 +15,8 @@ import (
 	"github.com/iotaledger/iota-core/components/metricstracker"
 	"github.com/iotaledger/iota-core/components/p2p"
 	"github.com/iotaledger/iota-core/components/protocol"
+	"github.com/iotaledger/iota-core/components/remotelog"
+	"github.com/iotaledger/iota-core/components/remotemetrics"
 	"github.com/iotaledger/iota-core/components/restapi"
 	coreapi "github.com/iotaledger/iota-core/components/restapi/core"
 	"github.com/iotaledger/iota-core/pkg/toolset"
@@ -51,6 +53,8 @@ Command line flags:
 			dashboard.Component,
 			metrics.Component,
 			inx.Component,
+			remotelog.Component,
+			remotemetrics.Component,
 		),
 	)
 }

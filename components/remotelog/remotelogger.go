@@ -8,7 +8,6 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/iotaledger/hive.go/logger"
-	"github.com/iotaledger/iota-core/components/app"
 )
 
 // RemoteLoggerConn is a wrapper for a connection to our RemoteLog server.
@@ -28,7 +27,7 @@ func newRemoteLoggerConn(address string) (*RemoteLoggerConn, error) {
 // SendLogMsg sends log message to the remote logger.
 func (r *RemoteLoggerConn) SendLogMsg(level logger.Level, name, msg string) {
 	m := logBlock{
-		app.Version,
+		"v1.0",
 		myGitHead,
 		myGitConflict,
 		myID,
