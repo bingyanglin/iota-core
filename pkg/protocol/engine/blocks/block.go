@@ -674,6 +674,13 @@ func (b *Block) SetConfirmed() (wasUpdated bool) {
 	return wasUpdated
 }
 
+func (b *Block) ConfirmedTime() time.Time {
+	b.mutex.RLock()
+	defer b.mutex.RUnlock()
+
+	return b.confirmedTimestamp
+}
+
 func (b *Block) IsPreConfirmed() bool {
 	b.mutex.RLock()
 	defer b.mutex.RUnlock()

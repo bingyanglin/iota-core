@@ -9,6 +9,7 @@ import (
 )
 
 func sendBlockSchedulerRecord(block *blocks.Block, recordType string) {
+	// print(recordType)
 	if !deps.Protocol.MainEngineInstance().SyncManager.IsNodeSynced() {
 		return
 	}
@@ -76,6 +77,20 @@ func sendBlockSchedulerRecord(block *blocks.Block, recordType string) {
 		record.DeltaSolid = metadataImpl.BookedTimestamp().Sub(record.IssuedTimestamp).Nanoseconds()
 
 	}
+	record.PreAcceptanceTime = int64(block.PreAcceptedTime().Sub(record.IssuedTimestamp).Nanoseconds())
+	record.AcceptanceTime = int64(block.AcceptedTime().Sub(record.IssuedTimestamp).Nanoseconds())
+	record.PreConfirmedTime = int64(block.PreConfirmedTime().Sub(record.IssuedTimestamp).Nanoseconds())
+	record.ConfirmedTime = int64(block.ConfirmedTime().Sub(record.IssuedTimestamp).Nanoseconds())
+
+	// if block.IsAccepted() {
+	// 	println("block is accepted", record.AcceptanceTime)
+	// }
+	// if block.IsPreConfirmed() {
+	// 	println("block is preconfirmed", record.PreConfirmedTime)
+	// }
+	// if recordType == "blockConfirmed" {
+	// 	println("block is confirmed", record.ConfirmedTime)
+	// }
 
 	err := deps.RemoteLogger.Send(record)
 	if err != nil {

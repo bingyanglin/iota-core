@@ -122,6 +122,22 @@ func configureBlockScheduledMetrics() {
 		sendBlockSchedulerRecord(block, "blockDiscarded")
 	}, event.WithWorkerPool(Component.WorkerPool))
 
+	deps.Protocol.Events.Engine.BlockGadget.BlockPreAccepted.Hook(func(block *blocks.Block) {
+		sendBlockSchedulerRecord(block, "blockPreAccepted")
+	}, event.WithWorkerPool(Component.WorkerPool))
+
+	deps.Protocol.Events.Engine.BlockGadget.BlockAccepted.Hook(func(block *blocks.Block) {
+		sendBlockSchedulerRecord(block, "blockAccepted")
+	}, event.WithWorkerPool(Component.WorkerPool))
+
+	deps.Protocol.Events.Engine.BlockGadget.BlockPreConfirmed.Hook(func(block *blocks.Block) {
+		sendBlockSchedulerRecord(block, "blockPreConfirmed")
+	}, event.WithWorkerPool(Component.WorkerPool))
+
+	deps.Protocol.Events.Engine.BlockGadget.BlockConfirmed.Hook(func(block *blocks.Block) {
+		sendBlockSchedulerRecord(block, "blockConfirmed")
+	}, event.WithWorkerPool(Component.WorkerPool))
+
 }
 
 func configureMissingBlockMetrics() {

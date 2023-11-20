@@ -83,6 +83,14 @@ type BlockScheduledMetrics struct {
 	DeltaScheduledReceived int64 `json:"deltaScheduledReceived" bson:"deltaScheduledReceived"`
 	// ReceivedTimestamp - IssuedTimestamp in nanoseconds
 	DeltaReceivedIssued int64 `json:"DeltaReceivedIssued" bson:"DeltaReceivedIssued"`
+	// PreAcceptanceTime - PreAcceptanceTime in nanoseconds
+	PreAcceptanceTime int64 `json:"preAcceptanceTime" bson:"preAcceptanceTime"`
+	// AcceptanceTime - AcceptanceTime in nanoseconds
+	AcceptanceTime int64 `json:"acceptanceTime" bson:"acceptanceTime"`
+	// PreConfirmedTime - PreConfirmedTime in nanoseconds
+	PreConfirmedTime int64 `json:"preConfirmedTime" bson:"preConfirmedTime"`
+	// ConfirmationTime - ConfirmationTime in nanoseconds
+	ConfirmedTime int64 `json:"confirmedTime" bson:"confirmedTime"`
 	// ScheduledTimestamp - QueuedTimestamp in nanoseconds
 	SchedulingTime  int64 `json:"schedulingTime" bson:"schedulingTime"`
 	AccessMana      int64 `json:"accessMana" bson:"accessMana"`
