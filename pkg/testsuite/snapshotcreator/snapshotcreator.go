@@ -1,6 +1,9 @@
 package snapshotcreator
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
 	"os"
 
 	"golang.org/x/crypto/blake2b"
@@ -185,6 +188,12 @@ func CreateSnapshot(opts ...options.Option[Options]) error {
 			return err
 		}
 	}
+
+	b, _ := api.JSONEncode(engineInstance.LatestAPI().ProtocolParameters())
+	var out bytes.Buffer
+	json.Indent(&out, b, "", "  ")
+
+	fmt.Println(out.String())
 
 	return engineInstance.WriteSnapshot(opt.FilePath)
 }
