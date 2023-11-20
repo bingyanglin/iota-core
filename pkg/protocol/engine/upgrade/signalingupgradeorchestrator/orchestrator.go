@@ -134,6 +134,11 @@ func NewOrchestrator(errorHandler func(error),
 	)
 }
 
+// Reset resets the component to a clean state as if it was created at the last commitment.
+func (o *Orchestrator) Reset() {
+	// TODO: clean up latestSignals
+}
+
 func (o *Orchestrator) Shutdown() {
 	o.TriggerStopped()
 }
@@ -258,7 +263,7 @@ func (o *Orchestrator) tryUpgrade(currentEpoch iotago.EpochIndex, lastSlotInEpoc
 	}
 
 	// Check whether the threshold for version was reached.
-	totalSeatCount := o.seatManager.SeatCount()
+	totalSeatCount := o.seatManager.SeatCountInEpoch(currentEpoch)
 	if !votes.IsThresholdReached(mostSupporters, totalSeatCount, votes.SuperMajority) {
 		return
 	}

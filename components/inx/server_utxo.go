@@ -29,7 +29,7 @@ func NewLedgerOutput(o *utxoledger.Output) (*inx.LedgerOutput, error) {
 	}
 
 	includedSlot := o.SlotBooked()
-	if includedSlot <= latestCommitment.Slot() {
+	if includedSlot > 0 && includedSlot <= latestCommitment.Slot() {
 		includedCommitment, err := deps.Protocol.MainEngineInstance().Storage.Commitments().Load(includedSlot)
 		if err != nil {
 			return nil, ierrors.Wrapf(err, "failed to load commitment with slot: %d", includedSlot)
@@ -54,7 +54,7 @@ func NewLedgerSpent(s *utxoledger.Spent) (*inx.LedgerSpent, error) {
 
 	latestCommitment := deps.Protocol.MainEngineInstance().SyncManager.LatestCommitment()
 	spentSlot := s.SlotSpent()
-	if spentSlot <= latestCommitment.Slot() {
+	if spentSlot > 0 && spentSlot <= latestCommitment.Slot() {
 		spentCommitment, err := deps.Protocol.MainEngineInstance().Storage.Commitments().Load(spentSlot)
 		if err != nil {
 			return nil, ierrors.Wrapf(err, "failed to load commitment with slot: %d", spentSlot)
@@ -353,7 +353,8 @@ func (s *Server) ListenToAcceptedTransactions(_ *inx.NoParams, srv inx.INX_Liste
 		if err := transactionMetadata.Inputs().ForEach(func(stateMetadata mempool.StateMetadata) error {
 			spentOutput, ok := stateMetadata.State().(*utxoledger.Output)
 			if !ok {
-				return ierrors.Errorf("unexpected state metadata type: %T", stateMetadata.State())
+				// not an Output, so we don't need to send it (could be MockedState, Commitment, BlockIssuanceCreditInput, RewardInput, etc.)
+				return nil
 			}
 
 			inxSpent, err := NewLedgerSpent(utxoledger.NewSpent(spentOutput, transactionMetadata.ID(), slot))
@@ -366,13 +367,16 @@ func (s *Server) ListenToAcceptedTransactions(_ *inx.NoParams, srv inx.INX_Liste
 		}); err != nil {
 			Component.LogErrorf("error creating payload: %v", err)
 			cancel()
+
+			return
 		}
 
 		var created []*inx.LedgerOutput
 		if err := transactionMetadata.Outputs().ForEach(func(stateMetadata mempool.StateMetadata) error {
 			output, ok := stateMetadata.State().(*utxoledger.Output)
 			if !ok {
-				return ierrors.Errorf("unexpected state metadata type: %T", stateMetadata.State())
+				// not an Output, so we don't need to send it (could be MockedState, Commitment, BlockIssuanceCreditInput, RewardInput, etc.)
+				return nil
 			}
 
 			inxOutput, err := NewLedgerOutput(output)
@@ -385,6 +389,8 @@ func (s *Server) ListenToAcceptedTransactions(_ *inx.NoParams, srv inx.INX_Liste
 		}); err != nil {
 			Component.LogErrorf("error creating payload: %v", err)
 			cancel()
+
+			return
 		}
 
 		payload := &inx.AcceptedTransaction{
@@ -393,6 +399,12 @@ func (s *Server) ListenToAcceptedTransactions(_ *inx.NoParams, srv inx.INX_Liste
 			Consumed:      consumed,
 			Created:       created,
 		}
+
+		if ctx.Err() != nil {
+			// context is done, so we don't need to send the payload
+			return
+		}
+
 		if err := srv.Send(payload); err != nil {
 			Component.LogErrorf("send error: %v", err)
 			cancel()

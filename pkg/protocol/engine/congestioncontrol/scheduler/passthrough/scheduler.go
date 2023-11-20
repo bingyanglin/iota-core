@@ -36,6 +36,8 @@ func New() *Scheduler {
 }
 
 func (s *Scheduler) Shutdown() {
+	s.TriggerShutdown()
+	s.TriggerStopped()
 }
 
 func (s *Scheduler) IsBlockIssuerReady(_ iotago.AccountID, _ ...*blocks.Block) bool {
@@ -71,3 +73,6 @@ func (s *Scheduler) AddBlock(block *blocks.Block) {
 		s.events.BlockScheduled.Trigger(block)
 	}
 }
+
+// Reset resets the component to a clean state as if it was created at the last commitment.
+func (s *Scheduler) Reset() { /* nothing to reset but comply with interface */ }
