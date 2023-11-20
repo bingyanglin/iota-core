@@ -130,15 +130,7 @@ var Docker = []options.Option[snapshotcreator.Options]{
 		},
 	),
 	snapshotcreator.WithProtocolParameters(
-		iotago.NewV3ProtocolParameters(
-			iotago.WithNetworkOptions("docker", "rms"),
-			iotago.WithSupplyOptions(4_600_000_000_000_000, 1, 1, 10, 100, 100, 100),
-			iotago.WithTimeProviderOptions(5, time.Now().Unix(), 10, 13),
-			iotago.WithLivenessOptions(30, 30, 7, 14, 30),
-			// increase/decrease threshold = fraction * slotDurationInSeconds * schedulerRate
-			iotago.WithCongestionControlOptions(500, 500, 500, 800000, 500000, 100000, 1000, 100),
-			iotago.WithWorkScoreOptions(25, 1, 100, 50, 10, 10, 50, 1, 10, 250),
-		),
+PARAMETERS_GOES_HERE
 	),
 }
 
