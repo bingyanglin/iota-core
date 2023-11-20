@@ -40,6 +40,7 @@ run_network() {
     echo "Running network..."
     # ./run.sh >/dev/null 2>&1 &
     ./run.sh >/dev/null &
+    # ./run.sh &
     RUN_PID=$!
 }
 
@@ -71,6 +72,8 @@ run_tests() {
     echo "=> Running tests..."
     # Your test logic goes here
     cd tool
+    rm wallet.dat config.json evil-spammer.log
+    # timeout 1m: to make sure it gets killed if it hangs
     timeout 1m ./evil-tools spammer -urls "http://localhost:8050" -spammer blk -rate 1000 -duration 10m
     cd -
 
@@ -82,6 +85,7 @@ stop_network() {
     echo "Force-stop the network..."
     docker compose kill
     kill -s KILL $RUN_PID
+    docker compose down
 }
 
 # Function to process and replace a block
