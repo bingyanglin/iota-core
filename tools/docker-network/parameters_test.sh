@@ -81,6 +81,7 @@ run_tests() {
 stop_network() {
     echo "Force-stop the network..."
     docker compose kill
+    kill -s KILL $RUN_PID
 }
 
 # Function to process and replace a block
