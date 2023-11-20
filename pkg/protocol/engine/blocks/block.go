@@ -289,9 +289,8 @@ func (b *Block) IsSolid() (isSolid bool) {
 // SetSolid marks the Block as solid.
 func (b *Block) SetSolid() (wasUpdated bool) {
 	b.mutex.Lock()
-	defer b.mutex.Unlock()
-
 	b.solidTimestamp = time.Now()
+	b.mutex.Unlock()
 
 	return !b.solid.Set(true)
 }
@@ -402,9 +401,8 @@ func (b *Block) IsBooked() (isBooked bool) {
 
 func (b *Block) SetBooked() (wasUpdated bool) {
 	b.mutex.Lock()
-	defer b.mutex.Unlock()
-
 	b.bookedTimestamp = time.Now()
+	b.mutex.Unlock()
 
 	return !b.booked.Set(true)
 }
@@ -520,9 +518,8 @@ func (b *Block) IsAccepted() bool {
 // SetAccepted sets the Block as accepted.
 func (b *Block) SetAccepted() (wasUpdated bool) {
 	b.mutex.Lock()
-	defer b.mutex.Unlock()
-
 	b.acceptedTimestamp = time.Now()
+	b.mutex.Unlock()
 
 	return !b.accepted.Set(true)
 }
@@ -717,9 +714,8 @@ func (b *Block) IsNotarized() (isBooked bool) {
 
 func (b *Block) SetNotarized() (wasUpdated bool) {
 	b.mutex.Lock()
-	defer b.mutex.Unlock()
-
 	b.notarizedTimestamp = time.Now()
+	b.mutex.Unlock()
 
 	return !b.notarized.Set(true)
 }
