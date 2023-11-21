@@ -113,7 +113,7 @@ services:
     volumes:
       - ./docker-network.snapshot:/app/data/snapshot.bin
       - ./config.json:/app/config.json:ro
-    # Note: Modify the remotelog.serverAddress to point to the IP of the logstash machine
+    # TO MODIFY: Modify the remotelog.serverAddress to point to the IP of the logstash machine
     command: >
       ${COMMON_CONFIG}
       ${MANUALPEERING_CONFIG}
