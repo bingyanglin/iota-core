@@ -165,4 +165,9 @@ output {
             password => "{{ elkElasticPassword }}"
         }
     }
+
+    file {
+        path => "/var/log/logstash/output.log"
+        codec => "json_lines"  # This can be adjusted based on your requirements
+    }
 }
