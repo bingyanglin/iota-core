@@ -7,6 +7,17 @@ input_file="input.txt"
 presets_file="../genesis-snapshot/presets/presets.go"
 original_presets_file="../genesis-snapshot/presets/presets.go.bak"
 
+# Initialize counter
+iteration_counter=0
+
+# Create the timestamped directory for dummping the log files
+timestamp=$(date +"%Y_%m_%d_%H_%M")
+dir_path="../../profiling_results/${timestamp}"
+mkdir -p "$dir_path"
+
+# Make sure the evil-tolls config file is removed
+rm -f tool/config.json tool/even-spammer.log
+
 # Backup the original presets file
 cp "$presets_file" "$original_presets_file"
 
@@ -72,9 +83,9 @@ run_tests() {
     echo "=> Running tests..."
     # Your test logic goes here
     cd tool
-    rm wallet.dat config.json evil-spammer.log
+    rm config.json evil-spammer.log
     # timeout 1m: to make sure it gets killed if it hangs
-    timeout 1m ./evil-tools spammer -urls "http://localhost:8050" -spammer blk -rate 1000 -duration 10m
+    timeout 5m ./evil-tools spammer -urls "http://localhost:8050" -spammer blk -rate 100 -duration 10m
     cd -
 
     echo "Waiting a little..."
@@ -84,12 +95,23 @@ run_tests() {
 stop_network() {
     echo "Force-stop the network..."
     docker compose kill
+    sleep 5
     kill -s KILL $RUN_PID
+    sleep 5
     docker compose down
+    sleep 5
+
+    if (( iteration_counter % 3 == 2 )); then
+        echo "Running Docker system prune to clean up..."
+        docker system prune -a --force
+        echo "Docker cleanup complete."
+    fi
 }
 
 # Function to process and replace a block
 process_block() {
+    echo "Iteration: $iteration_counter"
+
     # Replace PARAMETERS_GOES_HERE with the current block
     #sed "/PARAMETERS_GOES_HERE/r $temp_file" -e "/PARAMETERS_GOES_HERE/d" "$original_presets_file" > "$presets_file"
     awk -v block="$(<"$temp_file")" '/PARAMETERS_GOES_HERE/ {print block; next} {print}' "$original_presets_file" > "$presets_file"
@@ -110,7 +132,21 @@ process_block() {
 
     # Restore the original presets file for the next iteration
     cp "$original_presets_file" "$presets_file"
+
+    mv "../../profiling_results/output.log" "${dir_path}/$iteration_counter.log"
+
+    ((iteration_counter++))
 }
+
+# Check if the presets_file contains the specific line
+if grep -q "PARAMETERS_GOES_HERE" "$presets_file"; then
+    echo "Starting the script..."
+    # Call the other script here
+    # ./other_script.sh
+else
+    echo "Error: The line 'PARAMETERS_GOES_HERE' not found in the preset.go."
+    exit 1
+fi
 
 # Read the input file and process it block by block
 while IFS= read -r line || [[ -n "$line" ]]; do
