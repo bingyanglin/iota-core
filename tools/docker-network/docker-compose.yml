@@ -4,10 +4,9 @@ x-build-iota-core: &iota-core_build
   context: ${DOCKER_BUILD_CONTEXT:-../../}
   dockerfile: ${DOCKERFILE_PATH:-./Dockerfile}
 services:
-
-###################
-# IOTA-CORE Nodes #
-###################
+  ###################
+  # IOTA-CORE Nodes #
+  ###################
 
   node-1-validator:
     build: *iota-core_build
@@ -35,7 +34,7 @@ services:
       --inx.bindAddress=0.0.0.0:9029
       --logger.level=warn
       --remotelog.enabled=true
-      --remotelog.serverAddress=192.168.1.122:5213
+      --remotelog.serverAddress=192.168.50.50:5213
       --remotemetrics.enabled=true
 
   node-2-validator:
@@ -63,9 +62,9 @@ services:
       --inx.enabled=true
       --inx.bindAddress=0.0.0.0:9029
       --logger.level=warn
-      --remotelog.enabled=true
-      --remotelog.serverAddress=192.168.1.122:5213
-      --remotemetrics.enabled=true
+      --remotelog.enabled=false
+      --remotelog.serverAddress=192.168.50.50:5213
+      --remotemetrics.enabled=false
 
   node-3-validator:
     image: docker-network-node-1-validator:latest
@@ -92,9 +91,9 @@ services:
       --inx.enabled=true
       --inx.bindAddress=0.0.0.0:9029
       --logger.level=warn
-      --remotelog.enabled=true
-      --remotelog.serverAddress=192.168.1.122:5213
-      --remotemetrics.enabled=true
+      --remotelog.enabled=false
+      --remotelog.serverAddress=192.168.50.50:5213
+      --remotemetrics.enabled=false
 
   node-4:
     image: docker-network-node-1-validator:latest
@@ -114,12 +113,16 @@ services:
     volumes:
       - ./docker-network.snapshot:/app/data/snapshot.bin
       - ./config.json:/app/config.json:ro
+    # Note: Modify the remotelog.serverAddress to point to the IP of the logstash machine
     command: >
       ${COMMON_CONFIG}
       ${MANUALPEERING_CONFIG}
       --p2p.identityPrivateKey=03feb3bcd25e57f75697bb329e6e0100680431e4c45c85bc013da2aea9e9d0345e08a0c37407dc62369deebc64cb0fb3ea26127d19d141ee7fb8eaa6b92019d7
       --inx.enabled=true
       --inx.bindAddress=0.0.0.0:9029
+      --remotelog.serverAddress=192.168.50.50:5213
+      --remotelog.enabled=false
+      --remotemetrics.enabled=false
 
   node-5:
     image: docker-network-node-1-validator:latest
@@ -145,10 +148,13 @@ services:
       --p2p.identityPrivateKey=7d1491df3ef334dee988d6cdfc4b430b996d520bd63375a01d6754f8cee979b855b200fbea8c936ea1937a27e6ad72a7c9a21c1b17c2bd3c11f1f6994d813446
       --inx.enabled=true
       --inx.bindAddress=0.0.0.0:9029
+      --remotelog.serverAddress=192.168.50.50:5213
+      --remotelog.enabled=false
+      --remotemetrics.enabled=false
 
-##################################################################
-#  Monitoring                                                    #
-##################################################################
+  ##################################################################
+  #  Monitoring                                                    #
+  ##################################################################
 
   prometheus:
     image: prom/prometheus:latest
@@ -185,12 +191,12 @@ services:
     profiles:
       - monitoring
 
-##################
-# INX Extensions #
-##################
+  ##################
+  # INX Extensions #
+  ##################
 
   inx-indexer:
-    image: iotaledger/inx-indexer:2.0-alpha
+    image: iotaledger/inx-indexer:2.0.0-alpha.12
     stop_grace_period: 1m
     restart: unless-stopped
     depends_on:
@@ -207,7 +213,7 @@ services:
       --restAPI.bindAddress=inx-indexer:9011
 
   inx-mqtt:
-    image: iotaledger/inx-mqtt:2.0-alpha
+    image: iotaledger/inx-mqtt:2.0.0-alpha.3
     stop_grace_period: 1m
     restart: unless-stopped
     depends_on:
@@ -220,7 +226,7 @@ services:
       --mqtt.websocket.bindAddress=inx-mqtt:1888
 
   inx-blockissuer:
-    image: iotaledger/inx-blockissuer:1.0-alpha
+    image: iotaledger/inx-blockissuer:1.0.0-alpha.8
     stop_grace_period: 1m
     restart: unless-stopped
     depends_on:
@@ -239,7 +245,7 @@ services:
       --blockIssuer.proofOfWork.targetTrailingZeros=5
 
   inx-faucet:
-    image: iotaledger/inx-faucet:2.0-alpha
+    image: iotaledger/inx-faucet:2.0.0-alpha.9
     stop_grace_period: 1m
     restart: unless-stopped
     depends_on:
@@ -261,7 +267,7 @@ services:
       --faucet.rateLimit.enabled=false
 
   inx-validator-1:
-    image: iotaledger/inx-validator:1.0-alpha
+    image: iotaledger/inx-validator:1.0.0-alpha.5
     stop_grace_period: 1m
     restart: unless-stopped
     depends_on:
@@ -272,13 +278,13 @@ services:
     environment:
       - "VALIDATOR_PRV_KEY=443a988ea61797651217de1f4662d4d6da11fd78e67f94511453bf6576045a05293dc170d9a59474e6d81cfba7f7d924c09b25d7166bcfba606e53114d0a758b"
     command: >
-      --logger.level=debug
+      --logger.level=warn
       --inx.address=node-1-validator:9029
       --validator.ignoreBootstrapped=true
       --validator.accountAddress=rms1pzg8cqhfxqhq7pt37y8cs4v5u4kcc48lquy2k73ehsdhf5ukhya3y5rx2w6
 
   inx-validator-2:
-    image: iotaledger/inx-validator:1.0-alpha
+    image: iotaledger/inx-validator:1.0.0-alpha.5
     stop_grace_period: 1m
     restart: unless-stopped
     depends_on:
@@ -289,12 +295,12 @@ services:
     environment:
       - "VALIDATOR_PRV_KEY=3a5d39f8b60367a17fd54dac2a32c172c8e1fd6cf74ce65f1e13edba565f281705c1de274451db8de8182d64c6ee0dca3ae0c9077e0b4330c976976171d79064"
     command: >
-      --logger.level=debug
+      --logger.level=warn
       --inx.address=node-2-validator:9029
       --validator.accountAddress=rms1pqm4xk8e9ny5w5rxjkvtp249tfhlwvcshyr3pc0665jvp7g3hc875k538hl
 
   inx-validator-3:
-    image: iotaledger/inx-validator:1.0-alpha
+    image: iotaledger/inx-validator:1.0.0-alpha.5
     stop_grace_period: 1m
     restart: unless-stopped
     depends_on:
@@ -305,7 +311,7 @@ services:
     environment:
       - "VALIDATOR_PRV_KEY=db39d2fde6301d313b108dc9db1ee724d0f405f6fde966bd776365bc5f4a5fb31e4b21eb51dcddf65c20db1065e1f1514658b23a3ddbf48d30c0efc926a9a648"
     command: >
-      --logger.level=debug
+      --logger.level=warn
       --inx.address=node-3-validator:9029
       --validator.accountAddress=rms1pp4wuuz0y42caz48vv876qfpmffswsvg40zz8v79sy8cp0jfxm4kunflcgt
 
