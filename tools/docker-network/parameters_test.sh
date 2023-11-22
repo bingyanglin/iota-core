@@ -85,7 +85,7 @@ run_tests() {
     cd tool
     rm config.json evil-spammer.log
     # timeout 1m: to make sure it gets killed if it hangs
-    timeout 5m ./evil-tools spammer -urls "http://localhost:8050" -spammer blk -rate 100 -duration 10m
+    timeout 5m ./evil-tools spammer -urls "http://localhost:8050" -spammer blk -rate 1000 -duration 10m
     cd -
 
     echo "Waiting a little..."
@@ -133,7 +133,10 @@ process_block() {
     # Restore the original presets file for the next iteration
     cp "$original_presets_file" "$presets_file"
 
-    mv "../../profiling_results/output.log" "${dir_path}/$iteration_counter.log"
+    docker cp logstash:/usr/share/logstash/output.log ${dir_path}/$iteration_counter.log
+
+    docker exec logstash rm /usr/share/logstash/output.log
+    # mv "../../profiling_results/output.log" "${dir_path}/$iteration_counter.log"
 
     ((iteration_counter++))
 }
