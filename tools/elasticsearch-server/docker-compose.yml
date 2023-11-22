@@ -36,8 +36,7 @@ services:
         source: ./config/logstash/pipeline
         target: /usr/share/logstash/pipeline
         read_only: true
-      # TO MODIFY: Modify the path to your result folder
-      - /Users/bylin/Projects/IOTA/my_iota_core/iota-core/profiling_results:/var/log/logstash
+
     ports:
       - "5213:5213/udp"
     environment:
