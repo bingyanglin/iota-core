@@ -5,7 +5,7 @@ go 1.21
 replace github.com/iotaledger/iota-core => ../../
 
 require (
-	github.com/iotaledger/hive.go/app v0.0.0-20231110191152-7135670285dc
+	github.com/iotaledger/hive.go/app v0.0.0-20231113110812-4ca2b6cc9a42
 	github.com/iotaledger/hive.go/apputils v0.0.0-20230829152614-7afc7a4d89b3
 	github.com/iotaledger/iota-core v0.0.0-00010101000000-000000000000
 )
@@ -25,7 +25,8 @@ require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/eclipse/paho.mqtt.golang v1.4.3 // indirect
 	github.com/elastic/gosigar v0.14.2 // indirect
-	github.com/ethereum/go-ethereum v1.13.4 // indirect
+	github.com/emirpasic/gods v1.12.0 // indirect
+	github.com/ethereum/go-ethereum v1.13.5 // indirect
 	github.com/fatih/structs v1.1.0 // indirect
 	github.com/fbiville/markdown-table-formatter v0.3.0 // indirect
 	github.com/felixge/fgprof v0.9.3 // indirect
@@ -58,21 +59,21 @@ require (
 	github.com/iancoleman/orderedmap v0.3.0 // indirect
 	github.com/iotaledger/grocksdb v1.7.5-0.20230220105546-5162e18885c7 // indirect
 	github.com/iotaledger/hive.go/ads v0.0.0-20231110191152-7135670285dc // indirect
-	github.com/iotaledger/hive.go/constraints v0.0.0-20231110191152-7135670285dc // indirect
-	github.com/iotaledger/hive.go/core v1.0.0-rc.3.0.20231110191152-7135670285dc // indirect
-	github.com/iotaledger/hive.go/crypto v0.0.0-20231110191152-7135670285dc // indirect
-	github.com/iotaledger/hive.go/ds v0.0.0-20231110191152-7135670285dc // indirect
-	github.com/iotaledger/hive.go/ierrors v0.0.0-20231110191152-7135670285dc // indirect
+	github.com/iotaledger/hive.go/constraints v0.0.0-20231113110812-4ca2b6cc9a42 // indirect
+	github.com/iotaledger/hive.go/core v1.0.0-rc.3.0.20231113110812-4ca2b6cc9a42 // indirect
+	github.com/iotaledger/hive.go/crypto v0.0.0-20231113110812-4ca2b6cc9a42 // indirect
+	github.com/iotaledger/hive.go/ds v0.0.0-20231113110812-4ca2b6cc9a42 // indirect
+	github.com/iotaledger/hive.go/ierrors v0.0.0-20231113110812-4ca2b6cc9a42 // indirect
 	github.com/iotaledger/hive.go/kvstore v0.0.0-20231110191152-7135670285dc // indirect
-	github.com/iotaledger/hive.go/lo v0.0.0-20231110191152-7135670285dc // indirect
+	github.com/iotaledger/hive.go/lo v0.0.0-20231113110812-4ca2b6cc9a42 // indirect
 	github.com/iotaledger/hive.go/log v0.0.0-20231110191152-7135670285dc // indirect
-	github.com/iotaledger/hive.go/logger v0.0.0-20231110191152-7135670285dc // indirect
-	github.com/iotaledger/hive.go/runtime v0.0.0-20231110191152-7135670285dc // indirect
-	github.com/iotaledger/hive.go/serializer/v2 v2.0.0-rc.1.0.20231110191152-7135670285dc // indirect
-	github.com/iotaledger/hive.go/stringify v0.0.0-20231110191152-7135670285dc // indirect
-	github.com/iotaledger/inx-app v1.0.0-rc.3.0.20231110132801-e38d9fbdd467 // indirect
-	github.com/iotaledger/inx/go v1.0.0-rc.2.0.20231110132251-8abdb05cce43 // indirect
-	github.com/iotaledger/iota.go/v4 v4.0.0-20231110131407-263d0662856b // indirect
+	github.com/iotaledger/hive.go/logger v0.0.0-20231113110812-4ca2b6cc9a42 // indirect
+	github.com/iotaledger/hive.go/runtime v0.0.0-20231113110812-4ca2b6cc9a42 // indirect
+	github.com/iotaledger/hive.go/serializer/v2 v2.0.0-rc.1.0.20231113110812-4ca2b6cc9a42 // indirect
+	github.com/iotaledger/hive.go/stringify v0.0.0-20231113110812-4ca2b6cc9a42 // indirect
+	github.com/iotaledger/inx-app v1.0.0-rc.3.0.20231121121055-b13a176c5180 // indirect
+	github.com/iotaledger/inx/go v1.0.0-rc.2.0.20231120082637-ccd5b8465251 // indirect
+	github.com/iotaledger/iota.go/v4 v4.0.0-20231120063545-80c263f28140 // indirect
 	github.com/ipfs/boxo v0.13.1 // indirect
 	github.com/ipfs/go-cid v0.4.1 // indirect
 	github.com/ipfs/go-datastore v0.6.0 // indirect
@@ -80,8 +81,10 @@ require (
 	github.com/ipfs/go-log/v2 v2.5.1 // indirect
 	github.com/ipld/go-ipld-prime v0.21.0 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.2 // indirect
+	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/jbenet/go-temp-err-catcher v0.1.0 // indirect
 	github.com/jbenet/goprocess v0.1.4 // indirect
+	github.com/kevinburke/ssh_config v0.0.0-20190725054713-01f96b0aa0cd // indirect
 	github.com/klauspost/compress v1.17.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.5 // indirect
 	github.com/knadh/koanf v1.5.0 // indirect
@@ -112,6 +115,7 @@ require (
 	github.com/mikioh/tcpopt v0.0.0-20190314235656-172688c1accc // indirect
 	github.com/minio/sha256-simd v1.0.1 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
+	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
 	github.com/mr-tron/base58 v1.2.0 // indirect
@@ -147,15 +151,18 @@ require (
 	github.com/quic-go/webtransport-go v0.6.0 // indirect
 	github.com/raulk/go-watchdog v1.3.0 // indirect
 	github.com/sasha-s/go-deadlock v0.3.1 // indirect
+	github.com/sergi/go-diff v1.0.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/spf13/cast v1.5.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
+	github.com/src-d/gcfg v1.4.0 // indirect
 	github.com/stretchr/testify v1.8.4 // indirect
 	github.com/tcnksm/go-latest v0.0.0-20170313132115-e3007ae9052e // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	github.com/whyrusleeping/go-keyspace v0.0.0-20160322163242-5b898ac5add1 // indirect
 	github.com/wollac/iota-crypto-demo v0.0.0-20221117162917-b10619eccb98 // indirect
+	github.com/xanzy/ssh-agent v0.2.1 // indirect
 	github.com/zyedidia/generic v1.2.1 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/otel v1.19.0 // indirect
@@ -181,6 +188,9 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20231106174013-bbf56f31fb17 // indirect
 	google.golang.org/grpc v1.59.0 // indirect
 	google.golang.org/protobuf v1.31.0 // indirect
+	gopkg.in/src-d/go-billy.v4 v4.3.2 // indirect
+	gopkg.in/src-d/go-git.v4 v4.13.1 // indirect
+	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	lukechampine.com/blake3 v1.2.1 // indirect

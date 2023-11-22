@@ -29,3 +29,9 @@ dist/
 # snapshot and settings file
 *.bin
 tools/docker-network/docker-network.snapshot
+
+## files from batch running
+tools/docker-network/tool/*.log
+tools/docker-network/tool/*.json
+tools/docker-network/tool/evil-tools*
+*.bak
