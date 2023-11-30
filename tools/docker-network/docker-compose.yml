@@ -11,7 +11,7 @@ services:
   node-1-validator:
     build: *iota-core_build
     stop_grace_period: 1m
-    restart: no
+    restart: unless-stopped
     ulimits:
       nofile:
         soft: 16384
@@ -42,7 +42,7 @@ services:
   node-2-validator:
     image: docker-network-node-1-validator:latest
     stop_grace_period: 1m
-    restart: no
+    restart: unless-stopped
     ulimits:
       nofile:
         soft: 16384
@@ -64,14 +64,14 @@ services:
       --inx.enabled=true
       --inx.bindAddress=0.0.0.0:9029
       --logger.level=warn
-      --remotelog.enabled=true
+      --remotelog.enabled=false
       --remotelog.serverAddress=172.17.0.1:5213
-      --remotemetrics.enabled=true
+      --remotemetrics.enabled=false
 
   node-3-validator:
     image: docker-network-node-1-validator:latest
     stop_grace_period: 1m
-    restart: no
+    restart: unless-stopped
     ulimits:
       nofile:
         soft: 16384
@@ -93,14 +93,14 @@ services:
       --inx.enabled=true
       --inx.bindAddress=0.0.0.0:9029
       --logger.level=warn
-      --remotelog.enabled=true
+      --remotelog.enabled=false
       --remotelog.serverAddress=172.17.0.1:5213
-      --remotemetrics.enabled=true
+      --remotemetrics.enabled=false
 
   node-4:
     image: docker-network-node-1-validator:latest
     stop_grace_period: 1m
-    restart: no
+    restart: unless-stopped
     ulimits:
       nofile:
         soft: 16384
@@ -128,7 +128,7 @@ services:
   node-5:
     image: docker-network-node-1-validator:latest
     stop_grace_period: 1m
-    restart: no
+    restart: unless-stopped
     ulimits:
       nofile:
         soft: 16384
@@ -160,7 +160,7 @@ services:
   prometheus:
     image: prom/prometheus:latest
     stop_grace_period: 1m
-    restart: no
+    restart: unless-stopped
     depends_on:
       node-1-validator:
         condition: service_started
@@ -177,7 +177,7 @@ services:
 
   grafana:
     image: grafana/grafana:9.5.6
-    restart: no
+    restart: unless-stopped
     networks:
       - iota-core
     ports:
@@ -197,9 +197,9 @@ services:
   ##################
 
   inx-indexer:
-    image: iotaledger/inx-indexer:2.0.0-alpha.15
+    image: iotaledger/inx-indexer:2.0.0-alpha.13
     stop_grace_period: 1m
-    restart: no
+    restart: unless-stopped
     depends_on:
       node-1-validator:
         condition: service_healthy
@@ -216,7 +216,7 @@ services:
   inx-mqtt:
     image: iotaledger/inx-mqtt:2.0.0-alpha.3
     stop_grace_period: 1m
-    restart: no
+    restart: unless-stopped
     depends_on:
       node-1-validator:
         condition: service_healthy
@@ -227,7 +227,7 @@ services:
       --mqtt.websocket.bindAddress=inx-mqtt:1888
 
   inx-blockissuer:
-    image: iotaledger/inx-blockissuer:1.0.0-alpha.11
+    image: iotaledger/inx-blockissuer:1.0.0-alpha.9
     stop_grace_period: 1m
     restart: unless-stopped
     depends_on:
@@ -246,7 +246,7 @@ services:
       --blockIssuer.proofOfWork.targetTrailingZeros=5
 
   inx-faucet:
-    image: iotaledger/inx-faucet:2.0.0-alpha.13
+    image: iotaledger/inx-faucet:2.0.0-alpha.10
     stop_grace_period: 1m
     restart: unless-stopped
     depends_on:
@@ -268,9 +268,9 @@ services:
       --faucet.rateLimit.enabled=false
 
   inx-validator-1:
-    image: iotaledger/inx-validator:1.0.0-alpha.8
+    image: iotaledger/inx-validator:1.0.0-alpha.6
     stop_grace_period: 1m
-    restart: no
+    restart: unless-stopped
     depends_on:
       node-1-validator:
         condition: service_started
@@ -285,9 +285,9 @@ services:
       --validator.accountAddress=rms1pzg8cqhfxqhq7pt37y8cs4v5u4kcc48lquy2k73ehsdhf5ukhya3y5rx2w6
 
   inx-validator-2:
-    image: iotaledger/inx-validator:1.0.0-alpha.8
+    image: iotaledger/inx-validator:1.0.0-alpha.6
     stop_grace_period: 1m
-    restart: no
+    restart: unless-stopped
     depends_on:
       node-2-validator:
         condition: service_started
@@ -301,9 +301,9 @@ services:
       --validator.accountAddress=rms1pqm4xk8e9ny5w5rxjkvtp249tfhlwvcshyr3pc0665jvp7g3hc875k538hl
 
   inx-validator-3:
-    image: iotaledger/inx-validator:1.0.0-alpha.8
+    image: iotaledger/inx-validator:1.0.0-alpha.6
     stop_grace_period: 1m
-    restart: no
+    restart: unless-stopped
     depends_on:
       node-3-validator:
         condition: service_started

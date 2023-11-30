@@ -103,7 +103,7 @@ stop_network() {
 
     if (( iteration_counter % 2 == 1 )); then
         echo "Running Docker system prune to clean up..."
-        docker system prune -a --force
+        docker system prune -af
         echo "Docker cleanup complete."
     fi
 }
