@@ -36,7 +36,7 @@ services:
       --inx.bindAddress=0.0.0.0:9029
       --logger.level=warn
       --remotelog.enabled=true
-      --remotelog.serverAddress=192.168.50.50:5213
+      --remotelog.serverAddress=172.17.0.1:5213
       --remotemetrics.enabled=true
 
   node-2-validator:
@@ -64,9 +64,9 @@ services:
       --inx.enabled=true
       --inx.bindAddress=0.0.0.0:9029
       --logger.level=warn
-      --remotelog.enabled=false
-      --remotelog.serverAddress=192.168.50.50:5213
-      --remotemetrics.enabled=false
+      --remotelog.enabled=true
+      --remotelog.serverAddress=172.17.0.1:5213
+      --remotemetrics.enabled=true
 
   node-3-validator:
     image: docker-network-node-1-validator:latest
@@ -93,9 +93,9 @@ services:
       --inx.enabled=true
       --inx.bindAddress=0.0.0.0:9029
       --logger.level=warn
-      --remotelog.enabled=false
-      --remotelog.serverAddress=192.168.50.50:5213
-      --remotemetrics.enabled=false
+      --remotelog.enabled=true
+      --remotelog.serverAddress=172.17.0.1:5213
+      --remotemetrics.enabled=true
 
   node-4:
     image: docker-network-node-1-validator:latest
@@ -121,7 +121,7 @@ services:
       --p2p.identityPrivateKey=03feb3bcd25e57f75697bb329e6e0100680431e4c45c85bc013da2aea9e9d0345e08a0c37407dc62369deebc64cb0fb3ea26127d19d141ee7fb8eaa6b92019d7
       --inx.enabled=true
       --inx.bindAddress=0.0.0.0:9029
-      --remotelog.serverAddress=192.168.50.50:5213
+      --remotelog.serverAddress=172.17.0.1:5213
       --remotelog.enabled=false
       --remotemetrics.enabled=false
 
@@ -149,7 +149,7 @@ services:
       --p2p.identityPrivateKey=7d1491df3ef334dee988d6cdfc4b430b996d520bd63375a01d6754f8cee979b855b200fbea8c936ea1937a27e6ad72a7c9a21c1b17c2bd3c11f1f6994d813446
       --inx.enabled=true
       --inx.bindAddress=0.0.0.0:9029
-      --remotelog.serverAddress=192.168.50.50:5213
+      --remotelog.serverAddress=172.17.0.1:5213
       --remotelog.enabled=false
       --remotemetrics.enabled=false
 

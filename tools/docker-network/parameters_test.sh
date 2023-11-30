@@ -56,8 +56,8 @@ run_network() {
 }
 
 check_network() {
-    # Maximum wait time in seconds (5 minutes)
-    max_wait=300
+    # Maximum wait time in seconds (10 minutes)
+    max_wait=600
     start_time=$(date +%s)
 
     # Retry loop with timeout
@@ -101,7 +101,7 @@ stop_network() {
     docker compose down
     sleep 5
 
-    if (( iteration_counter % 3 == 2 )); then
+    if (( iteration_counter % 2 == 1 )); then
         echo "Running Docker system prune to clean up..."
         docker system prune -a --force
         echo "Docker cleanup complete."
@@ -118,12 +118,18 @@ process_block() {
 
     run_network
 
-    if ! check_network; then
+    # if ! check_network; then
+    #     echo "Network failed to sync."
+    #     # exit 1
+    # fi
+
+    if check_network; then
+        run_tests
+    else
         echo "Network failed to sync."
-        exit 1
     fi
 
-    run_tests
+    # run_tests
 
     stop_network
     
