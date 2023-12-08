@@ -10,6 +10,7 @@ import (
 
 	"github.com/iotaledger/hive.go/ierrors"
 	"github.com/iotaledger/hive.go/lo"
+	"github.com/iotaledger/hive.go/log"
 	"github.com/iotaledger/hive.go/runtime/options"
 	"github.com/iotaledger/hive.go/runtime/workerpool"
 	"github.com/iotaledger/iota-core/pkg/model"
@@ -33,8 +34,8 @@ import (
 	"github.com/iotaledger/iota-core/pkg/protocol/sybilprotection/sybilprotectionv1"
 	"github.com/iotaledger/iota-core/pkg/retainer/retainer"
 	"github.com/iotaledger/iota-core/pkg/storage"
-	"github.com/iotaledger/iota-core/pkg/testsuite/mock"
 	iotago "github.com/iotaledger/iota.go/v4"
+	"github.com/iotaledger/iota.go/v4/wallet"
 )
 
 // CreateSnapshot creates a new snapshot. Genesis is defined by genesisTokenAmount and seedBytes, it
@@ -97,8 +98,9 @@ func CreateSnapshot(opts ...options.Option[Options]) error {
 		}
 	}
 
-	engineInstance := engine.New(workers.CreateGroup("Engine"),
-		errorHandler,
+	engineInstance := engine.New(
+		log.NewLogger("snapshot-creator"),
+		workers.CreateGroup("Engine"),
 		s,
 		presolidblockfilter.NewProvider(),
 		postsolidblockfilter.NewProvider(),
@@ -119,7 +121,7 @@ func CreateSnapshot(opts ...options.Option[Options]) error {
 		trivialsyncmanager.NewProvider(),
 		engine.WithSnapshotPath(""), // magic to disable loading snapshot
 	)
-	defer engineInstance.Shutdown()
+	defer engineInstance.Shutdown.Trigger()
 
 	if opt.AddGenesisRootBlock {
 		engineInstance.EvictionState.AddRootBlock(api.ProtocolParameters().GenesisBlockID(), genesisCommitment.ID())
@@ -198,7 +200,7 @@ func CreateSnapshot(opts ...options.Option[Options]) error {
 	return engineInstance.WriteSnapshot(opt.FilePath)
 }
 
-func createGenesisOutput(api iotago.API, genesisTokenAmount iotago.BaseToken, genesisMana iotago.Mana, genesisKeyManager *mock.KeyManager) (iotago.Output, error) {
+func createGenesisOutput(api iotago.API, genesisTokenAmount iotago.BaseToken, genesisMana iotago.Mana, genesisKeyManager *wallet.KeyManager) (iotago.Output, error) {
 	if genesisTokenAmount > 0 {
 		output := createOutput(genesisKeyManager.Address(iotago.AddressEd25519), genesisTokenAmount, genesisMana)
 

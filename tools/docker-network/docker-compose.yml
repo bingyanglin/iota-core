@@ -38,6 +38,8 @@ services:
       --remotelog.enabled=true
       --remotelog.serverAddress=172.17.0.1:5213
       --remotemetrics.enabled=true
+      --metrics.goMetrics=true
+      --metrics.processMetrics=true
 
   node-2-validator:
     image: docker-network-node-1-validator:latest
@@ -67,6 +69,8 @@ services:
       --remotelog.enabled=false
       --remotelog.serverAddress=172.17.0.1:5213
       --remotemetrics.enabled=false
+      --metrics.goMetrics=true
+      --metrics.processMetrics=true
 
   node-3-validator:
     image: docker-network-node-1-validator:latest
@@ -96,6 +100,8 @@ services:
       --remotelog.enabled=false
       --remotelog.serverAddress=172.17.0.1:5213
       --remotemetrics.enabled=false
+      --metrics.goMetrics=true
+      --metrics.processMetrics=true
 
   node-4:
     image: docker-network-node-1-validator:latest
@@ -124,6 +130,8 @@ services:
       --remotelog.serverAddress=172.17.0.1:5213
       --remotelog.enabled=false
       --remotemetrics.enabled=false
+      --metrics.goMetrics=true
+      --metrics.processMetrics=true
 
   node-5:
     image: docker-network-node-1-validator:latest
@@ -152,6 +160,8 @@ services:
       --remotelog.serverAddress=172.17.0.1:5213
       --remotelog.enabled=false
       --remotemetrics.enabled=false
+      --metrics.goMetrics=true
+      --metrics.processMetrics=true
 
   ##################################################################
   #  Monitoring                                                    #

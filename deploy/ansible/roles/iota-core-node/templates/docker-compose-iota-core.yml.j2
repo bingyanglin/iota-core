@@ -53,6 +53,8 @@ services:
       --metrics.bindAddress=iota-core:9311
       --inx.enabled=true
       --inx.bindAddress=iota-core:9029
+      --metrics.goMetrics=true
+      --metrics.processMetrics=true
 
 ##################
 # INX Extensions #
@@ -141,6 +143,7 @@ services:
     environment:
       - "VALIDATOR_PRV_KEY={{validatorPrvKey}}"
     command: >
+      --logger.level=debug
       --inx.address=iota-core:9029
       {% if 'node-01' in inventory_hostname %}
       --validator.ignoreBootstrapped=true

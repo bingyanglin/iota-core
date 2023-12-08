@@ -96,7 +96,7 @@ func configure() error {
 		}
 		c.Response().Header().Set(echo.HeaderLocation, resp.BlockID.ToHex())
 
-		return httpserver.JSONResponse(c, http.StatusCreated, resp)
+		return responseByHeader(c, resp, http.StatusCreated)
 	}, checkNodeSynced())
 
 	routeGroup.GET(api.CoreEndpointBlockIssuance, func(c echo.Context) error {
@@ -142,6 +142,26 @@ func configure() error {
 		return responseByHeader(c, resp)
 	})
 
+	routeGroup.GET(api.EndpointWithEchoParameters(api.CoreEndpointCommitmentByIDUTXOChangesFull), func(c echo.Context) error {
+		commitmentID, err := httpserver.ParseCommitmentIDParam(c, api.ParameterCommitmentID)
+		if err != nil {
+			return err
+		}
+
+		// load the commitment to check if it matches the given commitmentID
+		commitment, err := getCommitmentByID(commitmentID)
+		if err != nil {
+			return err
+		}
+
+		resp, err := getUTXOChangesFull(commitment.ID())
+		if err != nil {
+			return err
+		}
+
+		return responseByHeader(c, resp)
+	})
+
 	routeGroup.GET(api.EndpointWithEchoParameters(api.CoreEndpointCommitmentBySlot), func(c echo.Context) error {
 		index, err := httpserver.ParseSlotParam(c, api.ParameterSlot)
 		if err != nil {
@@ -168,6 +188,25 @@ func configure() error {
 		}
 
 		resp, err := getUTXOChanges(commitment.ID())
+		if err != nil {
+			return err
+		}
+
+		return responseByHeader(c, resp)
+	})
+
+	routeGroup.GET(api.EndpointWithEchoParameters(api.CoreEndpointCommitmentBySlotUTXOChangesFull), func(c echo.Context) error {
+		slot, err := httpserver.ParseSlotParam(c, api.ParameterSlot)
+		if err != nil {
+			return err
+		}
+
+		commitment, err := getCommitmentBySlot(slot)
+		if err != nil {
+			return err
+		}
+
+		resp, err := getUTXOChangesFull(commitment.ID())
 		if err != nil {
 			return err
 		}
@@ -285,7 +324,7 @@ func AddFeature(feature string) {
 func checkNodeSynced() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			if !deps.Protocol.MainEngineInstance().SyncManager.IsNodeSynced() {
+			if !deps.Protocol.Engines.Main.Get().SyncManager.IsNodeSynced() {
 				return ierrors.Wrap(echo.ErrServiceUnavailable, "node is not synced")
 			}
 
@@ -294,7 +333,7 @@ func checkNodeSynced() echo.MiddlewareFunc {
 	}
 }
 
-func responseByHeader(c echo.Context, obj any) error {
+func responseByHeader(c echo.Context, obj any, httpStatusCode ...int) error {
 	// TODO: that should take the API that belongs to the object
-	return httpserver.SendResponseByHeader(c, deps.Protocol.CommittedAPI(), obj)
+	return httpserver.SendResponseByHeader(c, deps.Protocol.CommittedAPI(), obj, httpStatusCode...)
 }

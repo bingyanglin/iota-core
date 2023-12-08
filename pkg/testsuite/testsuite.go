@@ -2,6 +2,8 @@ package testsuite
 
 import (
 	"fmt"
+	"log/slog"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -14,6 +16,7 @@ import (
 	"github.com/iotaledger/hive.go/ds/orderedmap"
 	"github.com/iotaledger/hive.go/ds/shrinkingmap"
 	"github.com/iotaledger/hive.go/lo"
+	"github.com/iotaledger/hive.go/log"
 	"github.com/iotaledger/hive.go/runtime/options"
 	"github.com/iotaledger/hive.go/runtime/syncutils"
 	"github.com/iotaledger/iota-core/pkg/core/account"
@@ -26,51 +29,8 @@ import (
 	"github.com/iotaledger/iota-core/pkg/testsuite/snapshotcreator"
 	iotago "github.com/iotaledger/iota.go/v4"
 	"github.com/iotaledger/iota.go/v4/tpkg"
+	"github.com/iotaledger/iota.go/v4/wallet"
 )
-
-func DefaultProtocolParameterOptions(networkName string) []options.Option[iotago.V3ProtocolParameters] {
-	return []options.Option[iotago.V3ProtocolParameters]{
-		iotago.WithNetworkOptions(
-			networkName,
-			"rms",
-		),
-		iotago.WithSupplyOptions(
-			1_000_0000,
-			100,
-			1,
-			10,
-			100,
-			100,
-			100,
-		),
-		iotago.WithRewardsOptions(8, 8, 31, 1154, 2, 1),
-		iotago.WithStakingOptions(1, 100, 1),
-
-		iotago.WithTimeProviderOptions(
-			0,
-			GenesisTimeWithOffsetBySlots(0, DefaultSlotDurationInSeconds),
-			DefaultSlotDurationInSeconds,
-			DefaultSlotsPerEpochExponent,
-		),
-		iotago.WithLivenessOptions(
-			DefaultLivenessThresholdLowerBoundInSeconds,
-			DefaultLivenessThresholdUpperBoundInSeconds,
-			DefaultMinCommittableAge,
-			DefaultMaxCommittableAge,
-			DefaultEpochNearingThreshold,
-		),
-		iotago.WithCongestionControlOptions(
-			DefaultMinReferenceManaCost,
-			DefaultRMCIncrease,
-			DefaultRMCDecrease,
-			DefaultRMCIncreaseThreshold,
-			DefaultRMCDecreaseThreshold,
-			DefaultSchedulerRate,
-			DefaultMaxBufferSize,
-			DefaultMaxValBufferSize,
-		),
-	}
-}
 
 type WalletOptions struct {
 	Amount               iotago.BaseToken
@@ -109,21 +69,21 @@ type TestSuite struct {
 	optsSnapshotOptions []options.Option[snapshotcreator.Options]
 	optsWaitFor         time.Duration
 	optsTick            time.Duration
+	optsLogHandler      slog.Handler
 
 	uniqueBlockTimeCounter              atomic.Int64
 	automaticTransactionIssuingCounters shrinkingmap.ShrinkingMap[string, int]
 	mutex                               syncutils.RWMutex
-	genesisKeyManager                   *mock.KeyManager
+	genesisKeyManager                   *wallet.KeyManager
 
 	currentSlot iotago.SlotIndex
 }
 
 func NewTestSuite(testingT *testing.T, opts ...options.Option[TestSuite]) *TestSuite {
-	genesisSeed := tpkg.RandEd25519Seed()
 	return options.Apply(&TestSuite{
 		Testing:                             testingT,
 		fakeTesting:                         &testing.T{},
-		genesisKeyManager:                   mock.NewKeyManager(genesisSeed[:], 0),
+		genesisKeyManager:                   lo.PanicOnErr(wallet.NewKeyManagerFromRandom(wallet.DefaultIOTAPath)),
 		network:                             mock.NewNetwork(),
 		Directory:                           utils.NewDirectory(testingT.TempDir()),
 		nodes:                               orderedmap.New[string, *mock.Node](),
@@ -131,13 +91,14 @@ func NewTestSuite(testingT *testing.T, opts ...options.Option[TestSuite]) *TestS
 		blocks:                              shrinkingmap.New[string, *blocks.Block](),
 		automaticTransactionIssuingCounters: *shrinkingmap.New[string, int](),
 
-		optsWaitFor: durationFromEnvOrDefault(5*time.Second, "CI_UNIT_TESTS_WAIT_FOR"),
-		optsTick:    durationFromEnvOrDefault(2*time.Millisecond, "CI_UNIT_TESTS_TICK"),
+		optsWaitFor:    durationFromEnvOrDefault(5*time.Second, "CI_UNIT_TESTS_WAIT_FOR"),
+		optsTick:       durationFromEnvOrDefault(2*time.Millisecond, "CI_UNIT_TESTS_TICK"),
+		optsLogHandler: log.NewTextHandler(os.Stdout),
 	}, opts, func(t *TestSuite) {
 		fmt.Println("Setup TestSuite -", testingT.Name(), " @ ", time.Now())
 
-		t.ProtocolParameterOptions = append(DefaultProtocolParameterOptions(testingT.Name()), t.ProtocolParameterOptions...)
-		t.API = iotago.V3API(iotago.NewV3ProtocolParameters(t.ProtocolParameterOptions...))
+		t.ProtocolParameterOptions = append(t.ProtocolParameterOptions, iotago.WithNetworkOptions(testingT.Name(), iotago.PrefixTestnet))
+		t.API = iotago.V3API(iotago.NewV3SnapshotProtocolParameters(t.ProtocolParameterOptions...))
 
 		genesisBlock := blocks.NewRootBlock(t.API.ProtocolParameters().GenesisBlockID(), iotago.NewEmptyCommitment(t.API).MustID(), time.Unix(t.API.ProtocolParameters().GenesisUnixTimestamp(), 0))
 		t.RegisterBlock("Genesis", genesisBlock)
@@ -322,7 +283,7 @@ func (t *TestSuite) SeatOfNodes(slot iotago.SlotIndex, names ...string) []accoun
 	nodes := t.Nodes(names...)
 
 	return lo.Map(nodes, func(node *mock.Node) account.SeatIndex {
-		seatedAccounts, exists := node.Protocol.MainEngineInstance().SybilProtection.SeatManager().CommitteeInSlot(slot)
+		seatedAccounts, exists := node.Protocol.Engines.Main.Get().SybilProtection.SeatManager().CommitteeInSlot(slot)
 		require.True(t.Testing, exists, "node %s: committee at slot %d does not exist", node.Name, slot)
 
 		seat, exists := seatedAccounts.GetSeat(node.Validator.AccountID)
@@ -371,7 +332,7 @@ func (t *TestSuite) addNodeToPartition(name string, partition string, validator 
 		panic(fmt.Sprintf("cannot add validator node %s to partition %s: framework already running", name, partition))
 	}
 
-	node := mock.NewNode(t.Testing, t.network, partition, name, validator)
+	node := mock.NewNode(t.Testing, t.network, partition, name, validator, t.optsLogHandler)
 	t.nodes.Set(name, node)
 	node.SetCurrentSlot(t.currentSlot)
 
@@ -471,7 +432,7 @@ func (t *TestSuite) DefaultWallet() *mock.Wallet {
 	return defaultWallet
 }
 
-func (t *TestSuite) AddWallet(name string, node *mock.Node, accountID iotago.AccountID, keyManager ...*mock.KeyManager) *mock.Wallet {
+func (t *TestSuite) AddWallet(name string, node *mock.Node, accountID iotago.AccountID, keyManager ...*wallet.KeyManager) *mock.Wallet {
 	newWallet := mock.NewWallet(t.Testing, name, node, keyManager...)
 	newWallet.SetBlockIssuer(accountID)
 	t.wallets.Set(name, newWallet)
@@ -559,7 +520,7 @@ func (t *TestSuite) Run(failOnBlockFiltered bool, nodesOptions ...map[string][]o
 
 	if _, firstNode, exists := t.nodes.Head(); exists {
 		t.wallets.ForEach(func(_ string, wallet *mock.Wallet) bool {
-			if err := firstNode.Protocol.MainEngineInstance().Ledger.ForEachUnspentOutput(func(output *utxoledger.Output) bool {
+			if err := firstNode.Protocol.Engines.Main.Get().Ledger.ForEachUnspentOutput(func(output *utxoledger.Output) bool {
 				wallet.AddOutput(fmt.Sprintf("Genesis:%d", output.OutputID().Index()), output)
 				return true
 			}); err != nil {

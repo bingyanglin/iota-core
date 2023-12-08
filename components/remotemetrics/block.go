@@ -10,7 +10,7 @@ import (
 
 func sendBlockSchedulerRecord(block *blocks.Block, recordType string) {
 	// print(recordType)
-	if !deps.Protocol.MainEngineInstance().SyncManager.IsNodeSynced() {
+	if !deps.Protocol.Engines.Main.Get().SyncManager.IsNodeSynced() {
 		return
 	}
 	var nodeID = deps.Host.ID().String()
@@ -62,7 +62,7 @@ func sendBlockSchedulerRecord(block *blocks.Block, recordType string) {
 		if err != nil {
 			return
 		}
-		txMetadata, exist := deps.Protocol.MainEngineInstance().Ledger.MemPool().TransactionMetadata(txID)
+		txMetadata, exist := deps.Protocol.Engines.Main.Get().Ledger.MemPool().TransactionMetadata(txID)
 		if !exist {
 			return
 		}
@@ -110,7 +110,7 @@ func sendBlockSchedulerRecord(block *blocks.Block, recordType string) {
 // }
 
 func sendMissingBlockRecord(block *blocks.Block, recordType string) {
-	if !deps.Protocol.MainEngineInstance().SyncManager.IsNodeSynced() {
+	if !deps.Protocol.Engines.Main.Get().SyncManager.IsNodeSynced() {
 		return
 	}
 	nodeID := deps.Host.ID().String()

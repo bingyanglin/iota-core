@@ -11,7 +11,7 @@ var isTangleTimeSynced atomic.Bool
 
 func checkSynced(newStatus *syncmanager.SyncStatus) {
 	oldTangleTimeSynced := isTangleTimeSynced.Load()
-	clSnapshot := deps.Protocol.MainEngineInstance().Clock.Snapshot()
+	clSnapshot := deps.Protocol.Engines.Main.Get().Clock.Snapshot()
 	if oldTangleTimeSynced != newStatus.NodeSynced {
 		nodeID := deps.Host.ID().String()
 

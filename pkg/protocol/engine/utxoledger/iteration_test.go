@@ -9,26 +9,25 @@ import (
 	"github.com/iotaledger/hive.go/kvstore/mapdb"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/utxoledger"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/utxoledger/tpkg"
-	"github.com/iotaledger/iota-core/pkg/utils"
 	iotago "github.com/iotaledger/iota.go/v4"
 	iotago_tpkg "github.com/iotaledger/iota.go/v4/tpkg"
 )
 
 func TestUTXOComputeBalance(t *testing.T) {
-	manager := utxoledger.New(mapdb.NewMapDB(), iotago.SingleVersionProvider(iotago_tpkg.TestAPI))
+	manager := utxoledger.New(mapdb.NewMapDB(), iotago.SingleVersionProvider(iotago_tpkg.ZeroCostTestAPI))
 
-	initialOutput := tpkg.RandLedgerStateOutputOnAddressWithAmount(iotago.OutputBasic, utils.RandAddress(iotago.AddressEd25519), 2_134_656_365)
+	initialOutput := tpkg.RandLedgerStateOutputOnAddressWithAmount(iotago.OutputBasic, iotago_tpkg.RandAddress(iotago.AddressEd25519), 2_134_656_365)
 	require.NoError(t, manager.AddGenesisUnspentOutput(initialOutput))
-	require.NoError(t, manager.AddGenesisUnspentOutput(tpkg.RandLedgerStateOutputOnAddressWithAmount(iotago.OutputAccount, utils.RandAddress(iotago.AddressAccount), 56_549_524)))
-	require.NoError(t, manager.AddGenesisUnspentOutput(tpkg.RandLedgerStateOutputOnAddressWithAmount(iotago.OutputAnchor, utils.RandAddress(iotago.AddressAccount), 56_549_524)))
-	require.NoError(t, manager.AddGenesisUnspentOutput(tpkg.RandLedgerStateOutputOnAddressWithAmount(iotago.OutputFoundry, utils.RandAddress(iotago.AddressAccount), 25_548_858)))
-	require.NoError(t, manager.AddGenesisUnspentOutput(tpkg.RandLedgerStateOutputOnAddressWithAmount(iotago.OutputNFT, utils.RandAddress(iotago.AddressEd25519), 545_699_656)))
-	require.NoError(t, manager.AddGenesisUnspentOutput(tpkg.RandLedgerStateOutputOnAddressWithAmount(iotago.OutputBasic, utils.RandAddress(iotago.AddressAccount), 626_659_696)))
+	require.NoError(t, manager.AddGenesisUnspentOutput(tpkg.RandLedgerStateOutputOnAddressWithAmount(iotago.OutputAccount, iotago_tpkg.RandAddress(iotago.AddressAccount), 56_549_524)))
+	require.NoError(t, manager.AddGenesisUnspentOutput(tpkg.RandLedgerStateOutputOnAddressWithAmount(iotago.OutputAnchor, iotago_tpkg.RandAddress(iotago.AddressAccount), 56_549_524)))
+	require.NoError(t, manager.AddGenesisUnspentOutput(tpkg.RandLedgerStateOutputOnAddressWithAmount(iotago.OutputFoundry, iotago_tpkg.RandAddress(iotago.AddressAccount), 25_548_858)))
+	require.NoError(t, manager.AddGenesisUnspentOutput(tpkg.RandLedgerStateOutputOnAddressWithAmount(iotago.OutputNFT, iotago_tpkg.RandAddress(iotago.AddressEd25519), 545_699_656)))
+	require.NoError(t, manager.AddGenesisUnspentOutput(tpkg.RandLedgerStateOutputOnAddressWithAmount(iotago.OutputBasic, iotago_tpkg.RandAddress(iotago.AddressAccount), 626_659_696)))
 
 	index := iotago.SlotIndex(756)
 
 	outputs := utxoledger.Outputs{
-		tpkg.RandLedgerStateOutputOnAddressWithAmount(iotago.OutputBasic, utils.RandAddress(iotago.AddressNFT), 2_134_656_365),
+		tpkg.RandLedgerStateOutputOnAddressWithAmount(iotago.OutputBasic, iotago_tpkg.RandAddress(iotago.AddressNFT), 2_134_656_365),
 	}
 
 	spents := utxoledger.Spents{
@@ -52,25 +51,25 @@ func TestUTXOComputeBalance(t *testing.T) {
 }
 
 func TestUTXOIteration(t *testing.T) {
-	manager := utxoledger.New(mapdb.NewMapDB(), iotago.SingleVersionProvider(iotago_tpkg.TestAPI))
+	manager := utxoledger.New(mapdb.NewMapDB(), iotago.SingleVersionProvider(iotago_tpkg.ZeroCostTestAPI))
 
 	outputs := utxoledger.Outputs{
-		tpkg.RandLedgerStateOutputOnAddress(iotago.OutputBasic, utils.RandAddress(iotago.AddressEd25519)),
-		tpkg.RandLedgerStateOutputOnAddress(iotago.OutputBasic, utils.RandAddress(iotago.AddressNFT)),
-		tpkg.RandLedgerStateOutputOnAddress(iotago.OutputBasic, utils.RandAddress(iotago.AddressAccount)),
-		tpkg.RandLedgerStateOutputOnAddress(iotago.OutputBasic, utils.RandAddress(iotago.AddressEd25519)),
-		tpkg.RandLedgerStateOutputOnAddress(iotago.OutputBasic, utils.RandAddress(iotago.AddressNFT)),
-		tpkg.RandLedgerStateOutputOnAddress(iotago.OutputBasic, utils.RandAddress(iotago.AddressAccount)),
-		tpkg.RandLedgerStateOutputOnAddress(iotago.OutputBasic, utils.RandAddress(iotago.AddressEd25519)),
-		tpkg.RandLedgerStateOutputOnAddress(iotago.OutputNFT, utils.RandAddress(iotago.AddressEd25519)),
-		tpkg.RandLedgerStateOutputOnAddress(iotago.OutputNFT, utils.RandAddress(iotago.AddressAccount)),
-		tpkg.RandLedgerStateOutputOnAddress(iotago.OutputNFT, utils.RandAddress(iotago.AddressNFT)),
-		tpkg.RandLedgerStateOutputOnAddress(iotago.OutputNFT, utils.RandAddress(iotago.AddressAccount)),
-		tpkg.RandLedgerStateOutputOnAddress(iotago.OutputAccount, utils.RandAddress(iotago.AddressEd25519)),
-		tpkg.RandLedgerStateOutputOnAddress(iotago.OutputAnchor, utils.RandAddress(iotago.AddressEd25519)),
-		tpkg.RandLedgerStateOutputOnAddress(iotago.OutputFoundry, utils.RandAddress(iotago.AddressAccount)),
-		tpkg.RandLedgerStateOutputOnAddress(iotago.OutputFoundry, utils.RandAddress(iotago.AddressAccount)),
-		tpkg.RandLedgerStateOutputOnAddress(iotago.OutputFoundry, utils.RandAddress(iotago.AddressAccount)),
+		tpkg.RandLedgerStateOutputOnAddress(iotago.OutputBasic, iotago_tpkg.RandAddress(iotago.AddressEd25519)),
+		tpkg.RandLedgerStateOutputOnAddress(iotago.OutputBasic, iotago_tpkg.RandAddress(iotago.AddressNFT)),
+		tpkg.RandLedgerStateOutputOnAddress(iotago.OutputBasic, iotago_tpkg.RandAddress(iotago.AddressAccount)),
+		tpkg.RandLedgerStateOutputOnAddress(iotago.OutputBasic, iotago_tpkg.RandAddress(iotago.AddressEd25519)),
+		tpkg.RandLedgerStateOutputOnAddress(iotago.OutputBasic, iotago_tpkg.RandAddress(iotago.AddressNFT)),
+		tpkg.RandLedgerStateOutputOnAddress(iotago.OutputBasic, iotago_tpkg.RandAddress(iotago.AddressAccount)),
+		tpkg.RandLedgerStateOutputOnAddress(iotago.OutputBasic, iotago_tpkg.RandAddress(iotago.AddressEd25519)),
+		tpkg.RandLedgerStateOutputOnAddress(iotago.OutputNFT, iotago_tpkg.RandAddress(iotago.AddressEd25519)),
+		tpkg.RandLedgerStateOutputOnAddress(iotago.OutputNFT, iotago_tpkg.RandAddress(iotago.AddressAccount)),
+		tpkg.RandLedgerStateOutputOnAddress(iotago.OutputNFT, iotago_tpkg.RandAddress(iotago.AddressNFT)),
+		tpkg.RandLedgerStateOutputOnAddress(iotago.OutputNFT, iotago_tpkg.RandAddress(iotago.AddressAccount)),
+		tpkg.RandLedgerStateOutputOnAddress(iotago.OutputAccount, iotago_tpkg.RandAddress(iotago.AddressEd25519)),
+		tpkg.RandLedgerStateOutputOnAddress(iotago.OutputAnchor, iotago_tpkg.RandAddress(iotago.AddressEd25519)),
+		tpkg.RandLedgerStateOutputOnAddress(iotago.OutputFoundry, iotago_tpkg.RandAddress(iotago.AddressAccount)),
+		tpkg.RandLedgerStateOutputOnAddress(iotago.OutputFoundry, iotago_tpkg.RandAddress(iotago.AddressAccount)),
+		tpkg.RandLedgerStateOutputOnAddress(iotago.OutputFoundry, iotago_tpkg.RandAddress(iotago.AddressAccount)),
 	}
 
 	index := iotago.SlotIndex(756)

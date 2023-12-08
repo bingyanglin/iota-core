@@ -19,7 +19,7 @@ func (t *TestSuite) AssertTransaction(transaction *iotago.Transaction, node *moc
 
 	t.Eventually(func() error {
 		var exists bool
-		loadedTransactionMetadata, exists = node.Protocol.MainEngineInstance().Ledger.TransactionMetadata(transactionID)
+		loadedTransactionMetadata, exists = node.Protocol.Engines.Main.Get().Ledger.TransactionMetadata(transactionID)
 		if !exists {
 			return ierrors.Errorf("AssertTransaction: %s: transaction %s does not exist", node.Name, transactionID)
 		}
@@ -61,7 +61,7 @@ func (t *TestSuite) AssertTransactionsExist(transactions []*iotago.Transaction, 
 					t.AssertTransaction(transaction, node)
 				} else {
 					t.Eventually(func() error {
-						if lo.Return2(node.Protocol.MainEngineInstance().Ledger.TransactionMetadata(transactionID)) {
+						if lo.Return2(node.Protocol.Engines.Main.Get().Ledger.TransactionMetadata(transactionID)) {
 							return ierrors.Errorf("AssertTransactionsExist: %s: transaction %s exists but should not", node.Name, transactionID)
 						}
 
@@ -84,7 +84,7 @@ func (t *TestSuite) assertTransactionsInCacheWithFunc(expectedTransactions []*io
 			require.NoError(t.Testing, err)
 
 			t.Eventually(func() error {
-				blockFromCache, exists := node.Protocol.MainEngineInstance().Ledger.TransactionMetadata(transactionID)
+				blockFromCache, exists := node.Protocol.Engines.Main.Get().Ledger.TransactionMetadata(transactionID)
 				if !exists {
 					return ierrors.Errorf("assertTransactionsInCacheWithFunc: %s: transaction %s does not exist", node.Name, transactionID)
 				}
@@ -136,7 +136,7 @@ func (t *TestSuite) AssertTransactionInCacheConflicts(transactionConflicts map[*
 			require.NoError(t.Testing, err)
 
 			t.Eventually(func() error {
-				transactionFromCache, exists := node.Protocol.MainEngineInstance().Ledger.TransactionMetadata(transactionID)
+				transactionFromCache, exists := node.Protocol.Engines.Main.Get().Ledger.TransactionMetadata(transactionID)
 				if !exists {
 					return ierrors.Errorf("AssertTransactionInCacheConflicts: %s: block %s does not exist", node.Name, transactionID)
 				}
@@ -157,5 +157,23 @@ func (t *TestSuite) AssertTransactionInCacheConflicts(transactionConflicts map[*
 
 			t.AssertTransaction(transaction, node)
 		}
+	}
+}
+
+func (t *TestSuite) AssertTransactionFailure(signedTxID iotago.SignedTransactionID, txFailureReason error, nodes ...*mock.Node) {
+	for _, node := range nodes {
+		t.Eventually(func() error {
+
+			txFailure, exists := node.TransactionFailure(signedTxID)
+			if !exists {
+				return ierrors.Errorf("%s: failure for signed transaction %s does not exist", node.Name, signedTxID)
+			}
+
+			if !ierrors.Is(txFailure.Error, txFailureReason) {
+				return ierrors.Errorf("%s: expected tx failure reason %s, got %s", node.Name, txFailureReason, txFailure.Error)
+			}
+
+			return nil
+		})
 	}
 }

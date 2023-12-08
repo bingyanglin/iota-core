@@ -25,6 +25,7 @@ import (
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/filter/presolidfilter"
 	iotago "github.com/iotaledger/iota.go/v4"
 	"github.com/iotaledger/iota.go/v4/builder"
+	"github.com/iotaledger/iota.go/v4/wallet"
 )
 
 var (
@@ -62,7 +63,7 @@ type BlockIssuer struct {
 	optsRateSetterEnabled       bool
 }
 
-func NewBlockIssuer(t *testing.T, name string, keyManager *KeyManager, accountID iotago.AccountID, validator bool, opts ...options.Option[BlockIssuer]) *BlockIssuer {
+func NewBlockIssuer(t *testing.T, name string, keyManager *wallet.KeyManager, accountID iotago.AccountID, validator bool, opts ...options.Option[BlockIssuer]) *BlockIssuer {
 	priv, pub := keyManager.KeyPair()
 
 	if accountID == iotago.EmptyAccountID {
@@ -100,7 +101,7 @@ func (i *BlockIssuer) Shutdown() {
 	i.workerPool.ShutdownComplete.Wait()
 }
 
-func (i *BlockIssuer) CreateValidationBlock(ctx context.Context, alias string, issuerAccount Account, node *Node, opts ...options.Option[ValidatorBlockParams]) (*blocks.Block, error) {
+func (i *BlockIssuer) CreateValidationBlock(ctx context.Context, alias string, issuerAccount wallet.Account, node *Node, opts ...options.Option[ValidatorBlockParams]) (*blocks.Block, error) {
 	blockParams := options.Apply(&ValidatorBlockParams{}, opts)
 
 	if blockParams.BlockHeader.IssuingTime == nil {
@@ -189,14 +190,14 @@ func (i *BlockIssuer) CreateValidationBlock(ctx context.Context, alias string, i
 }
 
 func (i *BlockIssuer) IssueValidationBlock(ctx context.Context, alias string, node *Node, opts ...options.Option[ValidatorBlockParams]) *blocks.Block {
-	block, err := i.CreateValidationBlock(ctx, alias, NewEd25519Account(i.AccountID, i.privateKey), node, opts...)
+	block, err := i.CreateValidationBlock(ctx, alias, wallet.NewEd25519Account(i.AccountID, i.privateKey), node, opts...)
 	require.NoError(i.Testing, err)
 
 	require.NoError(i.Testing, i.IssueBlock(block.ModelBlock(), node))
 
 	validationBlock, _ := block.ValidationBlock()
 
-	fmt.Printf("Issued ValidationBlock: %s - slot %d - commitment %s %d - latest finalized slot %d - version: %d - highestSupportedVersion: %d, hash: %s\n", block.ID(), block.ID().Slot(), block.SlotCommitmentID(), block.SlotCommitmentID().Slot(), block.ProtocolBlock().Header.LatestFinalizedSlot, block.ProtocolBlock().Header.ProtocolVersion, validationBlock.HighestSupportedVersion, validationBlock.ProtocolParametersHash)
+	node.Protocol.Engines.Main.Get().LogTrace("issued validation block", "blockID", block.ID(), "slot", block.ID().Slot(), "commitment", block.SlotCommitmentID(), "latestFinalizedSlot", block.ProtocolBlock().Header.LatestFinalizedSlot, "version", block.ProtocolBlock().Header.ProtocolVersion, "highestSupportedVersion", validationBlock.HighestSupportedVersion, "hash", validationBlock.ProtocolParametersHash)
 
 	return block
 }
@@ -263,7 +264,7 @@ func (i *BlockIssuer) CreateBasicBlock(ctx context.Context, alias string, node *
 	if err != nil {
 		rmcSlot = 0
 	}
-	rmc, err := node.Protocol.MainEngineInstance().Ledger.RMCManager().RMC(rmcSlot)
+	rmc, err := node.Protocol.Engines.Main.Get().Ledger.RMCManager().RMC(rmcSlot)
 	require.NoError(i.Testing, err)
 
 	// only set the burned Mana as the last step before signing, so workscore calculation is correct.
@@ -291,7 +292,7 @@ func (i *BlockIssuer) IssueBasicBlock(ctx context.Context, alias string, node *N
 
 	require.NoErrorf(i.Testing, i.IssueBlock(block.ModelBlock(), node), "%s > failed to issue block with alias %s", i.Name, alias)
 
-	fmt.Printf("%s > Issued block: %s - slot %d - commitment %s %d - latest finalized slot %d\n", i.Name, block.ID(), block.ID().Slot(), block.SlotCommitmentID(), block.SlotCommitmentID().Slot(), block.ProtocolBlock().Header.LatestFinalizedSlot)
+	node.Protocol.LogTrace("issued block", "blockID", block.ID(), "slot", block.ID().Slot(), "commitment", block.SlotCommitmentID(), "latestFinalizedSlot", block.ProtocolBlock().Header.LatestFinalizedSlot, "version", block.ProtocolBlock().Header.ProtocolVersion)
 
 	return block
 }
@@ -369,7 +370,7 @@ func (i *BlockIssuer) IssueBlockAndAwaitEvent(ctx context.Context, block *model.
 	}
 }
 
-func (i *BlockIssuer) AttachBlock(ctx context.Context, iotaBlock *iotago.Block, node *Node, optIssuerAccount ...Account) (iotago.BlockID, error) {
+func (i *BlockIssuer) AttachBlock(ctx context.Context, iotaBlock *iotago.Block, node *Node, optIssuerAccount ...wallet.Account) (iotago.BlockID, error) {
 	// if anything changes, need to make a new signature
 	var resign bool
 
@@ -386,8 +387,8 @@ func (i *BlockIssuer) AttachBlock(ctx context.Context, iotaBlock *iotago.Block, 
 	}
 
 	if iotaBlock.Header.SlotCommitmentID == iotago.EmptyCommitmentID {
-		iotaBlock.Header.SlotCommitmentID = node.Protocol.MainEngineInstance().Storage.Settings().LatestCommitment().Commitment().MustID()
-		iotaBlock.Header.LatestFinalizedSlot = node.Protocol.MainEngineInstance().Storage.Settings().LatestFinalizedSlot()
+		iotaBlock.Header.SlotCommitmentID = node.Protocol.Engines.Main.Get().Storage.Settings().LatestCommitment().Commitment().MustID()
+		iotaBlock.Header.LatestFinalizedSlot = node.Protocol.Engines.Main.Get().Storage.Settings().LatestFinalizedSlot()
 		resign = true
 	}
 
@@ -444,7 +445,7 @@ func (i *BlockIssuer) AttachBlock(ctx context.Context, iotaBlock *iotago.Block, 
 		if err != nil {
 			rmcSlot = 0
 		}
-		rmc, err := node.Protocol.MainEngineInstance().Ledger.RMCManager().RMC(rmcSlot)
+		rmc, err := node.Protocol.Engines.Main.Get().Ledger.RMCManager().RMC(rmcSlot)
 		if err != nil {
 			return iotago.EmptyBlockID, ierrors.Wrapf(err, "error loading commitment of slot %d from storage to get RMC", rmcSlot)
 		}
@@ -462,7 +463,7 @@ func (i *BlockIssuer) AttachBlock(ctx context.Context, iotaBlock *iotago.Block, 
 			issuerAccount := optIssuerAccount[0]
 			iotaBlock.Header.IssuerID = issuerAccount.ID()
 
-			signature, signatureErr := iotaBlock.Sign(iotago.NewAddressKeysForEd25519Address(issuerAccount.Address().(*iotago.Ed25519Address), issuerAccount.PrivateKey()))
+			signature, signatureErr := iotaBlock.Sign(iotago.NewAddressKeysForEd25519Address(issuerAccount.OwnerAddress().(*iotago.Ed25519Address), issuerAccount.PrivateKey()))
 			if signatureErr != nil {
 				return iotago.EmptyBlockID, ierrors.Wrapf(ErrBlockAttacherInvalidBlock, "%w", signatureErr)
 			}
@@ -483,7 +484,7 @@ func (i *BlockIssuer) AttachBlock(ctx context.Context, iotaBlock *iotago.Block, 
 		return iotago.EmptyBlockID, ierrors.Wrap(err, "error serializing block to model block")
 	}
 
-	if !i.optsRateSetterEnabled || node.Protocol.MainEngineInstance().Scheduler.IsBlockIssuerReady(modelBlock.ProtocolBlock().Header.IssuerID) {
+	if !i.optsRateSetterEnabled || node.Protocol.Engines.Main.Get().Scheduler.IsBlockIssuerReady(modelBlock.ProtocolBlock().Header.IssuerID) {
 		i.events.BlockConstructed.Trigger(modelBlock)
 
 		if err = i.IssueBlockAndAwaitEvent(ctx, modelBlock, node, node.Protocol.Events.Engine.BlockDAG.BlockAttached); err != nil {
@@ -510,12 +511,12 @@ func (i *BlockIssuer) setDefaultBlockParams(blockParams *BlockHeaderParams, node
 	}
 
 	if blockParams.LatestFinalizedSlot == nil {
-		latestFinalizedSlot := node.Protocol.MainEngineInstance().Storage.Settings().LatestFinalizedSlot()
+		latestFinalizedSlot := node.Protocol.Engines.Main.Get().Storage.Settings().LatestFinalizedSlot()
 		blockParams.LatestFinalizedSlot = &latestFinalizedSlot
 	}
 
 	if blockParams.Issuer == nil {
-		blockParams.Issuer = NewEd25519Account(i.AccountID, i.privateKey)
+		blockParams.Issuer = wallet.NewEd25519Account(i.AccountID, i.privateKey)
 	} else if blockParams.Issuer.ID() != i.AccountID {
 		return ierrors.Errorf("provided issuer account %s, but issuer provided in the block params is different %s", i.AccountID, blockParams.Issuer.ID())
 	}
@@ -533,7 +534,7 @@ func (i *BlockIssuer) getAddressableCommitment(currentAPI iotago.API, blockIssui
 	protoParams := currentAPI.ProtocolParameters()
 	blockSlot := currentAPI.TimeProvider().SlotFromTime(blockIssuingTime)
 
-	commitment := node.Protocol.MainEngineInstance().Storage.Settings().LatestCommitment().Commitment()
+	commitment := node.Protocol.Engines.Main.Get().Storage.Settings().LatestCommitment().Commitment()
 
 	if blockSlot > commitment.Slot+protoParams.MaxCommittableAge() {
 		return nil, ierrors.Wrapf(ErrBlockTooRecent, "can't issue block: block slot %d is too far in the future, latest commitment is %d", blockSlot, commitment.Slot)
@@ -545,7 +546,7 @@ func (i *BlockIssuer) getAddressableCommitment(currentAPI iotago.API, blockIssui
 		}
 
 		commitmentSlot := commitment.Slot - protoParams.MinCommittableAge()
-		loadedCommitment, err := node.Protocol.MainEngineInstance().Storage.Commitments().Load(commitmentSlot)
+		loadedCommitment, err := node.Protocol.Engines.Main.Get().Storage.Commitments().Load(commitmentSlot)
 		if err != nil {
 			return nil, ierrors.Wrapf(err, "error loading valid commitment of slot %d according to minCommittableAge from storage", commitmentSlot)
 		}
@@ -576,7 +577,7 @@ func (i *BlockIssuer) getReferencesValidationBlock(ctx context.Context, node *No
 
 func (i *BlockIssuer) validateReferences(issuingTime time.Time, slotCommitmentIndex iotago.SlotIndex, references model.ParentReferences, node *Node) error {
 	for _, parent := range lo.Flatten(lo.Map(lo.Values(references), func(ds iotago.BlockIDs) []iotago.BlockID { return ds })) {
-		b, exists := node.Protocol.MainEngineInstance().BlockFromCache(parent)
+		b, exists := node.Protocol.Engines.Main.Get().BlockFromCache(parent)
 		if !exists {
 			return ierrors.Errorf("cannot issue block if the parents are not known: %s", parent)
 		}
@@ -598,7 +599,7 @@ func (i *BlockIssuer) IssueBlock(block *model.Block, node *Node) error {
 	}
 
 	if _, isValidationBlock := block.ValidationBlock(); isValidationBlock {
-		_ = node.Protocol.MainEngineInstance().Storage.Settings().SetLatestIssuedValidationBlock(block)
+		_ = node.Protocol.Engines.Main.Get().Storage.Settings().SetLatestIssuedValidationBlock(block)
 	}
 
 	i.events.BlockIssued.Trigger(block)
@@ -622,7 +623,7 @@ func (i *BlockIssuer) getReferencesWithRetry(ctx context.Context, parentsCount i
 	defer timeutil.CleanupTicker(interval)
 
 	for {
-		references = node.Protocol.MainEngineInstance().TipSelection.SelectTips(parentsCount)
+		references = node.Protocol.Engines.Main.Get().TipSelection.SelectTips(parentsCount)
 		if len(references[iotago.StrongParentType]) > 0 {
 			return references, nil
 		}
