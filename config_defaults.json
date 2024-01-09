@@ -10,16 +10,12 @@
     }
   },
   "logger": {
+    "name": "",
     "level": "info",
-    "disableCaller": true,
-    "disableStacktrace": false,
-    "stacktraceLevel": "panic",
-    "encoding": "console",
-    "encodingConfig": {
-      "timeEncoder": "rfc3339"
-    },
-    "outputPaths": ["stdout"],
-    "disableEvents": true
+    "timeFormat": "rfc3339",
+    "outputPaths": [
+      "stdout"
+    ]
   },
   "p2p": {
     "bindMultiAddresses": ["/ip4/0.0.0.0/tcp/14666", "/ip6/::/tcp/14666"],

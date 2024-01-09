@@ -101,8 +101,8 @@ func (i *BlockIssuer) Shutdown() {
 	i.workerPool.ShutdownComplete.Wait()
 }
 
-func (i *BlockIssuer) CreateValidationBlock(ctx context.Context, alias string, issuerAccount wallet.Account, node *Node, opts ...options.Option[ValidatorBlockParams]) (*blocks.Block, error) {
-	blockParams := options.Apply(&ValidatorBlockParams{}, opts)
+func (i *BlockIssuer) CreateValidationBlock(ctx context.Context, alias string, issuerAccount wallet.Account, node *Node, opts ...options.Option[ValidationBlockParams]) (*blocks.Block, error) {
+	blockParams := options.Apply(&ValidationBlockParams{}, opts)
 
 	if blockParams.BlockHeader.IssuingTime == nil {
 		issuingTime := time.Now().UTC()
@@ -189,7 +189,7 @@ func (i *BlockIssuer) CreateValidationBlock(ctx context.Context, alias string, i
 	return blocks.NewBlock(modelBlock), nil
 }
 
-func (i *BlockIssuer) IssueValidationBlock(ctx context.Context, alias string, node *Node, opts ...options.Option[ValidatorBlockParams]) *blocks.Block {
+func (i *BlockIssuer) IssueValidationBlock(ctx context.Context, alias string, node *Node, opts ...options.Option[ValidationBlockParams]) *blocks.Block {
 	block, err := i.CreateValidationBlock(ctx, alias, wallet.NewEd25519Account(i.AccountID, i.privateKey), node, opts...)
 	require.NoError(i.Testing, err)
 
@@ -583,7 +583,7 @@ func (i *BlockIssuer) validateReferences(issuingTime time.Time, slotCommitmentIn
 		}
 
 		if b.IssuingTime().After(issuingTime) {
-			return ierrors.Errorf("cannot issue block if the parents issuingTime is ahead block's issuingTime: %s vs %s", b.IssuingTime(), issuingTime)
+			return ierrors.Errorf("cannot issue block if the parents issuingTime is ahead block's issuingTime: %s vs %s", b.IssuingTime(), issuingTime.UTC())
 		}
 		if b.SlotCommitmentID().Slot() > slotCommitmentIndex {
 			return ierrors.Errorf("cannot issue block if the commitment is ahead of its parents' commitment: %s vs %s", b.SlotCommitmentID().Slot(), slotCommitmentIndex)

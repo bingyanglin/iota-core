@@ -94,7 +94,7 @@ func sendBlockSchedulerRecord(block *blocks.Block, recordType string) {
 
 	err := deps.RemoteLogger.Send(record)
 	if err != nil {
-		Component.LogError(err)
+		Component.LogError(err.Error())
 	}
 }
 

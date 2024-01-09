@@ -71,7 +71,8 @@ func (t *TestSuite) IssueValidationBlockWithHeaderOptions(blockName string, node
 
 	timeProvider := t.API.TimeProvider()
 	issuingTime := timeProvider.SlotStartTime(t.currentSlot).Add(time.Duration(t.uniqueBlockTimeCounter.Add(1)))
-	blockHeaderOptions := append(blockHeaderOpts, mock.WithIssuingTime(issuingTime))
+	// Prepend the issuing time so it can be overridden via the passed options.
+	blockHeaderOptions := append([]options.Option[mock.BlockHeaderParams]{mock.WithIssuingTime(issuingTime)}, blockHeaderOpts...)
 
 	block := node.IssueValidationBlock(context.Background(), blockName, mock.WithValidationBlockHeaderOptions(blockHeaderOptions...))
 
@@ -91,7 +92,7 @@ func (t *TestSuite) IssueExistingBlock(blockName string, wallet *mock.Wallet) {
 	require.NoError(t.Testing, wallet.BlockIssuer.IssueBlock(block.ModelBlock(), wallet.Node))
 }
 
-func (t *TestSuite) IssueValidationBlockWithOptions(blockName string, node *mock.Node, blockOpts ...options.Option[mock.ValidatorBlockParams]) *blocks.Block {
+func (t *TestSuite) IssueValidationBlockWithOptions(blockName string, node *mock.Node, blockOpts ...options.Option[mock.ValidationBlockParams]) *blocks.Block {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 
@@ -148,7 +149,7 @@ func (t *TestSuite) issueBlockRow(prefix string, row int, parentsPrefix string, 
 		issuingTime := timeProvider.SlotStartTime(t.currentSlot).Add(time.Duration(t.uniqueBlockTimeCounter.Add(1)))
 
 		var b *blocks.Block
-		// Only issue validator blocks if account has staking feature and is part of committee.
+		// Only issue validation blocks if account has staking feature and is part of committee.
 		if node.Validator != nil && lo.Return1(node.Protocol.Engines.Main.Get().SybilProtection.SeatManager().CommitteeInSlot(t.currentSlot)).HasAccount(node.Validator.AccountID) {
 			blockHeaderOptions := append(issuingOptionsCopy[node.Name], mock.WithIssuingTime(issuingTime))
 			t.assertParentsCommitmentExistFromBlockOptions(blockHeaderOptions, node)
@@ -267,15 +268,21 @@ func (t *TestSuite) CommitUntilSlot(slot iotago.SlotIndex, parents ...iotago.Blo
 	if latestCommittedSlot >= slot {
 		return parents
 	}
+
 	t.SetCurrentSlot(lo.Min(slot+t.API.ProtocolParameters().MinCommittableAge(), latestCommittedSlot+t.API.ProtocolParameters().MinCommittableAge()))
+
 	tips := parents
 	chainIndex := 0
+
 	for {
 		// preacceptance of nextBlockSlot
 		for _, node := range activeValidators {
 			require.True(t.Testing, node.IsValidator(), "node: %s: is not a validator node", node.Name)
+
 			committeeAtBlockSlot, exists := node.Protocol.Engines.Main.Get().SybilProtection.SeatManager().CommitteeInSlot(t.currentSlot)
+
 			require.True(t.Testing, exists, "node: %s: does not have committee selected for slot %d", node.Name, t.currentSlot)
+
 			if committeeAtBlockSlot.HasAccount(node.Validator.AccountID) {
 				blockName := fmt.Sprintf("chain-%s-%d-%s", parents[0].Alias(), chainIndex, node.Name)
 				latestCommitment := node.Protocol.Engines.Main.Get().Storage.Settings().LatestCommitment().Commitment()

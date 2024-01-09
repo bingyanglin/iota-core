@@ -184,8 +184,12 @@ func rewardsByOutputID(c echo.Context) (*api.ManaRewardsResponse, error) {
 		return nil, ierrors.Wrapf(echo.ErrInternalServerError, "failed to get output %s from ledger: %s", outputID.ToHex(), err)
 	}
 
+	var stakingPoolValidatorAccountID iotago.AccountID
 	var reward iotago.Mana
-	var actualStart, actualEnd iotago.EpochIndex
+	var firstRewardEpoch, lastRewardEpoch iotago.EpochIndex
+
+	apiForSlot := deps.Protocol.APIForSlot(slotIndex)
+
 	switch utxoOutput.OutputType() {
 	case iotago.OutputAccount:
 		//nolint:forcetypeassert
@@ -198,43 +202,59 @@ func rewardsByOutputID(c echo.Context) (*api.ManaRewardsResponse, error) {
 		//nolint:forcetypeassert
 		stakingFeature := feature.(*iotago.StakingFeature)
 
+		futureBoundedSlotIndex := slotIndex + apiForSlot.ProtocolParameters().MinCommittableAge()
+		claimingEpoch := apiForSlot.TimeProvider().EpochFromSlot(futureBoundedSlotIndex)
+
+		stakingPoolValidatorAccountID = accountOutput.AccountID
 		// check if the account is a validator
-		reward, actualStart, actualEnd, err = deps.Protocol.Engines.Main.Get().SybilProtection.ValidatorReward(
-			accountOutput.AccountID,
-			stakingFeature.StakedAmount,
-			stakingFeature.StartEpoch,
-			stakingFeature.EndEpoch,
+		reward, firstRewardEpoch, lastRewardEpoch, err = deps.Protocol.Engines.Main.Get().SybilProtection.ValidatorReward(
+			stakingPoolValidatorAccountID,
+			stakingFeature,
+			claimingEpoch,
 		)
 
 	case iotago.OutputDelegation:
 		//nolint:forcetypeassert
 		delegationOutput := utxoOutput.Output().(*iotago.DelegationOutput)
 		delegationEnd := delegationOutput.EndEpoch
+		futureBoundedSlotIndex := slotIndex + apiForSlot.ProtocolParameters().MinCommittableAge()
+		claimingEpoch := apiForSlot.TimeProvider().EpochFromSlot(futureBoundedSlotIndex)
 		// If Delegation ID is zeroed, the output is in delegating state, which means its End Epoch is not set and we must use the
 		// "last epoch" for the rewards calculation.
 		// In this case the calculation must be consistent with the rewards calculation at execution time, so a client can specify
 		// a slot index explicitly, which should be equal to the slot it uses as the commitment input for the claiming transaction.
 		if delegationOutput.DelegationID.Empty() {
-			apiForSlot := deps.Protocol.APIForSlot(slotIndex)
-			futureBoundedSlotIndex := slotIndex + apiForSlot.ProtocolParameters().MinCommittableAge()
-			delegationEnd = apiForSlot.TimeProvider().EpochFromSlot(futureBoundedSlotIndex) - iotago.EpochIndex(1)
+			delegationEnd = claimingEpoch - iotago.EpochIndex(1)
 		}
 
-		reward, actualStart, actualEnd, err = deps.Protocol.Engines.Main.Get().SybilProtection.DelegatorReward(
-			delegationOutput.ValidatorAddress.AccountID(),
+		stakingPoolValidatorAccountID = delegationOutput.ValidatorAddress.AccountID()
+
+		reward, firstRewardEpoch, lastRewardEpoch, err = deps.Protocol.Engines.Main.Get().SybilProtection.DelegatorReward(
+			stakingPoolValidatorAccountID,
 			delegationOutput.DelegatedAmount,
 			delegationOutput.StartEpoch,
 			delegationEnd,
+			claimingEpoch,
 		)
 	}
 	if err != nil {
 		return nil, ierrors.Wrapf(echo.ErrInternalServerError, "failed to calculate reward for output %s: %s", outputID.ToHex(), err)
 	}
 
+	latestCommittedEpochPoolRewards, poolRewardExists, err := deps.Protocol.Engines.Main.Get().SybilProtection.PoolRewardsForAccount(stakingPoolValidatorAccountID)
+
+	if err != nil {
+		return nil, ierrors.Wrapf(echo.ErrInternalServerError, "failed to retrieve pool rewards for account %s: %s", stakingPoolValidatorAccountID.ToHex(), err)
+	}
+	if !poolRewardExists {
+		latestCommittedEpochPoolRewards = 0
+	}
+
 	return &api.ManaRewardsResponse{
-		StartEpoch: actualStart,
-		EndEpoch:   actualEnd,
-		Rewards:    reward,
+		StartEpoch:                      firstRewardEpoch,
+		EndEpoch:                        lastRewardEpoch,
+		Rewards:                         reward,
+		LatestCommittedEpochPoolRewards: latestCommittedEpochPoolRewards,
 	}, nil
 }
 

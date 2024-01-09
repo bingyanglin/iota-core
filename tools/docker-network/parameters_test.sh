@@ -85,7 +85,7 @@ run_tests() {
     cd tool
     rm config.json evil-spammer.log
     # timeout 1m: to make sure it gets killed if it hangs
-    timeout 5m ./evil-tools spammer -urls "http://localhost:8050" -spammer blk -rate 1000 -duration 10m
+    timeout 5m ./evil-tools spammer --eviltools.nodeURLs "http://localhost:8050" --eviltools.spammer.type blk --eviltools.spammer.rate 1000 --eviltools.spammer.duration 10m
     cd -
 
     echo "Waiting a little..."

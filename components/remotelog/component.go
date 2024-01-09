@@ -65,12 +65,12 @@ func provide(c *dig.Container) error {
 		Component.LogWarn("RemoteLog is enabled. All events will be sent to the configured server.: ", ParamsRemoteLog.ServerAddress)
 		remoteLogger, err := newRemoteLoggerConn(ParamsRemoteLog.ServerAddress)
 		if err != nil {
-			Component.LogFatalAndExit(err)
+			Component.LogPanic(err.Error())
 			return nil
 		}
 		return remoteLogger
 	}); err != nil {
-		Component.LogPanic(err)
+		Component.LogPanic(err.Error())
 	}
 
 	return nil

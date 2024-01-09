@@ -28,10 +28,32 @@ func (v *VM) Inputs(transaction mempool.Transaction) (inputReferences []mempool.
 	}
 
 	for _, input := range stardustTransaction.TransactionEssence.Inputs {
-		inputReferences = append(inputReferences, input)
+		switch input.Type() {
+		case iotago.InputUTXO:
+			//nolint:forcetypeassert // we can safely assume that this is a UTXOInput
+			inputReferences = append(inputReferences, mempool.UTXOInputStateRefFromInput(
+				input.(*iotago.UTXOInput),
+			))
+		default:
+			return nil, ierrors.Errorf("unrecognized input type %d", input.Type())
+		}
 	}
-	for _, input := range stardustTransaction.TransactionEssence.ContextInputs {
-		inputReferences = append(inputReferences, input)
+
+	for _, contextInput := range stardustTransaction.TransactionEssence.ContextInputs {
+		switch contextInput.Type() {
+		case iotago.ContextInputCommitment:
+			//nolint:forcetypeassert // we can safely assume that this is a CommitmentInput
+			inputReferences = append(inputReferences, mempool.CommitmentInputStateRefFromInput(
+				contextInput.(*iotago.CommitmentInput),
+			))
+		// These context inputs do not need to be resolved.
+		case iotago.ContextInputBlockIssuanceCredit:
+			continue
+		case iotago.ContextInputReward:
+			continue
+		default:
+			return nil, ierrors.Errorf("unrecognized context input type %d", contextInput.Type())
+		}
 	}
 
 	return inputReferences, nil
@@ -43,21 +65,31 @@ func (v *VM) ValidateSignatures(signedTransaction mempool.SignedTransaction, res
 		return nil, iotago.ErrTxTypeInvalid
 	}
 
+	contextInputs, err := signedStardustTransaction.Transaction.ContextInputs()
+	if err != nil {
+		return nil, ierrors.Wrapf(err, "unable to retrieve context inputs from transaction")
+	}
+
 	utxoInputSet := iotagovm.InputSet{}
 	commitmentInput := (*iotago.Commitment)(nil)
 	bicInputs := make([]*iotago.BlockIssuanceCreditInput, 0)
 	rewardInputs := make([]*iotago.RewardInput, 0)
+
 	for _, resolvedInput := range resolvedInputStates {
-		resolvedInput.Type()
 		switch typedInput := resolvedInput.(type) {
-		case *iotago.Commitment:
-			commitmentInput = typedInput
+		case mempool.CommitmentInputState:
+			commitmentInput = typedInput.Commitment
+		case *utxoledger.Output:
+			utxoInputSet[typedInput.OutputID()] = typedInput.Output()
+		}
+	}
+
+	for _, contextInput := range contextInputs {
+		switch typedInput := contextInput.(type) {
 		case *iotago.BlockIssuanceCreditInput:
 			bicInputs = append(bicInputs, typedInput)
 		case *iotago.RewardInput:
 			rewardInputs = append(rewardInputs, typedInput)
-		case *utxoledger.Output:
-			utxoInputSet[typedInput.OutputID()] = typedInput.Output()
 		}
 	}
 
@@ -97,9 +129,13 @@ func (v *VM) ValidateSignatures(signedTransaction mempool.SignedTransaction, res
 				accountID = iotago.AccountIDFromOutputID(outputID)
 			}
 
-			reward, _, _, rewardErr := v.ledger.sybilProtection.ValidatorReward(accountID, stakingFeature.StakedAmount, stakingFeature.StartEpoch, stakingFeature.EndEpoch)
+			apiForSlot := v.ledger.apiProvider.APIForSlot(commitmentInput.Slot)
+			futureBoundedSlotIndex := commitmentInput.Slot + apiForSlot.ProtocolParameters().MinCommittableAge()
+			claimingEpoch := apiForSlot.TimeProvider().EpochFromSlot(futureBoundedSlotIndex)
+
+			reward, _, _, rewardErr := v.ledger.sybilProtection.ValidatorReward(accountID, stakingFeature, claimingEpoch)
 			if rewardErr != nil {
-				return nil, ierrors.Wrapf(iotago.ErrFailedToClaimStakingReward, "failed to get Validator reward for AccountOutput %s at index %d (StakedAmount: %d, StartEpoch: %d, EndEpoch: %d", outputID, inp.Index, stakingFeature.StakedAmount, stakingFeature.StartEpoch, stakingFeature.EndEpoch)
+				return nil, ierrors.Wrapf(iotago.ErrFailedToClaimStakingReward, "failed to get Validator reward for AccountOutput %s at index %d (StakedAmount: %d, StartEpoch: %d, EndEpoch: %d, claimingEpoch: %d", outputID, inp.Index, stakingFeature.StakedAmount, stakingFeature.StartEpoch, stakingFeature.EndEpoch, claimingEpoch)
 			}
 
 			rewardInputSet[accountID] = reward
@@ -108,17 +144,19 @@ func (v *VM) ValidateSignatures(signedTransaction mempool.SignedTransaction, res
 			delegationID := castOutput.DelegationID
 			delegationEnd := castOutput.EndEpoch
 
+			apiForSlot := v.ledger.apiProvider.APIForSlot(commitmentInput.Slot)
+			futureBoundedSlotIndex := commitmentInput.Slot + apiForSlot.ProtocolParameters().MinCommittableAge()
+			claimingEpoch := apiForSlot.TimeProvider().EpochFromSlot(futureBoundedSlotIndex)
+
 			if delegationID.Empty() {
 				delegationID = iotago.DelegationIDFromOutputID(outputID)
 
 				// If Delegation ID is zeroed, the output is in delegating state, which means its End Epoch is not set and we must use the
 				// "last epoch", which is the epoch index corresponding to the future bounded slot index minus 1.
-				apiForSlot := v.ledger.apiProvider.APIForSlot(commitmentInput.Slot)
-				futureBoundedSlotIndex := commitmentInput.Slot + apiForSlot.ProtocolParameters().MinCommittableAge()
-				delegationEnd = apiForSlot.TimeProvider().EpochFromSlot(futureBoundedSlotIndex) - iotago.EpochIndex(1)
+				delegationEnd = claimingEpoch - iotago.EpochIndex(1)
 			}
 
-			reward, _, _, rewardErr := v.ledger.sybilProtection.DelegatorReward(castOutput.ValidatorAddress.AccountID(), castOutput.DelegatedAmount, castOutput.StartEpoch, delegationEnd)
+			reward, _, _, rewardErr := v.ledger.sybilProtection.DelegatorReward(castOutput.ValidatorAddress.AccountID(), castOutput.DelegatedAmount, castOutput.StartEpoch, delegationEnd, claimingEpoch)
 			if rewardErr != nil {
 				return nil, ierrors.Wrapf(iotago.ErrFailedToClaimDelegationReward, "failed to get Delegator reward for DelegationOutput %s at index %d (StakedAmount: %d, StartEpoch: %d, EndEpoch: %d", outputID, inp.Index, castOutput.DelegatedAmount, castOutput.StartEpoch, castOutput.EndEpoch)
 			}
@@ -180,14 +218,16 @@ func (v *VM) Execute(executionContext context.Context, transaction mempool.Trans
 			return nil, err
 		}
 
-		outputs = append(outputs, utxoledger.CreateOutput(
+		output := utxoledger.CreateOutput(
 			v.ledger.apiProvider,
 			iotago.OutputIDFromTransactionIDAndIndex(transactionID, uint16(index)),
 			iotago.EmptyBlockID,
 			0,
 			output,
 			proof,
-		))
+		)
+
+		outputs = append(outputs, output)
 	}
 
 	return outputs, nil
