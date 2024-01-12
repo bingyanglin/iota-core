@@ -2,6 +2,7 @@ package mock
 
 import (
 	"fmt"
+	"math/rand"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -100,6 +101,10 @@ func (n *Network) mergePartition(partition string) {
 	delete(n.dispatchersByPartition, partition)
 }
 
+func (n *Network) randomDelay() time.Duration {
+	return time.Duration(rand.ExpFloat64() * (float64(n.maxDelay+n.minDelay) / 2))
+}
+
 // endregion ///////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // region Endpoint ///////////////////////////////////////////////////////////////////////////////////////////////
@@ -164,6 +169,9 @@ func (e *Endpoint) Send(packet proto.Message, to ...peer.ID) {
 		go func() {
 			e.network.dispatchersMutex.RLock()
 			defer e.network.dispatchersMutex.RUnlock()
+
+			// Add network delay
+			time.Sleep(e.network.randomDelay())
 
 			if dispatcher.handler != nil {
 				if err := dispatcher.handler(e.id, packet); err != nil {
