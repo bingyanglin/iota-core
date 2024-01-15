@@ -12,7 +12,6 @@ import (
 	iotago "github.com/iotaledger/iota.go/v4"
 	"github.com/iotaledger/iota.go/v4/builder"
 	"github.com/iotaledger/iota.go/v4/tpkg"
-	"github.com/iotaledger/iota.go/v4/vm"
 )
 
 // Functionality for creating transactions in the mock wallet.
@@ -296,50 +295,6 @@ func (w *Wallet) TransitionImplicitAccountToAccountOutput(transactionName string
 		WithInputs(utxoledger.Outputs{input}),
 		WithOutputs(iotago.Outputs[iotago.Output]{accountOutput}),
 		WithAllotAllManaToAccount(w.currentSlot, implicitAccountID),
-	)
-
-	return signedTransaction
-}
-
-func (w *Wallet) CreateBasicOutputsEquallyFromInput(transactionName string, outputCount int, inputName string) *iotago.SignedTransaction {
-	apiForSlot := w.Node.Protocol.Engines.Main.Get().APIForSlot(w.currentSlot)
-	manaDecayProvider := apiForSlot.ManaDecayProvider()
-	storageScoreStructure := apiForSlot.StorageScoreStructure()
-
-	inputState := w.Output(inputName)
-	inputAmount := inputState.BaseTokenAmount()
-
-	totalInputMana := lo.PanicOnErr(vm.TotalManaIn(manaDecayProvider, storageScoreStructure, w.currentSlot, vm.InputSet{inputState.OutputID(): inputState.Output()}, vm.RewardsInputSet{}))
-
-	manaAmount := totalInputMana / iotago.Mana(outputCount)
-	remainderMana := totalInputMana
-
-	tokenAmount := inputAmount / iotago.BaseToken(outputCount)
-	remainderFunds := inputAmount
-
-	outputStates := make(iotago.Outputs[iotago.Output], 0, outputCount)
-	for i := 0; i < outputCount; i++ {
-		if i+1 == outputCount {
-			tokenAmount = remainderFunds
-			manaAmount = remainderMana
-		}
-		remainderFunds -= tokenAmount
-		remainderMana -= manaAmount
-
-		outputStates = append(outputStates, &iotago.BasicOutput{
-			Amount: tokenAmount,
-			Mana:   manaAmount,
-			UnlockConditions: iotago.BasicOutputUnlockConditions{
-				&iotago.AddressUnlockCondition{Address: w.Address()},
-			},
-			Features: iotago.BasicOutputFeatures{},
-		})
-	}
-
-	signedTransaction := w.createSignedTransactionWithOptions(
-		transactionName,
-		WithInputs(utxoledger.Outputs{inputState}),
-		WithOutputs(outputStates),
 	)
 
 	return signedTransaction

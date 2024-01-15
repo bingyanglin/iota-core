@@ -6,6 +6,7 @@ import (
 
 	"github.com/iotaledger/hive.go/log"
 	"github.com/iotaledger/hive.go/runtime/options"
+	"github.com/iotaledger/iota-core/tools/simulator/pkg/mock"
 	"github.com/iotaledger/iota-core/tools/simulator/pkg/snapshotcreator"
 	iotago "github.com/iotaledger/iota.go/v4"
 )
@@ -25,6 +26,12 @@ func WithTick(tick time.Duration) options.Option[Simulator] {
 func WithAccounts(accounts ...snapshotcreator.AccountDetails) options.Option[Simulator] {
 	return func(t *Simulator) {
 		t.optsAccounts = append(t.optsAccounts, accounts...)
+	}
+}
+
+func WithNetworkOptions(networkOptions ...options.Option[mock.Network]) options.Option[Simulator] {
+	return func(t *Simulator) {
+		t.optsNetworkOptions = networkOptions
 	}
 }
 

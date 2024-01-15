@@ -64,9 +64,8 @@ type Node struct {
 	protocolParametersHash  iotago.Identifier
 	highestSupportedVersion iotago.Version
 
-	Partition string
-	Endpoint  *Endpoint
-	Workers   *workerpool.Group
+	Endpoint *Endpoint
+	Workers  *workerpool.Group
 
 	Protocol *protocol.Protocol
 
@@ -76,14 +75,10 @@ type Node struct {
 
 	enableEngineLogging bool
 
-	mutex                    syncutils.RWMutex
-	attachedBlocks           []*blocks.Block
-	currentSlot              iotago.SlotIndex
-	filteredBlockEvents      []*postsolidfilter.BlockFilteredEvent
-	invalidTransactionEvents map[iotago.SignedTransactionID]InvalidSignedTransactionEvent
+	mutex syncutils.RWMutex
 }
 
-func NewNode(parentLogger log.Logger, net *Network, partition string, name string, validator bool) *Node {
+func NewNode(parentLogger log.Logger, net *Network, name string, validator bool) *Node {
 	keyManager := lo.PanicOnErr(wallet.NewKeyManagerFromRandom(wallet.DefaultIOTAPath))
 	priv, pub := keyManager.KeyPair()
 
@@ -110,19 +105,11 @@ func NewNode(parentLogger log.Logger, net *Network, partition string, name strin
 
 		PeerID: peerID,
 
-		Partition: partition,
-		Endpoint:  net.JoinWithEndpointID(peerID, partition),
-		Workers:   workerpool.NewGroup(name),
+		Endpoint: net.JoinWithEndpointID(peerID),
+		Workers:  workerpool.NewGroup(name),
 
 		enableEngineLogging: true,
-
-		attachedBlocks:           make([]*blocks.Block, 0),
-		invalidTransactionEvents: make(map[iotago.SignedTransactionID]InvalidSignedTransactionEvent),
 	}
-}
-
-func (n *Node) SetCurrentSlot(slot iotago.SlotIndex) {
-	n.currentSlot = slot
 }
 
 func (n *Node) IsValidator() bool {
@@ -176,40 +163,6 @@ func (n *Node) hookEvents() {
 			n.mainEngineSwitchedCount.Add(1)
 		}
 	})
-
-	n.Protocol.Events.Engine.PostSolidFilter.BlockFiltered.Hook(func(event *postsolidfilter.BlockFilteredEvent) {
-		n.mutex.Lock()
-		defer n.mutex.Unlock()
-
-		n.filteredBlockEvents = append(n.filteredBlockEvents, event)
-	})
-
-	n.Protocol.Engines.Main.Get().Ledger.MemPool().OnSignedTransactionAttached(
-		func(signedTransactionMetadata mempool.SignedTransactionMetadata) {
-			signedTxID := signedTransactionMetadata.ID()
-
-			signedTransactionMetadata.OnSignaturesInvalid(func(err error) {
-				n.mutex.Lock()
-				defer n.mutex.Unlock()
-
-				n.invalidTransactionEvents[signedTxID] = InvalidSignedTransactionEvent{
-					Metadata: signedTransactionMetadata,
-					Error:    err,
-				}
-			})
-
-			transactionMetadata := signedTransactionMetadata.TransactionMetadata()
-
-			transactionMetadata.OnInvalid(func(err error) {
-				n.mutex.Lock()
-				defer n.mutex.Unlock()
-
-				n.invalidTransactionEvents[signedTxID] = InvalidSignedTransactionEvent{
-					Metadata: signedTransactionMetadata,
-					Error:    err,
-				}
-			})
-		})
 }
 
 func (n *Node) hookLogging(failOnBlockFiltered bool) {
@@ -227,10 +180,6 @@ func (n *Node) attachEngineLogsWithName(failOnBlockFiltered bool, instance *engi
 
 	events.BlockDAG.BlockAttached.Hook(func(block *blocks.Block) {
 		instance.LogTrace("BlockDAG.BlockAttached", "block", block.ID())
-
-		n.mutex.Lock()
-		defer n.mutex.Unlock()
-		n.attachedBlocks = append(n.attachedBlocks, block)
 	})
 
 	events.BlockDAG.BlockSolid.Hook(func(block *blocks.Block) {
@@ -311,10 +260,6 @@ func (n *Node) attachEngineLogsWithName(failOnBlockFiltered bool, instance *engi
 		if failOnBlockFiltered {
 			n.Testing.Fatal("no blocks should be filtered")
 		}
-
-		n.mutex.Lock()
-		defer n.mutex.Unlock()
-		n.filteredBlockEvents = append(n.filteredBlockEvents, event)
 	})
 
 	events.BlockRequester.Tick.Hook(func(blockID iotago.BlockID) {
@@ -516,36 +461,14 @@ func (n *Node) CandidateEngineActivatedCount() int {
 	return int(n.candidateEngineActivatedCount.Load())
 }
 
-func (n *Node) FilteredBlocks() []*postsolidfilter.BlockFilteredEvent {
-	n.mutex.RLock()
-	defer n.mutex.RUnlock()
-
-	return n.filteredBlockEvents
-}
-
-func (n *Node) TransactionFailure(txID iotago.SignedTransactionID) (InvalidSignedTransactionEvent, bool) {
-	n.mutex.RLock()
-	defer n.mutex.RUnlock()
-	event, exists := n.invalidTransactionEvents[txID]
-
-	return event, exists
-}
-
 func (n *Node) MainEngineSwitchedCount() int {
 	return int(n.mainEngineSwitchedCount.Load())
 }
 
-func (n *Node) AttachedBlocks() []*blocks.Block {
-	n.mutex.RLock()
-	defer n.mutex.RUnlock()
-
-	return n.attachedBlocks
-}
-
-func (n *Node) IssueValidationBlock(ctx context.Context, alias string, opts ...options.Option[ValidationBlockParams]) *blocks.Block {
+func (n *Node) IssueValidationBlock(ctx context.Context, opts ...options.Option[ValidationBlockParams]) *blocks.Block {
 	if n.Validator == nil {
 		panic("node is not a validator")
 	}
 
-	return n.Validator.IssueValidationBlock(ctx, alias, n, opts...)
+	return n.Validator.IssueValidationBlock(ctx, n, opts...)
 }

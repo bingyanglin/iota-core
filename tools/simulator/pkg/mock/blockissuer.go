@@ -96,7 +96,7 @@ func (i *BlockIssuer) Shutdown() {
 	i.workerPool.ShutdownComplete.Wait()
 }
 
-func (i *BlockIssuer) CreateValidationBlock(ctx context.Context, alias string, issuerAccount wallet.Account, node *Node, opts ...options.Option[ValidationBlockParams]) (*blocks.Block, error) {
+func (i *BlockIssuer) CreateValidationBlock(ctx context.Context, issuerAccount wallet.Account, node *Node, opts ...options.Option[ValidationBlockParams]) (*blocks.Block, error) {
 	blockParams := options.Apply(&ValidationBlockParams{}, opts)
 
 	if blockParams.BlockHeader.IssuingTime == nil {
@@ -172,13 +172,11 @@ func (i *BlockIssuer) CreateValidationBlock(ctx context.Context, alias string, i
 
 	i.events.BlockConstructed.Trigger(modelBlock)
 
-	modelBlock.ID().RegisterAlias(alias)
-
 	return blocks.NewBlock(modelBlock), nil
 }
 
-func (i *BlockIssuer) IssueValidationBlock(ctx context.Context, alias string, node *Node, opts ...options.Option[ValidationBlockParams]) *blocks.Block {
-	block, _ := i.CreateValidationBlock(ctx, alias, wallet.NewEd25519Account(i.AccountID, i.privateKey), node, opts...)
+func (i *BlockIssuer) IssueValidationBlock(ctx context.Context, node *Node, opts ...options.Option[ValidationBlockParams]) *blocks.Block {
+	block, _ := i.CreateValidationBlock(ctx, wallet.NewEd25519Account(i.AccountID, i.privateKey), node, opts...)
 	i.IssueBlock(block.ModelBlock(), node)
 
 	validationBlock, _ := block.ValidationBlock()
@@ -198,7 +196,7 @@ func (i *BlockIssuer) retrieveAPI(blockParams *BlockHeaderParams, node *Node) (i
 }
 
 // CreateBlock creates a new block with the options.
-func (i *BlockIssuer) CreateBasicBlock(ctx context.Context, alias string, node *Node, opts ...options.Option[BasicBlockParams]) (*blocks.Block, error) {
+func (i *BlockIssuer) CreateBasicBlock(ctx context.Context, node *Node, opts ...options.Option[BasicBlockParams]) (*blocks.Block, error) {
 	blockParams := options.Apply(&BasicBlockParams{}, opts)
 
 	if blockParams.BlockHeader.IssuingTime == nil {
@@ -260,13 +258,11 @@ func (i *BlockIssuer) CreateBasicBlock(ctx context.Context, alias string, node *
 
 	i.events.BlockConstructed.Trigger(modelBlock)
 
-	modelBlock.ID().RegisterAlias(alias)
-
 	return blocks.NewBlock(modelBlock), err
 }
 
-func (i *BlockIssuer) IssueBasicBlock(ctx context.Context, alias string, node *Node, opts ...options.Option[BasicBlockParams]) *blocks.Block {
-	block, _ := i.CreateBasicBlock(ctx, alias, node, opts...)
+func (i *BlockIssuer) IssueBasicBlock(ctx context.Context, node *Node, opts ...options.Option[BasicBlockParams]) *blocks.Block {
+	block, _ := i.CreateBasicBlock(ctx, node, opts...)
 
 	i.IssueBlock(block.ModelBlock(), node)
 
@@ -291,9 +287,8 @@ func (i *BlockIssuer) IssueActivity(ctx context.Context, wg *sync.WaitGroup, sta
 				return
 			}
 
-			blockAlias := fmt.Sprintf("%s-activity.%d", i.Name, counter)
 			timeOffset := time.Since(start)
-			i.IssueValidationBlock(ctx, blockAlias,
+			i.IssueValidationBlock(ctx,
 				node,
 				WithValidationBlockHeaderOptions(
 					WithIssuingTime(issuingTime.Add(timeOffset)),

@@ -3,15 +3,12 @@ package core
 import (
 	"fmt"
 	"os"
-	"strings"
-	"sync/atomic"
 	"time"
 
 	"golang.org/x/crypto/blake2b"
 
 	"github.com/iotaledger/hive.go/crypto/ed25519"
 	"github.com/iotaledger/hive.go/ds/orderedmap"
-	"github.com/iotaledger/hive.go/ds/shrinkingmap"
 	"github.com/iotaledger/hive.go/ierrors"
 	"github.com/iotaledger/hive.go/lo"
 	"github.com/iotaledger/hive.go/log"
@@ -19,7 +16,6 @@ import (
 	"github.com/iotaledger/hive.go/runtime/syncutils"
 	"github.com/iotaledger/iota-core/pkg/core/account"
 	"github.com/iotaledger/iota-core/pkg/protocol"
-	"github.com/iotaledger/iota-core/pkg/protocol/engine/blocks"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/utxoledger"
 	"github.com/iotaledger/iota-core/pkg/protocol/sybilprotection/sybilprotectionv1"
 	"github.com/iotaledger/iota-core/pkg/storage/utils"
@@ -63,45 +59,38 @@ type Simulator struct {
 	running   bool
 
 	snapshotPath string
-	blocks       *shrinkingmap.ShrinkingMap[string, *blocks.Block]
 
 	API                      iotago.API
 	ProtocolParameterOptions []options.Option[iotago.V3ProtocolParameters]
 
 	optsAccounts        []snapshotcreator.AccountDetails
 	optsSnapshotOptions []options.Option[snapshotcreator.Options]
+	optsNetworkOptions  []options.Option[mock.Network]
 	optsWaitFor         time.Duration
 	optsTick            time.Duration
 	optsLogger          log.Logger
 
-	uniqueBlockTimeCounter              atomic.Int64
-	automaticTransactionIssuingCounters shrinkingmap.ShrinkingMap[string, int]
-	mutex                               syncutils.RWMutex
-	genesisKeyManager                   *wallet.KeyManager
+	mutex             syncutils.RWMutex
+	genesisKeyManager *wallet.KeyManager
 
 	currentSlot iotago.SlotIndex
 }
 
 func NewSimulator(opts ...options.Option[Simulator]) *Simulator {
 	return options.Apply(&Simulator{
-		genesisKeyManager:                   lo.PanicOnErr(wallet.NewKeyManagerFromRandom(wallet.DefaultIOTAPath)),
-		network:                             mock.NewNetwork(),
-		Directory:                           utils.NewDirectory(os.TempDir()),
-		nodes:                               orderedmap.New[string, *mock.Node](),
-		wallets:                             orderedmap.New[string, *mock.Wallet](),
-		blocks:                              shrinkingmap.New[string, *blocks.Block](),
-		automaticTransactionIssuingCounters: *shrinkingmap.New[string, int](),
+		genesisKeyManager: lo.PanicOnErr(wallet.NewKeyManagerFromRandom(wallet.DefaultIOTAPath)),
+		Directory:         utils.NewDirectory(os.TempDir()),
+		nodes:             orderedmap.New[string, *mock.Node](),
+		wallets:           orderedmap.New[string, *mock.Wallet](),
 
 		optsWaitFor: durationFromEnvOrDefault(5*time.Second, "CI_UNIT_TESTS_WAIT_FOR"),
 		optsTick:    durationFromEnvOrDefault(2*time.Millisecond, "CI_UNIT_TESTS_TICK"),
 		optsLogger:  log.NewLogger(),
 	}, opts, func(t *Simulator) {
+		t.network = mock.NewNetwork(t.optsNetworkOptions...)
 
 		t.ProtocolParameterOptions = append(t.ProtocolParameterOptions, iotago.WithNetworkOptions("simulator", iotago.PrefixTestnet))
 		t.API = iotago.V3API(iotago.NewV3SnapshotProtocolParameters(t.ProtocolParameterOptions...))
-
-		genesisBlock := blocks.NewRootBlock(t.API.ProtocolParameters().GenesisBlockID(), iotago.NewEmptyCommitment(t.API).MustID(), time.Unix(t.API.ProtocolParameters().GenesisUnixTimestamp(), 0))
-		t.RegisterBlock("Genesis", genesisBlock)
 
 		t.snapshotPath = t.Directory.Path("genesis_snapshot.bin")
 		defaultSnapshotOptions := []options.Option[snapshotcreator.Options]{
@@ -119,20 +108,6 @@ func NewSimulator(opts ...options.Option[Simulator]) *Simulator {
 	})
 }
 
-// Block returns the block with the given alias. Important to note that this blocks.Block is a placeholder and is
-// thus not the same as the blocks.Block that is created by a node.
-func (t *Simulator) Block(alias string) *blocks.Block {
-	t.mutex.RLock()
-	defer t.mutex.RUnlock()
-
-	block, exist := t.blocks.Get(alias)
-	if !exist {
-		panic(fmt.Sprintf("block %s not registered", alias))
-	}
-
-	return block
-}
-
 func (t *Simulator) AccountOutput(alias string) *utxoledger.Output {
 	t.mutex.RLock()
 	defer t.mutex.RUnlock()
@@ -144,84 +119,6 @@ func (t *Simulator) AccountOutput(alias string) *utxoledger.Output {
 	}
 
 	return output
-}
-
-func (t *Simulator) BlockID(alias string) iotago.BlockID {
-	return t.Block(alias).ID()
-}
-
-func (t *Simulator) BlockIDs(aliases ...string) []iotago.BlockID {
-	return lo.Map(aliases, func(alias string) iotago.BlockID {
-		return t.BlockID(alias)
-	})
-}
-
-func (t *Simulator) Blocks(aliases ...string) []*blocks.Block {
-	return lo.Map(aliases, func(alias string) *blocks.Block {
-		return t.Block(alias)
-	})
-}
-
-func (t *Simulator) BlocksWithPrefix(prefix string) []*blocks.Block {
-	t.mutex.RLock()
-	defer t.mutex.RUnlock()
-
-	b := make([]*blocks.Block, 0)
-
-	t.blocks.ForEach(func(alias string, block *blocks.Block) bool {
-		if strings.HasPrefix(alias, prefix) {
-			b = append(b, block)
-		}
-
-		return true
-	})
-
-	return b
-}
-
-func (t *Simulator) BlocksWithPrefixes(prefixes ...string) []*blocks.Block {
-	b := make([]*blocks.Block, 0)
-
-	for _, prefix := range prefixes {
-		b = append(b, t.BlocksWithPrefix(prefix)...)
-	}
-
-	return b
-}
-
-func (t *Simulator) BlocksWithSuffix(suffix string) []*blocks.Block {
-	t.mutex.RLock()
-	defer t.mutex.RUnlock()
-
-	b := make([]*blocks.Block, 0)
-
-	t.blocks.ForEach(func(alias string, block *blocks.Block) bool {
-		if strings.HasSuffix(alias, suffix) {
-			b = append(b, block)
-		}
-
-		return true
-	})
-
-	return b
-}
-
-func (t *Simulator) BlocksWithSuffixes(suffixes ...string) []*blocks.Block {
-	b := make([]*blocks.Block, 0)
-
-	for _, prefix := range suffixes {
-		b = append(b, t.BlocksWithSuffix(prefix)...)
-	}
-
-	return b
-}
-
-func (t *Simulator) BlockIDsWithPrefix(prefix string) []iotago.BlockID {
-	blocksWithPrefix := t.BlocksWithPrefix(prefix)
-
-	return lo.Map(blocksWithPrefix, func(block *blocks.Block) iotago.BlockID {
-		return block.ID()
-	})
 }
 
 func (t *Simulator) Node(name string) *mock.Node {
@@ -321,17 +218,16 @@ func (t *Simulator) Shutdown() {
 	// })
 }
 
-func (t *Simulator) addNodeToPartition(name string, partition string, validator bool, walletOpts ...options.Option[WalletOptions]) *mock.Node {
+func (t *Simulator) addNodeToNetwork(name string, validator bool, walletOpts ...options.Option[WalletOptions]) *mock.Node {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 
 	if validator && t.running {
-		panic(fmt.Sprintf("cannot add validator node %s to partition %s: framework already running", name, partition))
+		panic(fmt.Sprintf("cannot add validator node %s: framework already running", name))
 	}
 
-	node := mock.NewNode(t.optsLogger, t.network, partition, name, validator)
+	node := mock.NewNode(t.optsLogger, t.network, name, validator)
 	t.nodes.Set(name, node)
-	node.SetCurrentSlot(t.currentSlot)
 
 	walletOptions := options.Apply(&WalletOptions{
 		Amount: mock.MinValidatorAccountAmount(t.API.ProtocolParameters()),
@@ -357,24 +253,16 @@ func (t *Simulator) addNodeToPartition(name string, partition string, validator 
 	return node
 }
 
-func (t *Simulator) AddValidatorNodeToPartition(name string, partition string, walletOpts ...options.Option[WalletOptions]) *mock.Node {
-	return t.addNodeToPartition(name, partition, true, walletOpts...)
-}
-
 func (t *Simulator) AddValidatorNode(name string, walletOpts ...options.Option[WalletOptions]) *mock.Node {
-	node := t.addNodeToPartition(name, mock.NetworkMainPartition, true, walletOpts...)
+	node := t.addNodeToNetwork(name, true, walletOpts...)
 	// create a wallet for each validator node which uses the validator account as a block issuer
 	t.AddWallet(name, node, node.Validator.AccountID, node.KeyManager)
 
 	return node
 }
 
-func (t *Simulator) AddNodeToPartition(name string, partition string, walletOpts ...options.Option[WalletOptions]) *mock.Node {
-	return t.addNodeToPartition(name, partition, false, walletOpts...)
-}
-
 func (t *Simulator) AddNode(name string, walletOpts ...options.Option[WalletOptions]) *mock.Node {
-	return t.addNodeToPartition(name, mock.NetworkMainPartition, false, walletOpts...)
+	return t.addNodeToNetwork(name, false, walletOpts...)
 }
 
 func (t *Simulator) RemoveNode(name string) {
@@ -436,19 +324,6 @@ func (t *Simulator) AddWallet(name string, node *mock.Node, accountID iotago.Acc
 	newWallet.SetCurrentSlot(t.currentSlot)
 
 	return newWallet
-}
-
-// Update the global time of the test suite and all nodes and wallets.
-func (t *Simulator) SetCurrentSlot(slot iotago.SlotIndex) {
-	t.currentSlot = slot
-	t.nodes.ForEach(func(_ string, node *mock.Node) bool {
-		node.SetCurrentSlot(slot)
-		return true
-	})
-	t.wallets.ForEach(func(_ string, wallet *mock.Wallet) bool {
-		wallet.SetCurrentSlot(slot)
-		return true
-	})
 }
 
 func (t *Simulator) CurrentSlot() iotago.SlotIndex {
@@ -593,21 +468,4 @@ func mustNodes(nodes []*mock.Node) {
 	if len(nodes) == 0 {
 		panic("no nodes provided")
 	}
-}
-
-func (t *Simulator) SplitIntoPartitions(partitions map[string][]*mock.Node) {
-	for partition, nodes := range partitions {
-		for _, node := range nodes {
-			node.Partition = partition
-			t.network.JoinWithEndpoint(node.Endpoint, partition)
-		}
-	}
-}
-
-func (t *Simulator) MergePartitionsToMain(partitions ...string) {
-	t.network.MergePartitionsToMain(partitions...)
-}
-
-func (t *Simulator) SetAutomaticTransactionIssuingCounters(partition string, newValue int) {
-	t.automaticTransactionIssuingCounters.Set(partition, newValue)
 }

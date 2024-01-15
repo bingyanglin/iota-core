@@ -4,22 +4,27 @@ import (
 	"github.com/iotaledger/hive.go/runtime/options"
 	"github.com/iotaledger/iota-core/pkg/protocol"
 	"github.com/iotaledger/iota-core/tools/simulator/pkg/core"
+	"github.com/iotaledger/iota-core/tools/simulator/pkg/mock"
 )
 
 func main() {
-	sim := core.NewSimulator()
+	networkConfigs := mock.NewConfiguration(
+		mock.WithNetworkDelay(10, 200),
+		mock.WithPacketLoss(0.1, 0.2),
+		mock.WithTopology(mock.WattsStrogatz(1, 0.1)),
+	)
+
+	sim := core.NewSimulator(
+		core.WithNetworkOptions(
+			mock.WithTotalNodes(100),
+			mock.WithValidators(4),
+			mock.WithNetworkConfig(networkConfigs),
+		),
+	)
 	defer sim.Shutdown()
 
 	node1 := sim.AddValidatorNode("node1")
-	wallet := sim.AddDefaultWallet(node1)
+	sim.AddDefaultWallet(node1)
 	sim.Run(true, map[string][]options.Option[protocol.Protocol]{})
-
-	tx1 := wallet.CreateBasicOutputsEquallyFromInput("tx1", 1, "Genesis:0")
-
-	tx2 := wallet.CreateBasicOutputsEquallyFromInput("tx2", 1, "tx1:0")
-
-	sim.IssueBasicBlockWithOptions("block1", wallet, tx2)
-
-	sim.IssueBasicBlockWithOptions("block2", wallet, tx1)
 
 }
