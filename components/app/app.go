@@ -11,9 +11,9 @@ import (
 	dashboardmetrics "github.com/iotaledger/iota-core/components/dashboard_metrics"
 	"github.com/iotaledger/iota-core/components/debugapi"
 	"github.com/iotaledger/iota-core/components/inx"
-	"github.com/iotaledger/iota-core/components/metrics"
 	"github.com/iotaledger/iota-core/components/metricstracker"
 	"github.com/iotaledger/iota-core/components/p2p"
+	"github.com/iotaledger/iota-core/components/prometheus"
 	"github.com/iotaledger/iota-core/components/protocol"
 	"github.com/iotaledger/iota-core/components/remotelog"
 	"github.com/iotaledger/iota-core/components/remotemetrics"
@@ -27,7 +27,7 @@ var (
 	Name = "iota-core"
 
 	// Version of the app.
-	Version = "0.1.0"
+	Version = "1.0.0-alpha.2"
 )
 
 func App() *app.App {
@@ -51,7 +51,7 @@ Command line flags:
 			protocol.Component,
 			dashboardmetrics.Component,
 			dashboard.Component,
-			metrics.Component,
+			prometheus.Component,
 			inx.Component,
 			remotelog.Component,
 			remotemetrics.Component,
