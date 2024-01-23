@@ -103,31 +103,6 @@ services:
       --metrics.goMetrics=true
       --metrics.processMetrics=true
 
-  node-4-validator:
-    image: docker-network-node-1-validator:latest
-    stop_grace_period: 1m
-    restart: unless-stopped
-    ulimits:
-      nofile:
-        soft: 16384
-        hard: 16384
-    networks:
-      - iota-core
-    ports:
-      - "8040:14265/tcp" # REST-API
-      - "8041:8081/tcp" # Dashboard
-      - "6041:6061/tcp" # pprof
-      - "9049:9029/tcp" # INX
-    volumes:
-      - ./docker-network.snapshot:/app/data/snapshot.bin
-      - ./config.json:/app/config.json:ro
-    command: >
-      ${COMMON_CONFIG}
-      ${MANUALPEERING_CONFIG}
-      --p2p.identityPrivateKey=f205f6c4525069f71f9c7e987d72421a16c7900056b494a2b85fdf7942cf906aefbdc580f5d1ce4ae3f86ccfe109c6cd76df9b0e710a437b2aa964358c7b9449
-      --inx.enabled=true
-      --inx.bindAddress=0.0.0.0:9029
-
   node-4:
     image: docker-network-node-1-validator:latest
     stop_grace_period: 1m
@@ -152,8 +127,11 @@ services:
       --p2p.identityPrivateKey=03feb3bcd25e57f75697bb329e6e0100680431e4c45c85bc013da2aea9e9d0345e08a0c37407dc62369deebc64cb0fb3ea26127d19d141ee7fb8eaa6b92019d7
       --inx.enabled=true
       --inx.bindAddress=0.0.0.0:9029
-      --prometheus.goMetrics=true
-      --prometheus.processMetrics=true
+      --remotelog.serverAddress=172.17.0.1:5213
+      --remotelog.enabled=false
+      --remotemetrics.enabled=false
+      --metrics.goMetrics=true
+      --metrics.processMetrics=true
 
   node-5:
     image: docker-network-node-1-validator:latest
@@ -179,8 +157,11 @@ services:
       --p2p.identityPrivateKey=7d1491df3ef334dee988d6cdfc4b430b996d520bd63375a01d6754f8cee979b855b200fbea8c936ea1937a27e6ad72a7c9a21c1b17c2bd3c11f1f6994d813446
       --inx.enabled=true
       --inx.bindAddress=0.0.0.0:9029
-      --prometheus.goMetrics=true
-      --prometheus.processMetrics=true
+      --remotelog.serverAddress=172.17.0.1:5213
+      --remotelog.enabled=false
+      --remotemetrics.enabled=false
+      --metrics.goMetrics=true
+      --metrics.processMetrics=true
 
   ##################################################################
   #  Monitoring                                                    #
@@ -225,7 +206,7 @@ services:
   # INX Extensions #
   ##################
 
-  inx-indexer:
+  inx-indexer-1:
     image: iotaledger/inx-indexer:2.0.0-alpha.19
     stop_grace_period: 1m
     restart: unless-stopped
@@ -242,18 +223,73 @@ services:
       --inx.address=node-1-validator:9029
       --restAPI.bindAddress=inx-indexer:9011
 
-  inx-mqtt:
-    image: iotaledger/inx-mqtt:2.0-alpha
+  inx-indexer-2:
+    image: iotaledger/inx-indexer:2.0.0-alpha.19
     stop_grace_period: 1m
     restart: unless-stopped
     depends_on:
-      node-1-validator:
+      node-2-validator:
         condition: service_healthy
+    ulimits:
+      nofile:
+        soft: 16384
+        hard: 16384
     networks:
       - iota-core
     command: >
-      --inx.address=node-1-validator:9029
-      --mqtt.websocket.bindAddress=inx-mqtt:1888
+      --inx.address=node-2-validator:9029
+      --restAPI.bindAddress=inx-indexer:9011
+
+  inx-indexer-3:
+    image: iotaledger/inx-indexer:2.0.0-alpha.19
+    stop_grace_period: 1m
+    restart: unless-stopped
+    depends_on:
+      node-3-validator:
+        condition: service_healthy
+    ulimits:
+      nofile:
+        soft: 16384
+        hard: 16384
+    networks:
+      - iota-core
+    command: >
+      --inx.address=node-3-validator:9029
+      --restAPI.bindAddress=inx-indexer:9011
+
+  inx-indexer-4:
+    image: iotaledger/inx-indexer:2.0.0-alpha.19
+    stop_grace_period: 1m
+    restart: unless-stopped
+    depends_on:
+      node-4:
+        condition: service_healthy
+    ulimits:
+      nofile:
+        soft: 16384
+        hard: 16384
+    networks:
+      - iota-core
+    command: >
+      --inx.address=node-4:9029
+      --restAPI.bindAddress=inx-indexer:9011
+
+  inx-indexer-5:
+    image: iotaledger/inx-indexer:2.0.0-alpha.19
+    stop_grace_period: 1m
+    restart: unless-stopped
+    depends_on:
+      node-5:
+        condition: service_healthy
+    ulimits:
+      nofile:
+        soft: 16384
+        hard: 16384
+    networks:
+      - iota-core
+    command: >
+      --inx.address=node-5:9029
+      --restAPI.bindAddress=inx-indexer:9011
 
   inx-blockissuer:
     image: iotaledger/inx-blockissuer:1.0.0-alpha.15
@@ -262,7 +298,7 @@ services:
     depends_on:
       node-1-validator:
         condition: service_healthy
-      inx-indexer:
+      inx-indexer-1:
         condition: service_started
     networks:
       - iota-core
@@ -281,7 +317,7 @@ services:
     depends_on:
       node-1-validator:
         condition: service_healthy
-      inx-indexer:
+      inx-indexer-1:
         condition: service_started
       inx-blockissuer:
         condition: service_started
@@ -344,23 +380,6 @@ services:
       --logger.level=warning
       --inx.address=node-3-validator:9029
       --validator.accountAddress=rms1pp4wuuz0y42caz48vv876qfpmffswsvg40zz8v79sy8cp0jfxm4kunflcgt
-
-  inx-validator-4:
-    image: iotaledger/inx-validator:1.0-alpha.13
-    stop_grace_period: 1m
-    restart: unless-stopped
-    depends_on:
-      node-3-validator:
-        condition: service_started
-    networks:
-      - iota-core
-    environment:
-      - "VALIDATOR_PRV_KEY=5cceed8ca18146639330177ab4f61ab1a71e2d3fea3d4389f9e2e43f34ec8b33c9ceac37d293155a578381aa313ee74edfa3ac73ee930d045564aae7771e8ffe"
-    command: >
-      --logger.level=debug
-      --inx.address=node-4-validator:9029
-      --validator.accountAddress=rms1pr8cxs3dzu9xh4cduff4dd4cxdthpjkpwmz2244f75m0urslrsvtsshrrjw
-      --logger.level=debug
 
 # Create our own network
 networks:

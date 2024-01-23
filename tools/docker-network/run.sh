@@ -28,16 +28,13 @@ fi
 echo $DOCKER_BUILD_CONTEXT $DOCKERFILE_PATH
 docker compose build --build-arg WITH_GO_WORK=${WITH_GO_WORK:-0} --build-arg DOCKER_BUILD_CONTEXT=${DOCKER_BUILD_CONTEXT} --build-arg DOCKERFILE_PATH=${DOCKERFILE_PATH}
 
+docker compose pull inx-indexer-1 inx-blockissuer inx-faucet inx-validator-1
+
 # check exit code of builder
 if [ $? -ne 0 ]; then
   echo "Building failed. Please fix and try again!"
   exit 1
 fi
-
-docker compose pull inx-indexer inx-mqtt inx-blockissuer inx-faucet inx-validator-1
-
-# Remove old snapshot file
-rm *.snapshot
 
 # create snapshot file
 echo "Create snapshot"
@@ -76,3 +73,4 @@ docker compose up
 
 echo "Clean up docker resources"
 docker compose down -v
+rm *.snapshot
