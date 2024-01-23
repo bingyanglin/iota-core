@@ -226,7 +226,7 @@ services:
   ##################
 
   inx-indexer:
-    image: iotaledger/inx-indexer:2.0.0-alpha.18
+    image: iotaledger/inx-indexer:2.0.0-alpha.19
     stop_grace_period: 1m
     restart: unless-stopped
     depends_on:
@@ -256,7 +256,7 @@ services:
       --mqtt.websocket.bindAddress=inx-mqtt:1888
 
   inx-blockissuer:
-    image: iotaledger/inx-blockissuer:1.0.0-alpha.14
+    image: iotaledger/inx-blockissuer:1.0.0-alpha.15
     stop_grace_period: 1m
     restart: unless-stopped
     depends_on:
@@ -275,7 +275,7 @@ services:
       --blockIssuer.proofOfWork.targetTrailingZeros=5
 
   inx-faucet:
-    image: iotaledger/inx-faucet:2.0.0-alpha.17
+    image: iotaledger/inx-faucet:2.0.0-alpha.18
     stop_grace_period: 1m
     restart: unless-stopped
     depends_on:
@@ -297,7 +297,7 @@ services:
       --faucet.rateLimit.enabled=false
 
   inx-validator-1:
-    image: iotaledger/inx-validator:1.0.0-alpha.12
+    image: iotaledger/inx-validator:1.0.0-alpha.13
     stop_grace_period: 1m
     restart: unless-stopped
     depends_on:
@@ -314,7 +314,7 @@ services:
       --validator.accountAddress=rms1pzg8cqhfxqhq7pt37y8cs4v5u4kcc48lquy2k73ehsdhf5ukhya3y5rx2w6
 
   inx-validator-2:
-    image: iotaledger/inx-validator:1.0.0-alpha.12
+    image: iotaledger/inx-validator:1.0.0-alpha.13
     stop_grace_period: 1m
     restart: unless-stopped
     depends_on:
@@ -330,7 +330,7 @@ services:
       --validator.accountAddress=rms1pqm4xk8e9ny5w5rxjkvtp249tfhlwvcshyr3pc0665jvp7g3hc875k538hl
 
   inx-validator-3:
-    image: iotaledger/inx-validator:1.0.0-alpha.12
+    image: iotaledger/inx-validator:1.0.0-alpha.13
     stop_grace_period: 1m
     restart: unless-stopped
     depends_on:
@@ -346,7 +346,7 @@ services:
       --validator.accountAddress=rms1pp4wuuz0y42caz48vv876qfpmffswsvg40zz8v79sy8cp0jfxm4kunflcgt
 
   inx-validator-4:
-    image: iotaledger/inx-validator:1.0-alpha
+    image: iotaledger/inx-validator:1.0-alpha.13
     stop_grace_period: 1m
     restart: unless-stopped
     depends_on:
