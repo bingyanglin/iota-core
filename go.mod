@@ -20,6 +20,7 @@ require (
 	github.com/iotaledger/hive.go/kvstore v0.0.0-20231214025533-67add6c5091b
 	github.com/iotaledger/hive.go/lo v0.0.0-20240123132714-180e65c33a1d
 	github.com/iotaledger/hive.go/log v0.0.0-20240123132714-180e65c33a1d
+	github.com/iotaledger/hive.go/logger v0.0.0-20240123132714-180e65c33a1d
 	github.com/iotaledger/hive.go/runtime v0.0.0-20240123132714-180e65c33a1d
 	github.com/iotaledger/hive.go/serializer/v2 v2.0.0-rc.1.0.20240123132714-180e65c33a1d
 	github.com/iotaledger/hive.go/stringify v0.0.0-20240123132714-180e65c33a1d
@@ -35,6 +36,7 @@ require (
 	github.com/multiformats/go-multiaddr v0.12.0
 	github.com/multiformats/go-varint v0.0.7
 	github.com/otiai10/copy v1.14.0
+	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.18.0
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.8.4
@@ -44,6 +46,7 @@ require (
 	golang.org/x/crypto v0.18.0
 	google.golang.org/grpc v1.60.1
 	google.golang.org/protobuf v1.32.0
+	gopkg.in/src-d/go-git.v4 v4.13.1
 )
 
 require (
@@ -61,6 +64,7 @@ require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/eclipse/paho.mqtt.golang v1.4.3 // indirect
 	github.com/elastic/gosigar v0.14.2 // indirect
+	github.com/emirpasic/gods v1.12.0 // indirect
 	github.com/ethereum/go-ethereum v1.13.10 // indirect
 	github.com/fatih/structs v1.1.0 // indirect
 	github.com/felixge/fgprof v0.9.3 // indirect
@@ -182,6 +186,8 @@ require (
 	golang.org/x/tools v0.17.0 // indirect
 	gonum.org/v1/gonum v0.14.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240123012728-ef4313101c80 // indirect
+	gopkg.in/src-d/go-billy.v4 v4.3.2 // indirect
+	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	lukechampine.com/blake3 v1.2.1 // indirect
