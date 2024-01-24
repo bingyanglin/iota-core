@@ -354,16 +354,6 @@ services:
         condition: service_healthy
       inx-indexer-1:
         condition: service_started
-      inx-indexer-2:
-        condition: service_started
-      inx-indexer-3:
-        condition: service_started
-      inx-indexer-4:
-        condition: service_started
-      inx-indexer-5:
-        condition: service_started
-      inx-indexer-6:
-        condition: service_started
       inx-blockissuer:
         condition: service_started
     networks:
