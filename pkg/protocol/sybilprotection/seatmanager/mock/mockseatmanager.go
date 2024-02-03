@@ -21,7 +21,7 @@ import (
 type ManualPOA struct {
 	events         *seatmanager.Events
 	apiProvider    iotago.APIProvider
-	committeeStore *epochstore.Store[*account.Accounts]
+	committeeStore *epochstore.Store[*account.SeatedAccounts]
 
 	accounts  *account.Accounts
 	committee *account.SeatedAccounts
@@ -31,7 +31,7 @@ type ManualPOA struct {
 	module.Module
 }
 
-func NewManualPOA(e iotago.APIProvider, committeeStore *epochstore.Store[*account.Accounts]) *ManualPOA {
+func NewManualPOA(e iotago.APIProvider, committeeStore *epochstore.Store[*account.SeatedAccounts]) *ManualPOA {
 	m := &ManualPOA{
 		events:         seatmanager.NewEvents(),
 		apiProvider:    e,
@@ -58,26 +58,32 @@ func NewManualPOAProvider() module.Provider[*engine.Engine, seatmanager.SeatMana
 	})
 }
 
-func (m *ManualPOA) AddRandomAccount(alias string) iotago.AccountID {
-	id := iotago.AccountID(tpkg.Rand32ByteArray())
-	id.RegisterAlias(alias)
-	if err := m.accounts.Set(id, &account.Pool{ // We don't care about pools with PoA, but need to set something to avoid division by zero errors.
-		PoolStake:      1,
-		ValidatorStake: 1,
-		FixedCost:      1,
-	}); err != nil {
+func (m *ManualPOA) AddRandomAccounts(aliases ...string) (accountIDs []iotago.AccountID) {
+	accountIDs = make([]iotago.AccountID, len(aliases))
+
+	for i, alias := range aliases {
+		id := iotago.AccountID(tpkg.Rand32ByteArray())
+		id.RegisterAlias(alias)
+		if err := m.accounts.Set(id, &account.Pool{ // We don't care about pools with PoA, but need to set something to avoid division by zero errors.
+			PoolStake:      1,
+			ValidatorStake: 1,
+			FixedCost:      1,
+		}); err != nil {
+			panic(err)
+		}
+
+		m.aliases.Set(alias, id)
+
+		accountIDs[i] = id
+	}
+
+	m.committee = m.accounts.SeatedAccounts()
+
+	if err := m.committeeStore.Store(0, m.committee); err != nil {
 		panic(err)
 	}
 
-	m.aliases.Set(alias, id)
-
-	m.committee = m.accounts.SeatedAccounts(m.accounts.IDs()...)
-
-	if err := m.committeeStore.Store(0, m.accounts); err != nil {
-		panic(err)
-	}
-
-	return id
+	return accountIDs
 }
 
 func (m *ManualPOA) AddAccount(id iotago.AccountID, alias string) iotago.AccountID {
@@ -90,9 +96,9 @@ func (m *ManualPOA) AddAccount(id iotago.AccountID, alias string) iotago.Account
 	}
 	m.aliases.Set(alias, id)
 
-	m.committee = m.accounts.SeatedAccounts(m.accounts.IDs()...)
+	m.committee = m.accounts.SeatedAccounts()
 
-	if err := m.committeeStore.Store(0, m.accounts); err != nil {
+	if err := m.committeeStore.Store(0, m.committee); err != nil {
 		panic(err)
 	}
 
@@ -106,6 +112,10 @@ func (m *ManualPOA) AccountID(alias string) iotago.AccountID {
 	}
 
 	return id
+}
+
+func (m *ManualPOA) GetSeat(alias string) (account.SeatIndex, bool) {
+	return m.committee.GetSeat(m.AccountID(alias))
 }
 
 func (m *ManualPOA) SetOnline(aliases ...string) {
@@ -152,7 +162,7 @@ func (m *ManualPOA) committeeInEpoch(epoch iotago.EpochIndex) (*account.SeatedAc
 		return nil, false
 	}
 
-	return c.SeatedAccounts(c.IDs()...), true
+	return c, true
 }
 
 func (m *ManualPOA) OnlineCommittee() ds.Set[account.SeatIndex] {
@@ -179,27 +189,47 @@ func (m *ManualPOA) RotateCommittee(epoch iotago.EpochIndex, validators accounts
 				return nil, ierrors.Wrapf(err, "error while setting pool for epoch %d for validator %s", epoch, validatorData.ID.String())
 			}
 		}
-		m.committee = m.accounts.SeatedAccounts(m.accounts.IDs()...)
+		m.committee = m.accounts.SeatedAccounts()
 	}
 
-	if err := m.committeeStore.Store(epoch, m.accounts); err != nil {
+	if err := m.committeeStore.Store(epoch, m.committee); err != nil {
 		panic(err)
 	}
 
 	return m.committee, nil
 }
 
-func (m *ManualPOA) ReuseCommittee(epoch iotago.EpochIndex, validators *account.Accounts) error {
-	if m.committee == nil || m.accounts.Size() == 0 {
-		m.accounts = validators
-		m.committee = m.accounts.SeatedAccounts(validators.IDs()...)
+func (m *ManualPOA) ReuseCommittee(currentEpoch iotago.EpochIndex, targetEpoch iotago.EpochIndex) (*account.SeatedAccounts, error) {
+	currentCommittee, exists := m.committeeInEpoch(currentEpoch)
+	if !exists {
+		// that should never happen as it is already the fallback strategy
+		panic(fmt.Sprintf("committee for current epoch %d not found", currentEpoch))
 	}
 
-	if err := m.committeeStore.Store(epoch, validators); err != nil {
+	if currentCommittee.SeatCount() == 0 {
+		return nil, ierrors.New("committee must not be empty")
+	}
+
+	committee, err := currentCommittee.Reuse()
+	if err != nil {
+		return nil, ierrors.Wrapf(err, "failed to reuse committee from epoch %d", currentEpoch)
+	}
+
+	if m.committee == nil || m.accounts.Size() == 0 {
+		committeeAccounts, err := committee.Accounts()
+		if err != nil {
+			return nil, ierrors.Wrapf(err, "failed to set manual PoA committee for epoch %d", targetEpoch)
+		}
+
+		m.accounts = committeeAccounts
+		m.committee = committee
+	}
+
+	if err := m.committeeStore.Store(targetEpoch, committee); err != nil {
 		panic(err)
 	}
 
-	return nil
+	return committee, nil
 }
 
 func (m *ManualPOA) InitializeCommittee(_ iotago.EpochIndex, _ time.Time) error {
