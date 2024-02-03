@@ -141,14 +141,14 @@ func configureBlockScheduledMetrics() {
 }
 
 func configureMissingBlockMetrics() {
-	if ParamsRemoteMetrics.MetricsLevel > Info {
-		return
-	}
+	// if ParamsRemoteMetrics.MetricsLevel > Info {
+	// 	return
+	// }
 
-	deps.Protocol.Events.Engine.BlockDAG.BlockMissing.Hook(func(block *blocks.Block) {
-		sendMissingBlockRecord(block, "missingBlock")
-	}, event.WithWorkerPool(Component.WorkerPool))
-	deps.Protocol.Events.Engine.BlockDAG.MissingBlockAttached.Hook(func(block *blocks.Block) {
-		sendMissingBlockRecord(block, "missingBlockStored")
-	}, event.WithWorkerPool(Component.WorkerPool))
+	// deps.Protocol.Events.Engine.BlockDAG.BlockMissing.Hook(func(block *blocks.Block) {
+	// 	sendMissingBlockRecord(block, "missingBlock")
+	// }, event.WithWorkerPool(Component.WorkerPool))
+	// deps.Protocol.Events.Engine.BlockDAG.MissingBlockAttached.Hook(func(block *blocks.Block) {
+	// 	sendMissingBlockRecord(block, "missingBlockStored")
+	// }, event.WithWorkerPool(Component.WorkerPool))
 }
