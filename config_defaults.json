@@ -23,6 +23,9 @@
     },
     "externalMultiAddresses": [],
     "identityPrivateKey": "",
+    "autopeering": {
+      "maxPeers": 5
+    },
     "db": {
       "path": "testnet/p2pstore"
     }
