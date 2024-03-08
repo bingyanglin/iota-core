@@ -118,7 +118,7 @@ func newCommitment(commitments *Commitments, model *model.Commitment) *Commitmen
 		commitments:                     commitments,
 	}
 
-	shutdown := lo.Batch(
+	shutdown := lo.BatchReverse(
 		c.initLogger(),
 		c.initDerivedProperties(),
 	)
@@ -206,7 +206,7 @@ func (c *Commitment) Less(other *Commitment) bool {
 func (c *Commitment) initLogger() (shutdown func()) {
 	c.Logger = c.commitments.NewChildLogger(fmt.Sprintf("Slot%d.", c.Slot()), true)
 
-	return lo.Batch(
+	return lo.BatchReverse(
 		c.Parent.LogUpdates(c, log.LevelTrace, "Parent", (*Commitment).LogName),
 		c.MainChild.LogUpdates(c, log.LevelTrace, "MainChild", (*Commitment).LogName),
 		c.Chain.LogUpdates(c, log.LevelTrace, "Chain", (*Chain).LogName),
@@ -231,7 +231,7 @@ func (c *Commitment) initLogger() (shutdown func()) {
 
 // initDerivedProperties initializes the behavior of this Commitment by setting up the relations between its properties.
 func (c *Commitment) initDerivedProperties() (shutdown func()) {
-	return lo.Batch(
+	return lo.BatchReverse(
 		// mark commitments that are marked as root as verified
 		c.IsVerified.InheritFrom(c.IsRoot),
 
@@ -247,15 +247,16 @@ func (c *Commitment) initDerivedProperties() (shutdown func()) {
 				c.CumulativeWeight.Set(c.Commitment.CumulativeWeight())
 			}
 
-			return lo.Batch(
-				parent.deriveChildren(c),
+			parent.registerChild(c)
 
+			return lo.BatchReverse(
 				c.deriveChain(parent),
+
 				c.deriveCumulativeAttestedWeight(parent),
 				c.deriveIsAboveLatestVerifiedCommitment(parent),
 
 				c.Chain.WithNonEmptyValue(func(chain *Chain) func() {
-					return lo.Batch(
+					return lo.BatchReverse(
 						c.deriveRequestAttestations(chain, parent),
 
 						// only start requesting blocks once the engine is ready
@@ -268,7 +269,7 @@ func (c *Commitment) initDerivedProperties() (shutdown func()) {
 		}),
 
 		c.Chain.WithNonEmptyValue(func(chain *Chain) func() {
-			return lo.Batch(
+			return lo.BatchReverse(
 				chain.addCommitment(c),
 
 				c.deriveReplayDroppedBlocks(chain),
@@ -277,8 +278,9 @@ func (c *Commitment) initDerivedProperties() (shutdown func()) {
 	)
 }
 
-// deriveChildren derives the children of this Commitment by adding the given child to the Children set.
-func (c *Commitment) deriveChildren(child *Commitment) (unregisterChild func()) {
+// registerChild adds the given Commitment as a child of this Commitment and sets it as the main child if it is the
+// first child of this Commitment.
+func (c *Commitment) registerChild(child *Commitment) {
 	c.MainChild.Compute(func(mainChild *Commitment) *Commitment {
 		if !c.Children.Add(child) || mainChild != nil {
 			return mainChild
@@ -286,16 +288,6 @@ func (c *Commitment) deriveChildren(child *Commitment) (unregisterChild func()) 
 
 		return child
 	})
-
-	return func() {
-		c.MainChild.Compute(func(mainChild *Commitment) *Commitment {
-			if !c.Children.Delete(child) || child != mainChild {
-				return mainChild
-			}
-
-			return lo.Return1(c.Children.Any())
-		})
-	}
 }
 
 // deriveChain derives the Chain of this Commitment which is either inherited from the parent if we are the main child
@@ -307,9 +299,10 @@ func (c *Commitment) deriveChain(parent *Commitment) func() {
 			return currentChain
 		}
 
-		// if we are not the main child of our parent, we spawn a new chain
+		// If we are not the main child of our parent, we spawn a new chain.
+		// Here we basically move commitments to a new chain if there's a fork.
 		if c != mainChild {
-			if currentChain == nil {
+			if currentChain == nil || currentChain == parentChain {
 				currentChain = c.commitments.protocol.Chains.newChain()
 				currentChain.ForkingPoint.Set(c)
 			}
@@ -317,9 +310,10 @@ func (c *Commitment) deriveChain(parent *Commitment) func() {
 			return currentChain
 		}
 
-		// if we are the main child of our parent, and our chain is not the parent chain (that we are supposed to
-		// inherit), then we evict our current chain (we will spawn a new one if we ever change back to not being the
-		// main child)
+		// If we are the main child of our parent, and our chain is not the parent chain,
+		// then we inherit the parent chain and evict the current one.
+		// We will spawn a new one if we ever change back to not being the main child.
+		// Here we basically move commitments to the parent chain.
 		if currentChain != nil && currentChain != parentChain {
 			currentChain.IsEvicted.Trigger()
 		}

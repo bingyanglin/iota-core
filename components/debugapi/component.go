@@ -8,13 +8,12 @@ import (
 	"go.uber.org/dig"
 
 	"github.com/iotaledger/hive.go/app"
+	"github.com/iotaledger/hive.go/db"
 	"github.com/iotaledger/hive.go/ds/shrinkingmap"
-	hivedb "github.com/iotaledger/hive.go/kvstore/database"
 	"github.com/iotaledger/hive.go/lo"
 	"github.com/iotaledger/hive.go/runtime/event"
 	"github.com/iotaledger/hive.go/runtime/workerpool"
 	"github.com/iotaledger/inx-app/pkg/httpserver"
-	"github.com/iotaledger/iota-core/components/restapi"
 	"github.com/iotaledger/iota-core/pkg/protocol"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/blocks"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/notarization"
@@ -49,7 +48,7 @@ func init() {
 		Configure: configure,
 		Params:    params,
 		IsEnabled: func(_ *dig.Container) bool {
-			return restapi.ParamsRestAPI.Enabled && ParamsDebugAPI.Enabled
+			return ParamsDebugAPI.Enabled
 		},
 	}
 }
@@ -71,14 +70,9 @@ type dependencies struct {
 }
 
 func configure() error {
-	// check if RestAPI plugin is disabled
-	if !Component.App().IsComponentEnabled(restapi.Component.Identifier()) {
-		Component.LogPanic("RestAPI plugin needs to be enabled to use the DebugAPIV3 plugin")
-	}
-
 	blocksPerSlot = shrinkingmap.New[iotago.SlotIndex, []*blocks.Block]()
 	blocksPrunableStorage = prunable.NewBucketManager(database.Config{
-		Engine:    hivedb.EngineRocksDB,
+		Engine:    db.EngineRocksDB,
 		Directory: ParamsDebugAPI.Database.Path,
 
 		Version:      1,
@@ -92,7 +86,7 @@ func configure() error {
 
 	debugAPIWorkerPool := workerpool.NewGroup("DebugAPI").CreatePool("DebugAPI", workerpool.WithWorkerCount(1))
 
-	deps.Protocol.Events.Engine.BlockDAG.BlockAttached.Hook(func(block *blocks.Block) {
+	deps.Protocol.Events.Engine.Retainer.BlockRetained.Hook(func(block *blocks.Block) {
 		blocksPerSlot.Set(block.ID().Slot(), append(lo.Return1(blocksPerSlot.GetOrCreate(block.ID().Slot(), func() []*blocks.Block {
 			return make([]*blocks.Block, 0)
 		})), block))

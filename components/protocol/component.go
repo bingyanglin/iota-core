@@ -9,8 +9,8 @@ import (
 	"go.uber.org/dig"
 
 	"github.com/iotaledger/hive.go/app"
+	"github.com/iotaledger/hive.go/db"
 	"github.com/iotaledger/hive.go/ierrors"
-	hivedb "github.com/iotaledger/hive.go/kvstore/database"
 	"github.com/iotaledger/hive.go/runtime/workerpool"
 	"github.com/iotaledger/iota-core/pkg/daemon"
 	"github.com/iotaledger/iota-core/pkg/model"
@@ -21,6 +21,7 @@ import (
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/notarization/slotnotarization"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/upgrade/signalingupgradeorchestrator"
 	"github.com/iotaledger/iota-core/pkg/protocol/sybilprotection/sybilprotectionv1"
+	"github.com/iotaledger/iota-core/pkg/retainer/txretainer"
 	"github.com/iotaledger/iota-core/pkg/storage"
 	"github.com/iotaledger/iota-core/pkg/storage/database"
 	"github.com/iotaledger/iota-core/pkg/storage/prunable"
@@ -86,13 +87,13 @@ func resetProtocolParameters() {
 func initConfigParams(c *dig.Container) error {
 	type cfgResult struct {
 		dig.Out
-		DatabaseEngine     hivedb.Engine `name:"databaseEngine"`
+		DatabaseEngine     db.Engine `name:"databaseEngine"`
 		BaseToken          *BaseToken
 		ProtocolParameters []iotago.ProtocolParameters
 	}
 
 	if err := c.Provide(func() cfgResult {
-		dbEngine, err := hivedb.EngineFromStringAllowed(ParamsDatabase.Engine, database.AllowedEnginesDefault)
+		dbEngine, err := db.EngineFromStringAllowed(ParamsDatabase.Engine, database.AllowedEnginesDefault)
 		if err != nil {
 			Component.LogPanic(err.Error())
 		}
@@ -113,7 +114,7 @@ func provide(c *dig.Container) error {
 	type protocolDeps struct {
 		dig.In
 
-		DatabaseEngine     hivedb.Engine `name:"databaseEngine"`
+		DatabaseEngine     db.Engine `name:"databaseEngine"`
 		ProtocolParameters []iotago.ProtocolParameters
 		NetworkManager     network.Manager
 	}
@@ -146,6 +147,10 @@ func provide(c *dig.Container) error {
 				),
 			),
 			protocol.WithSnapshotPath(ParamsProtocol.Snapshot.Path),
+			protocol.WithMaxAllowedWallClockDrift(ParamsProtocol.Filter.MaxAllowedClockDrift),
+			protocol.WithPreSolidFilterProvider(
+				presolidblockfilter.NewProvider(),
+			),
 			protocol.WithSybilProtectionProvider(
 				sybilprotectionv1.NewProvider(),
 			),
@@ -155,9 +160,9 @@ func provide(c *dig.Container) error {
 			protocol.WithAttestationProvider(
 				slotattestation.NewProvider(),
 			),
-			protocol.WithPreSolidFilterProvider(
-				presolidblockfilter.NewProvider(
-					presolidblockfilter.WithMaxAllowedWallClockDrift(ParamsProtocol.Filter.MaxAllowedClockDrift),
+			protocol.WithTransactionRetainerProvider(
+				txretainer.NewProvider(
+					txretainer.WithDebugStoreErrorMessages(ParamsRetainer.DebugStoreErrorMessages),
 				),
 			),
 			protocol.WithUpgradeOrchestratorProvider(

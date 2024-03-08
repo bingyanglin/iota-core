@@ -17,6 +17,7 @@ import (
 	"github.com/iotaledger/hive.go/runtime/options"
 	"github.com/iotaledger/hive.go/runtime/syncutils"
 	"github.com/iotaledger/iota-core/pkg/core/account"
+	"github.com/iotaledger/iota-core/pkg/model"
 	"github.com/iotaledger/iota-core/pkg/protocol"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/blocks"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/utxoledger"
@@ -99,7 +100,7 @@ func NewTestSuite(testingT *testing.T, opts ...options.Option[TestSuite]) *TestS
 		optsTick:    durationFromEnvOrDefault(2*time.Millisecond, "CI_UNIT_TESTS_TICK"),
 		optsLogger:  loggerFromEnvOrDefault("CI_UNIT_TESTS_NO_LOG", "CI_UNIT_TESTS_LOG_LEVEL"),
 	}, opts, func(t *TestSuite) {
-		//fmt.Println("Setup TestSuite -", testingT.Name(), " @ ", time.Now())
+		// fmt.Println("Setup TestSuite -", testingT.Name(), " @ ", time.Now())
 
 		t.ProtocolParameterOptions = append(t.ProtocolParameterOptions, iotago.WithNetworkOptions(testingT.Name(), iotago.PrefixTestnet))
 		t.API = iotago.V3API(iotago.NewV3SnapshotProtocolParameters(t.ProtocolParameterOptions...))
@@ -317,15 +318,6 @@ func (t *TestSuite) Shutdown() {
 		node.Shutdown()
 		return true
 	})
-
-	// fmt.Println("======= ATTACHED BLOCKS =======")
-	// t.nodes.ForEach(func(_ string, node *mock.Node) bool {
-	// 	for _, block := range node.AttachedBlocks() {
-	// 		fmt.Println(node.Name, ">", block)
-	// 	}
-	//
-	// 	return true
-	// })
 }
 
 func (t *TestSuite) addNodeToPartition(name string, partition string, validator bool, walletOpts ...options.Option[WalletOptions]) *mock.Node {
@@ -391,6 +383,23 @@ func (t *TestSuite) RemoveNode(name string) {
 // AddGenesisAccount adds an account the test suite in the genesis snapshot.
 func (t *TestSuite) AddGenesisAccount(accountDetails snapshotcreator.AccountDetails) {
 	t.optsAccounts = append(t.optsAccounts, accountDetails)
+}
+
+func (t *TestSuite) CommitmentsOfMainEngine(node *mock.Node, start, end iotago.SlotIndex) []*model.Commitment {
+	var commitments []*model.Commitment
+
+	for i := start; i <= end; i++ {
+		commitments = append(commitments, t.CommitmentOfMainEngine(node, i))
+	}
+
+	return commitments
+}
+
+func (t *TestSuite) CommitmentOfMainEngine(node *mock.Node, slot iotago.SlotIndex) *model.Commitment {
+	commitment, err := node.Protocol.Engines.Main.Get().Storage.Commitments().Load(slot)
+	require.NoErrorf(t.Testing, err, "node %s: commitment for slot %d not found", node.Name, slot)
+
+	return commitment
 }
 
 // AddGenesisWallet adds a wallet to the test suite with a block issuer in the genesis snapshot and access to the genesis seed.
@@ -506,7 +515,7 @@ func (t *TestSuite) Run(failOnBlockFiltered bool, nodesOptions ...map[string][]o
 		baseOpts := []options.Option[protocol.Protocol]{
 			protocol.WithSnapshotPath(t.snapshotPath),
 			protocol.WithBaseDirectory(t.Directory.PathWithCreate(node.Name)),
-			protocol.WithEpochGadgetProvider(
+			protocol.WithSybilProtectionProvider(
 				sybilprotectionv1.NewProvider(),
 			),
 		}
