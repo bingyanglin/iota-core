@@ -26,14 +26,13 @@ type Auth struct {
 }
 
 func NewAuth(subject string, sessionTimeout time.Duration, nodeID string, secret crypto.PrivKey) (*Auth, error) {
-
 	if len(subject) == 0 {
 		return nil, ierrors.New("subject must not be empty")
 	}
 
 	secretBytes, err := crypto.MarshalPrivateKey(secret)
 	if err != nil {
-		return nil, ierrors.Errorf("unable to convert private key: %w", err)
+		return nil, ierrors.Wrap(err, "unable to convert private key")
 	}
 
 	return &Auth{
@@ -64,7 +63,6 @@ func (c *AuthClaims) VerifySubject(expected string) bool {
 }
 
 func (j *Auth) Middleware(skipper middleware.Skipper, allow func(c echo.Context, subject string, claims *AuthClaims) bool) echo.MiddlewareFunc {
-
 	config := middleware.JWTConfig{
 		ContextKey: "jwt",
 		Claims:     &AuthClaims{},
@@ -72,9 +70,7 @@ func (j *Auth) Middleware(skipper middleware.Skipper, allow func(c echo.Context,
 	}
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-
 		return func(c echo.Context) error {
-
 			// skip unprotected endpoints
 			if skipper(c) {
 				return next(c)
@@ -98,7 +94,7 @@ func (j *Auth) Middleware(skipper middleware.Skipper, allow func(c echo.Context,
 
 			// validate the signing method we expect
 			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return ierrors.Errorf("unexpected signing method: %v", token.Header["alg"])
+				return ierrors.Errorf("unexpected signing method: %s", token.Method.Alg())
 			}
 
 			// read the claims set by the JWT middleware on the context
@@ -121,7 +117,6 @@ func (j *Auth) Middleware(skipper middleware.Skipper, allow func(c echo.Context,
 }
 
 func (j *Auth) IssueJWT() (string, error) {
-
 	now := time.Now()
 
 	// Set claims
@@ -150,11 +145,10 @@ func (j *Auth) IssueJWT() (string, error) {
 }
 
 func (j *Auth) VerifyJWT(token string, allow func(claims *AuthClaims) bool) bool {
-
 	t, err := jwt.ParseWithClaims(token, &AuthClaims{}, func(token *jwt.Token) (interface{}, error) {
 		// validate the signing method we expect
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, ierrors.Errorf("unexpected signing method: %v", token.Header["alg"])
+			return nil, ierrors.Errorf("unexpected signing method: %s", token.Method.Alg())
 		}
 
 		return j.secret, nil

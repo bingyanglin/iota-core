@@ -5,13 +5,14 @@ go 1.22.0
 replace github.com/iotaledger/iota-core => ../../
 
 require (
-	github.com/iotaledger/hive.go/app v0.0.0-20240307102857-7e23a3c59bd2
+	github.com/iotaledger/hive.go/app v0.0.0-20240315104458-b689cbcfddbd
 	github.com/iotaledger/hive.go/apputils v0.0.0-20230829152614-7afc7a4d89b3
 	github.com/iotaledger/iota-core v0.0.0-00010101000000-000000000000
 )
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
+	github.com/VictoriaMetrics/fastcache v1.12.2 // indirect
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/btcsuite/btcd/btcec/v2 v2.3.2 // indirect
@@ -24,6 +25,7 @@ require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/eclipse/paho.mqtt.golang v1.4.3 // indirect
 	github.com/elastic/gosigar v0.14.2 // indirect
+	github.com/emirpasic/gods v1.12.0 // indirect
 	github.com/ethereum/go-ethereum v1.13.14 // indirect
 	github.com/fatih/structs v1.1.0 // indirect
 	github.com/fbiville/markdown-table-formatter v0.3.0 // indirect
@@ -41,6 +43,7 @@ require (
 	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
+	github.com/golang/snappy v0.0.5-0.20220116011046-fa5810519dcb // indirect
 	github.com/google/go-github v17.0.0+incompatible // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/gopacket v1.1.19 // indirect
@@ -56,24 +59,25 @@ require (
 	github.com/huin/goupnp v1.3.0 // indirect
 	github.com/iancoleman/orderedmap v0.3.0 // indirect
 	github.com/iotaledger/grocksdb v1.7.5-0.20230220105546-5162e18885c7 // indirect
-	github.com/iotaledger/hive.go/ads v0.0.0-20240307102857-7e23a3c59bd2 // indirect
-	github.com/iotaledger/hive.go/constraints v0.0.0-20240307102857-7e23a3c59bd2 // indirect
-	github.com/iotaledger/hive.go/core v1.0.0-rc.3.0.20240307102857-7e23a3c59bd2 // indirect
-	github.com/iotaledger/hive.go/crypto v0.0.0-20240307102857-7e23a3c59bd2 // indirect
-	github.com/iotaledger/hive.go/db v0.0.0-20240307102857-7e23a3c59bd2 // indirect
-	github.com/iotaledger/hive.go/ds v0.0.0-20240307102857-7e23a3c59bd2 // indirect
-	github.com/iotaledger/hive.go/ierrors v0.0.0-20240307102857-7e23a3c59bd2 // indirect
-	github.com/iotaledger/hive.go/kvstore v0.0.0-20240307102857-7e23a3c59bd2 // indirect
-	github.com/iotaledger/hive.go/lo v0.0.0-20240307102857-7e23a3c59bd2 // indirect
-	github.com/iotaledger/hive.go/log v0.0.0-20240307102857-7e23a3c59bd2 // indirect
-	github.com/iotaledger/hive.go/runtime v0.0.0-20240307102857-7e23a3c59bd2 // indirect
-	github.com/iotaledger/hive.go/serializer/v2 v2.0.0-rc.1.0.20240307102857-7e23a3c59bd2 // indirect
-	github.com/iotaledger/hive.go/sql v0.0.0-20240307102857-7e23a3c59bd2 // indirect
-	github.com/iotaledger/hive.go/stringify v0.0.0-20240307102857-7e23a3c59bd2 // indirect
+	github.com/iotaledger/hive.go/ads v0.0.0-20240315104458-b689cbcfddbd // indirect
+	github.com/iotaledger/hive.go/constraints v0.0.0-20240315104458-b689cbcfddbd // indirect
+	github.com/iotaledger/hive.go/core v1.0.0-rc.3.0.20240315104458-b689cbcfddbd // indirect
+	github.com/iotaledger/hive.go/crypto v0.0.0-20240315104458-b689cbcfddbd // indirect
+	github.com/iotaledger/hive.go/db v0.0.0-20240315104458-b689cbcfddbd // indirect
+	github.com/iotaledger/hive.go/ds v0.0.0-20240315104458-b689cbcfddbd // indirect
+	github.com/iotaledger/hive.go/ierrors v0.0.0-20240315104458-b689cbcfddbd // indirect
+	github.com/iotaledger/hive.go/kvstore v0.0.0-20240315104458-b689cbcfddbd // indirect
+	github.com/iotaledger/hive.go/lo v0.0.0-20240315104458-b689cbcfddbd // indirect
+	github.com/iotaledger/hive.go/log v0.0.0-20240315104458-b689cbcfddbd // indirect
+	github.com/iotaledger/hive.go/logger v0.0.0-20240321092228-9f498c0aa254 // indirect
+	github.com/iotaledger/hive.go/runtime v0.0.0-20240315104458-b689cbcfddbd // indirect
+	github.com/iotaledger/hive.go/serializer/v2 v2.0.0-rc.1.0.20240315104458-b689cbcfddbd // indirect
+	github.com/iotaledger/hive.go/sql v0.0.0-20240315104458-b689cbcfddbd // indirect
+	github.com/iotaledger/hive.go/stringify v0.0.0-20240315104458-b689cbcfddbd // indirect
 	github.com/iotaledger/inx-app v1.0.0-rc.3.0.20240307101848-db58eb9353ec // indirect
 	github.com/iotaledger/inx/go v1.0.0-rc.2.0.20240307100839-48553e1d2022 // indirect
 	github.com/iotaledger/iota-crypto-demo v0.0.0-20240216103559-27ca8dffd1e7 // indirect
-	github.com/iotaledger/iota.go/v4 v4.0.0-20240307091827-db3c503615a6 // indirect
+	github.com/iotaledger/iota.go/v4 v4.0.0-20240319114032-b6fcc3585c99 // indirect
 	github.com/ipfs/boxo v0.18.0 // indirect
 	github.com/ipfs/go-cid v0.4.1 // indirect
 	github.com/ipfs/go-datastore v0.6.0 // indirect
@@ -90,6 +94,7 @@ require (
 	github.com/jbenet/goprocess v0.1.4 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
+	github.com/kevinburke/ssh_config v0.0.0-20190725054713-01f96b0aa0cd // indirect
 	github.com/klauspost/compress v1.17.7 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.7 // indirect
 	github.com/knadh/koanf v1.5.0 // indirect
@@ -158,10 +163,12 @@ require (
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/spf13/cast v1.6.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
+	github.com/src-d/gcfg v1.4.0 // indirect
 	github.com/tcnksm/go-latest v0.0.0-20170313132115-e3007ae9052e // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	github.com/whyrusleeping/go-keyspace v0.0.0-20160322163242-5b898ac5add1 // indirect
+	github.com/xanzy/ssh-agent v0.2.1 // indirect
 	github.com/zyedidia/generic v1.2.1 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/otel v1.24.0 // indirect
@@ -187,6 +194,9 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240304212257-790db918fca8 // indirect
 	google.golang.org/grpc v1.62.1 // indirect
 	google.golang.org/protobuf v1.33.0 // indirect
+	gopkg.in/src-d/go-billy.v4 v4.3.2 // indirect
+	gopkg.in/src-d/go-git.v4 v4.13.1 // indirect
+	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gorm.io/driver/postgres v1.5.6 // indirect

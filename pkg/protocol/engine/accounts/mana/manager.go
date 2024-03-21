@@ -53,12 +53,12 @@ func (m *Manager) GetManaOnAccount(accountID iotago.AccountID, slot iotago.SlotI
 	if !exists || mana.UpdateTime() > slot {
 		output, err := m.accountOutputResolveFunc(accountID, slot)
 		if err != nil {
-			return 0, ierrors.Wrapf(err, "failed to resolve AccountOutput for %s in slot %s", accountID, slot)
+			return 0, ierrors.Wrapf(err, "failed to resolve AccountOutput %s in slot %s", accountID, slot)
 		}
 
 		mana, err = m.getMana(accountID, output, slot)
 		if err != nil {
-			return 0, ierrors.Wrapf(err, "failed to calculate mana for %s in slot %s", accountID, slot)
+			return 0, ierrors.Wrapf(err, "failed to calculate mana for account %s in slot %s", accountID, slot)
 		}
 
 		// If it did not exist in cache, then add an entry to cache.
@@ -123,7 +123,9 @@ func (m *Manager) getMana(accountID iotago.AccountID, output *utxoledger.Output,
 
 	var manaUpdateTime iotago.SlotIndex
 	var totalMana iotago.Mana
-	if bicUpdateTime > output.SlotCreated() {
+
+	switch {
+	case bicUpdateTime > output.SlotCreated():
 		manaPotential, err := manaDecayProvider.GenerateManaAndDecayBySlots(excessBaseTokens, output.SlotCreated(), bicUpdateTime)
 		if err != nil {
 			return nil, ierrors.Wrapf(err, "failed to calculate mana generation with decay (excessBaseTokens: %d; outputSlotCreated: %d; targetSlot: %d)", excessBaseTokens, output.SlotCreated(), bicUpdateTime)
@@ -145,7 +147,8 @@ func (m *Manager) getMana(accountID iotago.AccountID, output *utxoledger.Output,
 		}
 
 		manaUpdateTime = bicUpdateTime
-	} else if output.SlotCreated() > bicUpdateTime {
+
+	case output.SlotCreated() > bicUpdateTime:
 		// Decay BIC to match the Output creation time.
 		bicWithDecay, err := manaDecayProvider.DecayManaBySlots(bic, bicUpdateTime, output.SlotCreated())
 		if err != nil {
@@ -158,7 +161,8 @@ func (m *Manager) getMana(accountID iotago.AccountID, output *utxoledger.Output,
 		}
 
 		manaUpdateTime = output.SlotCreated()
-	} else {
+
+	default:
 		totalMana, err = safemath.SafeAdd(bic, output.StoredMana())
 		if err != nil {
 			return nil, ierrors.Wrapf(err, "overflow when adding stored mana and BIC (storedMana: %d; BIC: %d)", output.StoredMana(), bic)
@@ -191,7 +195,7 @@ func (m *Manager) ApplyDiff(slot iotago.SlotIndex, destroyedAccounts ds.Set[iota
 			} else if accountDiff.BICChange != 0 {
 				var err error
 				if accountOutput, err = m.accountOutputResolveFunc(accountID, slot); err != nil {
-					return ierrors.Errorf("failed to resolve AccountOutput for %s in slot %s: %w", accountID, slot, err)
+					return ierrors.Wrapf(err, "failed to resolve AccountOutput %s in slot %s", accountID, slot)
 				}
 			}
 
@@ -199,7 +203,7 @@ func (m *Manager) ApplyDiff(slot iotago.SlotIndex, destroyedAccounts ds.Set[iota
 			if accountOutput != nil {
 				mana, err := m.getMana(accountID, accountOutput, slot)
 				if err != nil {
-					return ierrors.Wrapf(err, "failed to calculate mana on an account %s", accountID)
+					return ierrors.Wrapf(err, "failed to calculate mana on account %s", accountID)
 				}
 
 				m.manaVectorCache.Put(accountID, mana)

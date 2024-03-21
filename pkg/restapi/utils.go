@@ -13,8 +13,8 @@ func CompileRouteAsRegex(route string) *regexp.Regexp {
 	// interpret the string as raw regex if it starts with "^"
 	if !strings.HasPrefix(route, "^") {
 		r = regexp.QuoteMeta(route)
-		r = strings.Replace(r, `\*`, "(.*?)", -1)
-		r = r + "$"
+		r = strings.ReplaceAll(r, `\*`, "(.*?)")
+		r += "$"
 	}
 
 	reg, err := regexp.Compile(r)
@@ -30,7 +30,7 @@ func CompileRoutesAsRegexes(routes []string) ([]*regexp.Regexp, error) {
 	for i, route := range routes {
 		reg := CompileRouteAsRegex(route)
 		if reg == nil {
-			return nil, ierrors.Errorf("Invalid route in config: %s", route)
+			return nil, ierrors.Errorf("invalid route in config: %s", route)
 		}
 		regexes[i] = reg
 	}

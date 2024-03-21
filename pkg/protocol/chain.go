@@ -106,7 +106,7 @@ func newChain(chains *Chains) *Chain {
 // initialized.
 func (c *Chain) WithInitializedEngine(callback func(engineInstance *engine.Engine) (shutdown func())) (shutdown func()) {
 	return c.Engine.WithNonEmptyValue(func(engineInstance *engine.Engine) (shutdown func()) {
-		return engineInstance.Initialized.WithNonEmptyValue(func(_ bool) (shutdown func()) {
+		return engineInstance.InitializedEvent().WithNonEmptyValue(func(_ bool) (shutdown func()) {
 			return callback(engineInstance)
 		})
 	})
@@ -178,10 +178,15 @@ func (c *Chain) CumulativeVerifiedWeightAt(slot iotago.SlotIndex) uint64 {
 // LatestEngine returns the latest engine instance that was spawned by the chain itself or one of its ancestors.
 func (c *Chain) LatestEngine() *engine.Engine {
 	currentChain, currentEngine := c, c.Engine.Get()
-	for ; currentEngine == nil; currentEngine = currentChain.Engine.Get() {
-		if currentChain = c.ParentChain.Get(); currentChain == nil {
+
+	// traverse the chain upwards until we find an engine
+	for currentEngine == nil {
+		if currentChain = currentChain.ParentChain.Get(); currentChain == nil {
+			// no parent chain and therefore no engine found
 			return nil
 		}
+
+		currentEngine = currentChain.Engine.Get()
 	}
 
 	return currentEngine

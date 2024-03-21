@@ -59,7 +59,7 @@ func newCommitments(protocol *Protocol) *Commitments {
 		c.initRequester(),
 	)
 
-	protocol.Shutdown.OnTrigger(shutdown)
+	protocol.ShutdownEvent().OnTrigger(shutdown)
 
 	return c
 }
@@ -110,7 +110,7 @@ func (c *Commitments) initLogger() (shutdown func()) {
 
 // initEngineCommitmentSynchronization initializes the synchronization of commitments that are published by the engines.
 func (c *Commitments) initEngineCommitmentSynchronization() func() {
-	return c.protocol.Constructed.WithNonEmptyValue(func(_ bool) (shutdown func()) {
+	return c.protocol.ConstructedEvent().WithNonEmptyValue(func(_ bool) (shutdown func()) {
 		return lo.BatchReverse(
 			// advance the root commitment of the main chain
 			c.protocol.Chains.Main.WithNonEmptyValue(func(mainChain *Chain) (shutdown func()) {
@@ -214,14 +214,13 @@ func (c *Commitments) publishCommitment(commitment *model.Commitment) (published
 	}
 
 	// otherwise try to publish it and determine if we were the goroutine that published it
-	publishedCommitment = newCommitment(c, commitment)
-	cachedRequest.Resolve(publishedCommitment).OnSuccess(func(resolvedCommitment *Commitment) {
-		if published = resolvedCommitment == publishedCommitment; !published {
-			publishedCommitment = resolvedCommitment
-		}
+	cachedRequest.ResolveDynamically(func() *Commitment {
+		published = true
+
+		return newCommitment(c, commitment)
 	})
 
-	return publishedCommitment, published, nil
+	return cachedRequest.Result(), published, nil
 }
 
 // cachedRequest returns a singleton Promise for the given commitmentID. If the Promise does not exist yet, it will be

@@ -48,6 +48,14 @@ func configure() error {
 		return responseByHeader(c, resp)
 	})
 
+	routeGroup.GET(api.CoreEndpointNetworkHealth, func(c echo.Context) error {
+		if deps.RequestHandler.IsNetworkHealthy() {
+			return c.NoContent(http.StatusOK)
+		}
+
+		return c.NoContent(http.StatusServiceUnavailable)
+	})
+
 	routeGroup.GET(api.CoreEndpointNetworkMetrics, func(c echo.Context) error {
 		resp := metrics()
 
@@ -120,13 +128,7 @@ func configure() error {
 			return err
 		}
 
-		// load the commitment to check if it matches the given commitmentID
-		commitment, err := deps.RequestHandler.GetCommitmentByID(commitmentID)
-		if err != nil {
-			return err
-		}
-
-		resp, err := deps.RequestHandler.GetUTXOChanges(commitment.ID())
+		resp, err := deps.RequestHandler.GetUTXOChangesByCommitmentID(commitmentID)
 		if err != nil {
 			return err
 		}
@@ -140,13 +142,7 @@ func configure() error {
 			return err
 		}
 
-		// load the commitment to check if it matches the given commitmentID
-		commitment, err := deps.RequestHandler.GetCommitmentByID(commitmentID)
-		if err != nil {
-			return err
-		}
-
-		resp, err := deps.RequestHandler.GetUTXOChangesFull(commitment.ID())
+		resp, err := deps.RequestHandler.GetUTXOChangesFullByCommitmentID(commitmentID)
 		if err != nil {
 			return err
 		}
@@ -174,12 +170,7 @@ func configure() error {
 			return err
 		}
 
-		commitment, err := deps.RequestHandler.GetCommitmentBySlot(slot)
-		if err != nil {
-			return err
-		}
-
-		resp, err := deps.RequestHandler.GetUTXOChanges(commitment.ID())
+		resp, err := deps.RequestHandler.GetUTXOChangesBySlot(slot)
 		if err != nil {
 			return err
 		}
@@ -193,12 +184,7 @@ func configure() error {
 			return err
 		}
 
-		commitment, err := deps.RequestHandler.GetCommitmentBySlot(slot)
-		if err != nil {
-			return err
-		}
-
-		resp, err := deps.RequestHandler.GetUTXOChangesFull(commitment.ID())
+		resp, err := deps.RequestHandler.GetUTXOChangesFullBySlot(slot)
 		if err != nil {
 			return err
 		}
@@ -222,7 +208,7 @@ func configure() error {
 		}
 
 		return responseByHeader(c, resp)
-	})
+	}, checkNodeSynced())
 
 	routeGroup.GET(api.EndpointWithEchoParameters(api.CoreEndpointOutputWithMetadata), func(c echo.Context) error {
 		resp, err := outputWithMetadataFromOutputID(c)
@@ -231,7 +217,7 @@ func configure() error {
 		}
 
 		return responseByHeader(c, resp)
-	})
+	}, checkNodeSynced())
 
 	routeGroup.GET(api.EndpointWithEchoParameters(api.CoreEndpointTransactionsIncludedBlock), func(c echo.Context) error {
 		block, err := blockFromTransactionID(c)
@@ -312,7 +298,7 @@ func checkNodeSynced() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			if !deps.RequestHandler.IsNodeSynced() {
-				return ierrors.Wrap(echo.ErrServiceUnavailable, "node is not synced")
+				return ierrors.WithMessage(echo.ErrServiceUnavailable, "node is not synced")
 			}
 
 			return next(c)

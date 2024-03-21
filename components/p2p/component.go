@@ -252,7 +252,6 @@ func provide(c *dig.Container) error {
 	}
 
 	return c.Provide(func(inDeps p2pManagerDeps) network.Manager {
-
 		peersMultiAddresses, err := getMultiAddrsFromString(ParamsPeers.BootstrapPeers)
 		if err != nil {
 			Component.LogFatalf("Failed to parse bootstrapPeers param: %s", err)
@@ -331,7 +330,7 @@ func getMultiAddrsFromString(peers []string) ([]multiaddr.Multiaddr, error) {
 	for _, peer := range peers {
 		peerMultiAddr, err := multiaddr.NewMultiaddr(peer)
 		if err != nil {
-			return nil, ierrors.Errorf("invalid peer multiaddr \"%s\": %w", peer, err)
+			return nil, ierrors.Wrapf(err, "invalid peer multiaddr \"%s\"", peer)
 		}
 		peersMultiAddresses = append(peersMultiAddresses, peerMultiAddr)
 	}

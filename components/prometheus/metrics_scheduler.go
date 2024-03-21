@@ -1,4 +1,3 @@
-//nolint:gosec // false positive on constants
 package prometheus
 
 import (
@@ -13,7 +12,7 @@ import (
 const (
 	schedulerNamespace = "scheduler"
 
-	queueSizePerNodeWork           = "queue_size_per_node_work" //nolint:gosec
+	queueSizePerNodeWork           = "queue_size_per_node_work"
 	queueSizePerNodeCount          = "queue_size_per_node_count"
 	validatorQueueSizePerNodeCount = "validator_queue_size_per_node_count"
 	schedulerProcessedBlocks       = "processed_blocks"
@@ -22,7 +21,7 @@ const (
 	skippedBlockLabel              = "skipped"
 	droppedBlockLabel              = "dropped"
 	enqueuedBlockLabel             = "enqueued"
-	basicBufferReadyBlockCount     = "buffer_ready_block_total" //nolint:gosec
+	basicBufferReadyBlockCount     = "buffer_ready_block_total"
 	basicBufferTotalSize           = "buffer_size_block_total"
 	basicBufferMaxSize             = "buffer_max_size"
 	rate                           = "rate"
@@ -126,7 +125,7 @@ var SchedulerMetrics = collector.NewCollection(schedulerNamespace,
 			deps.Protocol.Events.Engine.Scheduler.BlockEnqueued.Hook(func(block *blocks.Block) {
 				mana, err := deps.Protocol.Engines.Main.Get().Ledger.ManaManager().GetManaOnAccount(block.ProtocolBlock().Header.IssuerID, block.SlotCommitmentID().Slot())
 				if err != nil {
-					deps.Protocol.Engines.Main.Get().ErrorHandler("metrics")(ierrors.Wrapf(err, "failed to retrieve mana on account %s for slot %d", block.ProtocolBlock().Header.IssuerID, block.SlotCommitmentID().Slot()))
+					deps.Protocol.Engines.Main.Get().ErrorHandler("metrics")(ierrors.Wrapf(err, "failed to retrieve mana on account %s for slot %d", block.ProtocolBlock().Header.IssuerID.ToHex(), block.SlotCommitmentID().Slot()))
 
 					return
 				}

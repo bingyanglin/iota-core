@@ -352,7 +352,7 @@ func (m *MemPool[VoteRank]) storeTransaction(signedTransaction mempool.SignedTra
 
 	if m.lastCommittedSlot >= blockID.Slot() {
 		// block will be retained as invalid, we do not store tx failure as it was block's fault
-		return nil, false, false, ierrors.Errorf("blockID %d is older than last evicted slot %d", blockID.Slot(), m.lastCommittedSlot)
+		return nil, false, false, ierrors.Errorf("blockID %s is older than last evicted slot %d", blockID, m.lastCommittedSlot)
 	}
 
 	inputReferences, err := m.vm.Inputs(transaction)
@@ -360,20 +360,14 @@ func (m *MemPool[VoteRank]) storeTransaction(signedTransaction mempool.SignedTra
 		return nil, false, false, ierrors.Wrap(err, "failed to get input references of transaction")
 	}
 
-	newTransaction, err := NewTransactionMetadata(transaction, inputReferences)
-	if err != nil {
-		return nil, false, false, ierrors.Errorf("failed to create transaction metadata: %w", err)
-	}
+	newTransaction := NewTransactionMetadata(transaction, inputReferences)
 
 	storedTransaction, isNewTransaction := m.cachedTransactions.GetOrCreate(newTransaction.ID(), func() *TransactionMetadata { return newTransaction })
 	if isNewTransaction {
 		m.setupTransaction(storedTransaction)
 	}
 
-	newSignedTransaction, err := NewSignedTransactionMetadata(signedTransaction, storedTransaction)
-	if err != nil {
-		return nil, false, false, ierrors.Errorf("failed to create signedTransaction metadata: %w", err)
-	}
+	newSignedTransaction := NewSignedTransactionMetadata(signedTransaction, storedTransaction)
 
 	storedSignedTransaction, isNewSignedTransaction = m.cachedSignedTransactions.GetOrCreate(signedTransaction.MustID(), func() *SignedTransactionMetadata { return newSignedTransaction })
 	if isNewSignedTransaction {
@@ -387,11 +381,9 @@ func (m *MemPool[VoteRank]) storeTransaction(signedTransaction mempool.SignedTra
 }
 
 func (m *MemPool[VoteRank]) solidifyInputs(transaction *TransactionMetadata) {
-	for i, inputReference := range transaction.inputReferences {
-		stateReference, index := inputReference, i
-
-		request, created := m.cachedStateRequests.GetOrCreate(stateReference.ReferencedStateID(), func() *promise.Promise[*StateMetadata] {
-			return m.requestState(stateReference, true)
+	for index, inputReference := range transaction.inputReferences {
+		request, created := m.cachedStateRequests.GetOrCreate(inputReference.ReferencedStateID(), func() *promise.Promise[*StateMetadata] {
+			return m.requestState(inputReference, true)
 		})
 
 		request.OnSuccess(func(inputState *StateMetadata) {
@@ -443,7 +435,21 @@ func (m *MemPool[VoteRank]) bookTransaction(transaction *TransactionMetadata) {
 }
 
 func (m *MemPool[VoteRank]) forkTransaction(transactionMetadata *TransactionMetadata, resourceIDs ds.Set[mempool.StateID]) {
-	transactionMetadata.conflicting.Trigger()
+	m.spendDAG.CreateSpender(transactionMetadata.ID())
+
+	unsubscribe := transactionMetadata.parentSpenderIDs.OnUpdate(func(appliedMutations ds.SetMutations[iotago.TransactionID]) {
+		if err := m.spendDAG.UpdateSpenderParents(transactionMetadata.ID(), appliedMutations.AddedElements(), appliedMutations.DeletedElements()); err != nil {
+			panic(err)
+		}
+	})
+
+	transactionMetadata.OnEvicted(func() {
+		unsubscribe()
+
+		m.spendDAG.EvictSpender(transactionMetadata.ID())
+	})
+
+	transactionMetadata.spenderIDs.Replace(ds.NewSet(transactionMetadata.id))
 
 	if err := m.spendDAG.UpdateSpentResources(transactionMetadata.ID(), resourceIDs); err != nil {
 		// this is a hack, as with a reactive.Variable we cannot set it to 0 and still check if it was orphaned.
@@ -528,7 +534,7 @@ func (m *MemPool[VoteRank]) updateStateDiffs(transaction *TransactionMetadata, p
 			return ierrors.Wrapf(err, "failed to get state diff for slot %d", newIndex)
 		}
 
-		if err = stateDiff.AddTransaction(transaction, m.errorHandler); err != nil {
+		if err = stateDiff.AddTransaction(transaction); err != nil {
 			return ierrors.Wrapf(err, "failed to add transaction to state diff, txID: %s", transaction.ID())
 		}
 	}
@@ -558,26 +564,10 @@ func (m *MemPool[VoteRank]) setupTransaction(transaction *TransactionMetadata) {
 				return
 			}
 
-			if err := stateDiff.AddTransaction(transaction, m.errorHandler); err != nil {
+			if err := stateDiff.AddTransaction(transaction); err != nil {
 				m.errorHandler(ierrors.Wrapf(err, "failed to add transaction to state diff, txID: %s", transaction.ID()))
 			}
 		}
-	})
-
-	transaction.OnConflicting(func() {
-		m.spendDAG.CreateSpender(transaction.ID())
-
-		unsubscribe := transaction.parentSpenderIDs.OnUpdate(func(appliedMutations ds.SetMutations[iotago.TransactionID]) {
-			if err := m.spendDAG.UpdateSpenderParents(transaction.ID(), appliedMutations.AddedElements(), appliedMutations.DeletedElements()); err != nil {
-				panic(err)
-			}
-		})
-
-		transaction.OnEvicted(func() {
-			unsubscribe()
-
-			m.spendDAG.EvictSpender(transaction.ID())
-		})
 	})
 
 	transaction.OnEarliestIncludedAttachmentUpdated(func(prevBlock iotago.BlockID, newBlock iotago.BlockID) {

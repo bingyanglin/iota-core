@@ -186,7 +186,7 @@ func (s *Server) attachBlock(ctx context.Context, block *iotago.Block) (*inx.Blo
 	mergedCtx, mergedCtxCancel := contextutils.MergeContexts(ctx, Component.Daemon().ContextStopped())
 	defer mergedCtxCancel()
 
-	blockID, err := deps.RequestHandler.AttachBlock(mergedCtx, block)
+	blockID, err := deps.RequestHandler.SubmitBlockAndAwaitBooking(mergedCtx, block)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to attach block: %s", err.Error())
 	}
@@ -197,7 +197,7 @@ func (s *Server) attachBlock(ctx context.Context, block *iotago.Block) (*inx.Blo
 func getINXBlockMetadata(blockID iotago.BlockID) (*inx.BlockMetadata, error) {
 	blockMetadata, err := deps.Protocol.Engines.Main.Get().BlockRetainer.BlockMetadata(blockID)
 	if err != nil {
-		return nil, ierrors.Errorf("failed to get BlockMetadata: %v", err)
+		return nil, ierrors.Wrap(err, "failed to get BlockMetadata")
 	}
 
 	return inx.WrapBlockMetadata(blockMetadata)

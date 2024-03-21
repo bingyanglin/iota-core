@@ -54,10 +54,12 @@ type TipManager struct {
 
 // New creates a new TipManager.
 func New(
+	subModule module.Module,
 	blockRetriever func(blockID iotago.BlockID) (block *blocks.Block, exists bool),
 	retrieveCommitteeInSlot func(slot iotago.SlotIndex) (*account.SeatedAccounts, bool),
 ) *TipManager {
-	t := &TipManager{
+	return module.InitSimpleLifecycle(&TipManager{
+		Module:                  subModule,
 		retrieveBlock:           blockRetriever,
 		retrieveCommitteeInSlot: retrieveCommitteeInSlot,
 		tipMetadataStorage:      shrinkingmap.New[iotago.SlotIndex, *shrinkingmap.ShrinkingMap[iotago.BlockID, *TipMetadata]](),
@@ -66,12 +68,7 @@ func New(
 		strongTipSet:            randommap.New[iotago.BlockID, *TipMetadata](),
 		weakTipSet:              randommap.New[iotago.BlockID, *TipMetadata](),
 		blockAdded:              event.New1[tipmanager.TipMetadata](),
-	}
-
-	t.TriggerConstructed()
-	t.TriggerInitialized()
-
-	return t
+	})
 }
 
 // AddBlock adds a Block to the TipManager and returns the TipMetadata if the Block was added successfully.
@@ -110,7 +107,6 @@ func (t *TipManager) RemoveSeat(seat account.SeatIndex) {
 	if removed {
 		latestValidationBlock.Set(nil)
 	}
-
 }
 
 func (t *TipManager) ValidationTips(optAmount ...int) []tipmanager.TipMetadata {
@@ -157,12 +153,6 @@ func (t *TipManager) Reset() {
 	lo.ForEach(t.weakTipSet.Keys(), func(id iotago.BlockID) { t.weakTipSet.Delete(id) })
 }
 
-// Shutdown marks the TipManager as shutdown.
-func (t *TipManager) Shutdown() {
-	t.TriggerShutdown()
-	t.TriggerStopped()
-}
-
 // setupBlockMetadata sets up the behavior of the given Block.
 func (t *TipManager) setupBlockMetadata(tipMetadata *TipMetadata) {
 	tipMetadata.isStrongTipPoolMember.WithNonEmptyValue(func(_ bool) func() {
@@ -207,27 +197,27 @@ func (t *TipManager) setupBlockMetadata(tipMetadata *TipMetadata) {
 // trackLatestValidationBlock tracks the latest validator block and takes care of marking the corresponding TipMetadata.
 func (t *TipManager) trackLatestValidationBlock(tipMetadata *TipMetadata) (teardown func()) {
 	if _, isValidationBlock := tipMetadata.Block().ValidationBlock(); !isValidationBlock {
-		return
+		return nil
 	}
 
 	committee, exists := t.retrieveCommitteeInSlot(tipMetadata.Block().ID().Slot())
 	if !exists {
-		return
+		return nil
 	}
 
 	seat, exists := committee.GetSeat(tipMetadata.Block().ProtocolBlock().Header.IssuerID)
 	if !exists {
-		return
+		return nil
 	}
 
 	// We only track the validation blocks of validators that are tracked by the TipManager (via AddSeat).
 	latestValidationBlock, exists := t.latestValidationBlocks.Get(seat)
 	if !exists {
-		return
+		return nil
 	}
 
 	if !tipMetadata.registerAsLatestValidationBlock(latestValidationBlock) {
-		return
+		return nil
 	}
 
 	// reset the latest validator block to nil if we are still the latest one during teardown
@@ -259,7 +249,6 @@ func (t *TipManager) forEachParentByType(block *blocks.Block, consumer func(pare
 			if created {
 				t.setupBlockMetadata(parentMetadata)
 			}
-
 		}
 	}
 }

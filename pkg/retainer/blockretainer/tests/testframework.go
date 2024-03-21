@@ -6,7 +6,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/iotaledger/hive.go/ierrors"
 	"github.com/iotaledger/hive.go/kvstore/mapdb"
+	"github.com/iotaledger/hive.go/runtime/module"
 	"github.com/iotaledger/hive.go/runtime/workerpool"
 	"github.com/iotaledger/iota-core/pkg/model"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/blocks"
@@ -27,13 +29,10 @@ type action int
 
 const (
 	none action = iota
-	eventBooked
 	eventAccepted
 	eventConfirmed
 	eventDropped
 )
-
-// todo check if event was triggered
 
 type TestFramework struct {
 	Instance *blockretainer.BlockRetainer
@@ -47,7 +46,9 @@ type TestFramework struct {
 	lastFinalizedSlot iotago.SlotIndex
 }
 
-func NewTestFramework(test *testing.T) *TestFramework {
+func NewTestFramework(t *testing.T) *TestFramework {
+	t.Helper()
+
 	tf := &TestFramework{
 		stores:            make(map[iotago.SlotIndex]*slotstore.BlockMetadataStore),
 		lastCommittedSlot: iotago.SlotIndex(0),
@@ -58,10 +59,10 @@ func NewTestFramework(test *testing.T) *TestFramework {
 				iotago.WithLivenessOptions(5, 5, 1, 2, 3),
 			),
 		),
-		test: test,
+		test: t,
 	}
 
-	workers := workerpool.NewGroup(test.Name())
+	workers := workerpool.NewGroup(t.Name())
 
 	storeFunc := func(slotIndex iotago.SlotIndex) (*slotstore.BlockMetadataStore, error) {
 		if _, exists := tf.stores[slotIndex]; !exists {
@@ -71,25 +72,22 @@ func NewTestFramework(test *testing.T) *TestFramework {
 		return tf.stores[slotIndex], nil
 	}
 
-	latestCommittedSlotFunc := func() iotago.SlotIndex {
-		return tf.lastCommittedSlot
-	}
-
 	lastFinalizedSlotFunc := func() iotago.SlotIndex {
 		return tf.lastFinalizedSlot
 	}
 
 	errorHandlerFunc := func(err error) {
-		require.NoError(test, err)
+		require.NoError(t, err)
 	}
 
-	tf.Instance = blockretainer.New(workers, storeFunc, latestCommittedSlotFunc, lastFinalizedSlotFunc, errorHandlerFunc)
+	tf.Instance = blockretainer.New(module.NewTestModule(t), workers, storeFunc, lastFinalizedSlotFunc, errorHandlerFunc)
 
 	return tf
 }
 
 func (tf *TestFramework) commitSlot(slot iotago.SlotIndex) {
-	tf.lastCommittedSlot = slot
+	err := tf.Instance.CommitSlot(slot)
+	require.NoError(tf.test, err)
 }
 
 func (tf *TestFramework) finalizeSlot(slot iotago.SlotIndex) {
@@ -135,28 +133,31 @@ func (tf *TestFramework) initiateRetainerBlockFlow(currentSlot iotago.SlotIndex,
 		res, err := tf.Instance.BlockMetadata(blockID)
 		require.NoError(tf.test, err)
 		require.Equal(tf.test, expectedResp, res, "block metadata mismatch for alias %s", alias)
-
-		// todo check if event was triggered
 	}
+}
+
+func (tf *TestFramework) triggerBlockRetainerAction(alias string, act action) error {
+	var err error
+	switch act {
+	case none:
+		// no action
+	case eventAccepted:
+		err = tf.Instance.OnBlockAccepted(tf.getBlockID(alias))
+	case eventConfirmed:
+		err = tf.Instance.OnBlockConfirmed(tf.getBlockID(alias))
+	case eventDropped:
+		err = tf.Instance.OnBlockDropped(tf.getBlockID(alias))
+	default:
+		err = ierrors.Errorf("unknown action %d", act)
+	}
+
+	return err
 }
 
 func (tf *TestFramework) assertBlockMetadata(testActions []*BlockRetainerAction) {
 	for _, act := range testActions {
-		switch act.Action {
-		case none:
-			// no action
-		case eventAccepted:
-			err := tf.Instance.OnBlockAccepted(tf.getBlockID(act.Alias))
-			require.NoError(tf.test, err)
-		case eventConfirmed:
-			err := tf.Instance.OnBlockConfirmed(tf.getBlockID(act.Alias))
-			require.NoError(tf.test, err)
-		case eventDropped:
-			err := tf.Instance.OnBlockDropped(tf.getBlockID(act.Alias))
-			require.NoError(tf.test, err)
-		default:
-			require.Errorf(tf.test, nil, "unknown action")
-		}
+		err := tf.triggerBlockRetainerAction(act.Alias, act.Action)
+		require.NoError(tf.test, err)
 	}
 
 	for _, act := range testActions {
@@ -166,7 +167,16 @@ func (tf *TestFramework) assertBlockMetadata(testActions []*BlockRetainerAction)
 			BlockState: act.BlockState,
 		}
 		res, err := tf.Instance.BlockMetadata(blockID)
+		if act.BlockState == api.BlockStateUnknown {
+			require.Error(tf.test, err)
+			continue
+		}
 		require.NoError(tf.test, err)
 		require.Equal(tf.test, expectedResp, res, "block metadata mismatch for alias %s", act.Alias)
 	}
+}
+
+func (tf *TestFramework) assertError(act *BlockRetainerAction) {
+	err := tf.triggerBlockRetainerAction(act.Alias, act.Action)
+	require.Error(tf.test, err)
 }

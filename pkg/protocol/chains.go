@@ -67,7 +67,7 @@ func newChains(protocol *Protocol) *Chains {
 	c.WithElements(func(chain *Chain) (teardown func()) {
 		return chain.Engine.OnUpdate(func(_ *engine.Engine, newEngine *engine.Engine) {
 			if newEngine != nil {
-				newEngine.Logger.OnLogLevelActive(log.LevelTrace, func() (shutdown func()) {
+				newEngine.OnLogLevelActive(log.LevelTrace, func() (shutdown func()) {
 					return attachEngineLogs(newEngine)
 				})
 			}
@@ -78,12 +78,12 @@ func newChains(protocol *Protocol) *Chains {
 		c.initLogger(protocol.NewChildLogger("Chains")),
 		c.initChainSwitching(),
 
-		protocol.Constructed.WithNonEmptyValue(func(_ bool) (shutdown func()) {
+		protocol.ConstructedEvent().WithNonEmptyValue(func(_ bool) (shutdown func()) {
 			return c.deriveLatestSeenSlot(protocol)
 		}),
 	)
 
-	protocol.Shutdown.OnTrigger(shutdown)
+	protocol.ShutdownEvent().OnTrigger(shutdown)
 
 	return c
 }
@@ -251,10 +251,6 @@ func attachEngineLogs(instance *engine.Engine) func() {
 				instance.LogTrace("MemPool.TransactionBooked", "tx", transactionMetadata.ID())
 			})
 
-			transactionMetadata.OnConflicting(func() {
-				instance.LogTrace("MemPool.TransactionConflicting", "tx", transactionMetadata.ID())
-			})
-
 			transactionMetadata.OnAccepted(func() {
 				instance.LogTrace("MemPool.TransactionAccepted", "tx", transactionMetadata.ID())
 			})
@@ -273,10 +269,6 @@ func attachEngineLogs(instance *engine.Engine) func() {
 
 			transactionMetadata.OnCommittedSlotUpdated(func(slot iotago.SlotIndex) {
 				instance.LogTrace("MemPool.TransactionCommittedSlotUpdated", "tx", transactionMetadata.ID(), "slot", slot)
-			})
-
-			transactionMetadata.OnPending(func() {
-				instance.LogTrace("MemPool.TransactionPending", "tx", transactionMetadata.ID())
 			})
 
 			transactionMetadata.OnEvicted(func() {
@@ -446,7 +438,7 @@ func (c *ChainsCandidate) measureAt(slot iotago.SlotIndex) (teardown func()) {
 	// sanitize protocol parameters
 	chainSwitchingThreshold := c.chains.protocol.APIForSlot(slot).ProtocolParameters().ChainSwitchingThreshold()
 	if slot < iotago.SlotIndex(chainSwitchingThreshold) {
-		return
+		return nil
 	}
 
 	// get the sorted commitments for the given slot
@@ -459,9 +451,9 @@ func (c *ChainsCandidate) measureAt(slot iotago.SlotIndex) (teardown func()) {
 
 			// abort if the heaviest commitment is the main chain or main chain is heavier
 			if mainChain := c.chains.Main.Get(); heaviestChain == mainChain {
-				return
+				return nil
 			} else if mainChain.CumulativeVerifiedWeightAt(heaviestCommitment.Slot()) > candidateWeight {
-				return
+				return nil
 			}
 
 			// create counter for the number of slots with the same chain

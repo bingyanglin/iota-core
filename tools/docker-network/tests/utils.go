@@ -10,14 +10,16 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"sort"
-	"testing"
+	"strconv"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/iotaledger/hive.go/ierrors"
 	"github.com/iotaledger/hive.go/lo"
+	"github.com/iotaledger/iota-core/pkg/testsuite/mock"
 	iotago "github.com/iotaledger/iota.go/v4"
 	"github.com/iotaledger/iota.go/v4/api"
 )
@@ -55,7 +57,7 @@ func (d *DockerTestFramework) CheckAccountStatus(ctx context.Context, blkID iota
 	require.NoError(d.Testing, err)
 }
 
-func (d *DockerTestFramework) AssertIndexerAccount(account *AccountData) {
+func (d *DockerTestFramework) AssertIndexerAccount(account *mock.AccountData) {
 	d.Eventually(func() error {
 		ctx := context.TODO()
 		indexerClt, err := d.wallet.DefaultClient().Indexer(ctx)
@@ -95,7 +97,7 @@ func (d *DockerTestFramework) AssertIndexerFoundry(foundryID iotago.FoundryID) {
 func (d *DockerTestFramework) AssertValidatorExists(accountAddr *iotago.AccountAddress) {
 	d.Eventually(func() error {
 		for _, node := range d.Nodes() {
-			_, err := d.wallet.Clients[node.Name].StakingAccount(context.TODO(), accountAddr)
+			_, err := d.wallet.Clients[node.Name].Validator(context.TODO(), accountAddr)
 			if err != nil {
 				return err
 			}
@@ -112,12 +114,12 @@ func (d *DockerTestFramework) AssertCommittee(expectedEpoch iotago.EpochIndex, e
 	sort.Strings(expectedCommitteeMember)
 
 	status := d.NodeStatus("V1")
-	api := d.wallet.DefaultClient().CommittedAPI()
-	expectedSlotStart := api.TimeProvider().EpochStart(expectedEpoch)
+	testAPI := d.wallet.DefaultClient().CommittedAPI()
+	expectedSlotStart := testAPI.TimeProvider().EpochStart(expectedEpoch)
 	require.Greater(d.Testing, expectedSlotStart, status.LatestAcceptedBlockSlot)
 
 	slotToWait := expectedSlotStart - status.LatestAcceptedBlockSlot
-	secToWait := time.Duration(slotToWait) * time.Duration(api.ProtocolParameters().SlotDurationInSeconds()) * time.Second
+	secToWait := time.Duration(slotToWait) * time.Duration(testAPI.ProtocolParameters().SlotDurationInSeconds()) * time.Second
 	fmt.Println("Wait for ", secToWait, "until expected epoch: ", expectedEpoch)
 	time.Sleep(secToWait)
 
@@ -213,6 +215,40 @@ func (d *DockerTestFramework) AwaitTransactionPayloadAccepted(ctx context.Contex
 	})
 }
 
+func (d *DockerTestFramework) AwaitTransactionState(ctx context.Context, txID iotago.TransactionID, expectedState api.TransactionState) {
+	clt := d.wallet.DefaultClient()
+
+	d.Eventually(func() error {
+		resp, err := clt.TransactionMetadata(ctx, txID)
+		if err != nil {
+			return err
+		}
+
+		if expectedState == resp.TransactionState {
+			return nil
+		} else {
+			return ierrors.Errorf("expected transaction %s to have state %s, got %s instead", txID, expectedState, resp.TransactionState)
+		}
+	})
+}
+
+func (d *DockerTestFramework) AwaitTransactionFailure(ctx context.Context, txID iotago.TransactionID, expectedReason api.TransactionFailureReason) {
+	clt := d.wallet.DefaultClient()
+
+	d.Eventually(func() error {
+		resp, err := clt.TransactionMetadata(ctx, txID)
+		if err != nil {
+			return err
+		}
+
+		if expectedReason == resp.TransactionFailureReason {
+			return nil
+		} else {
+			return ierrors.Errorf("expected transaction %s to have failure reason %T, got %s instead, failure details: %s", txID, expectedReason, resp.TransactionState, resp.TransactionFailureDetails)
+		}
+	})
+}
+
 func (d *DockerTestFramework) AwaitCommitment(targetSlot iotago.SlotIndex) {
 	currentCommittedSlot := d.NodeStatus("V1").LatestCommitmentID.Slot()
 
@@ -225,6 +261,17 @@ func (d *DockerTestFramework) AwaitCommitment(targetSlot iotago.SlotIndex) {
 
 		time.Sleep(10 * time.Second)
 	}
+}
+
+func (d *DockerTestFramework) AwaitFinalization(targetSlot iotago.SlotIndex) {
+	d.Eventually(func() error {
+		currentFinalisedSlot := d.NodeStatus("V1").LatestFinalizedSlot
+		if targetSlot > currentFinalisedSlot {
+			return ierrors.Errorf("finalized slot %d is not reached yet", targetSlot)
+		}
+
+		return nil
+	})
 }
 
 func (d *DockerTestFramework) AwaitAddressUnspentOutputAccepted(ctx context.Context, addr iotago.Address) (outputID iotago.OutputID, output iotago.Output, err error) {
@@ -305,26 +352,6 @@ func createLogDirectory(testName string) string {
 	return dir
 }
 
-func AwaitEventAPITopics(t *testing.T, duration time.Duration, cancleFunc context.CancelFunc, receiveChan chan struct{}, numOfTopics int) error {
-	counter := 0
-	timer := time.NewTimer(duration)
-	defer timer.Stop()
-
-	for {
-		select {
-		case <-timer.C:
-			cancleFunc()
-			return ierrors.New("Timeout, did not receive signals from all  topics")
-		case <-receiveChan:
-			counter++
-			if counter == numOfTopics {
-				fmt.Println("Received all signals from topics")
-				return nil
-			}
-		}
-	}
-}
-
 func getDelegationStartEpoch(api iotago.API, commitmentSlot iotago.SlotIndex) iotago.EpochIndex {
 	pastBoundedSlot := commitmentSlot + api.ProtocolParameters().MaxCommittableAge()
 	pastBoundedEpoch := api.TimeProvider().EpochFromSlot(pastBoundedSlot)
@@ -334,5 +361,33 @@ func getDelegationStartEpoch(api iotago.API, commitmentSlot iotago.SlotIndex) io
 	if pastBoundedSlot <= registrationSlot {
 		return pastBoundedEpoch + 1
 	}
+
 	return pastBoundedEpoch + 2
+}
+
+func isStatusCode(err error, status int) bool {
+	if err == nil {
+		return false
+	}
+	code, err := extractStatusCode(err.Error())
+	if err != nil {
+		return false
+	}
+
+	return code == status
+}
+
+func extractStatusCode(errorMessage string) (int, error) {
+	re := regexp.MustCompile(`code=(\d+)`)
+	matches := re.FindStringSubmatch(errorMessage)
+	if len(matches) != 2 {
+		return 0, ierrors.Errorf("unable to extract status code from error message")
+	}
+
+	statusCode, err := strconv.Atoi(matches[1])
+	if err != nil {
+		return 0, err
+	}
+
+	return statusCode, nil
 }

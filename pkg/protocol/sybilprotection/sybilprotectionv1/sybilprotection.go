@@ -47,55 +47,54 @@ type SybilProtection struct {
 func NewProvider(opts ...options.Option[SybilProtection]) module.Provider[*engine.Engine, sybilprotection.SybilProtection] {
 	return module.Provide(func(e *engine.Engine) sybilprotection.SybilProtection {
 		return options.Apply(&SybilProtection{
+			Module: e.NewSubModule("SybilProtection"),
 			events: sybilprotection.NewEvents(),
 
 			apiProvider:             e,
 			optsSeatManagerProvider: topstakers.NewProvider(),
-		}, opts,
-			func(o *SybilProtection) {
-				o.seatManager = o.optsSeatManagerProvider(e)
+		}, opts, func(o *SybilProtection) {
+			o.seatManager = o.optsSeatManagerProvider(e)
 
-				e.Constructed.OnTrigger(func() {
-					o.ledger = e.Ledger
-					o.errHandler = e.ErrorHandler("SybilProtection")
-					logger := e.NewChildLogger("PerformanceTracker")
-					latestCommittedSlot := e.Storage.Settings().LatestCommitment().Slot()
-					latestCommittedEpoch := o.apiProvider.APIForSlot(latestCommittedSlot).TimeProvider().EpochFromSlot(latestCommittedSlot)
-					o.performanceTracker = performance.NewTracker(e.Storage.RewardsForEpoch, e.Storage.PoolStats(), e.Storage.Committee(), e.Storage.CommitteeCandidates, e.Storage.ValidatorPerformances, latestCommittedEpoch, e, o.errHandler, logger)
-					o.lastCommittedSlot = latestCommittedSlot
+			e.ConstructedEvent().OnTrigger(func() {
+				o.ledger = e.Ledger
+				o.errHandler = e.ErrorHandler("SybilProtection")
+				logger := e.NewChildLogger("PerformanceTracker")
+				latestCommittedSlot := e.Storage.Settings().LatestCommitment().Slot()
+				latestCommittedEpoch := o.apiProvider.APIForSlot(latestCommittedSlot).TimeProvider().EpochFromSlot(latestCommittedSlot)
+				o.performanceTracker = performance.NewTracker(e.Storage.RewardsForEpoch, e.Storage.PoolStats(), e.Storage.Committee(), e.Storage.CommitteeCandidates, e.Storage.ValidatorPerformances, latestCommittedEpoch, e, o.errHandler, logger)
+				o.lastCommittedSlot = latestCommittedSlot
 
-					if o.optsInitialCommittee != nil {
-						if _, err := o.seatManager.RotateCommittee(0, o.optsInitialCommittee); err != nil {
-							panic(ierrors.Wrap(err, "error while registering initial committee for epoch 0"))
-						}
+				if o.optsInitialCommittee != nil {
+					if _, err := o.seatManager.RotateCommittee(0, o.optsInitialCommittee); err != nil {
+						panic(ierrors.Wrap(err, "error while registering initial committee for epoch 0"))
+					}
+				}
+
+				// When the engine is triggered initialized, snapshot has been read or database has been initialized properly,
+				// so the committee should be available in the performance manager.
+				e.InitializedEvent().OnTrigger(func() {
+					// Mark the committee for the last committed slot as active.
+					currentEpoch := e.CommittedAPI().TimeProvider().EpochFromSlot(e.Storage.Settings().LatestCommitment().Slot())
+					err := o.seatManager.InitializeCommittee(currentEpoch, e.Clock.Accepted().RelativeTime())
+					if err != nil {
+						panic(ierrors.Wrap(err, "error while initializing committee"))
 					}
 
-					o.TriggerConstructed()
-
-					// When the engine is triggered initialized, snapshot has been read or database has been initialized properly,
-					// so the committee should be available in the performance manager.
-					e.Initialized.OnTrigger(func() {
-						// Mark the committee for the last committed slot as active.
-						currentEpoch := e.CommittedAPI().TimeProvider().EpochFromSlot(e.Storage.Settings().LatestCommitment().Slot())
-						err := o.seatManager.InitializeCommittee(currentEpoch, e.Clock.Accepted().RelativeTime())
-						if err != nil {
-							panic(ierrors.Wrap(err, "error while initializing committee"))
-						}
-
-						o.TriggerInitialized()
-					})
+					o.InitializedEvent().Trigger()
 				})
+			})
 
-				e.Events.SlotGadget.SlotFinalized.Hook(o.slotFinalized)
+			e.Events.SlotGadget.SlotFinalized.Hook(o.slotFinalized)
 
-				e.Events.SybilProtection.LinkTo(o.events)
-			},
-		)
+			e.Events.SybilProtection.LinkTo(o.events)
+
+			o.ShutdownEvent().OnTrigger(func() {
+				o.StoppedEvent().Trigger()
+			})
+
+			o.ConstructedEvent().Trigger()
+		})
 	})
-}
-
-func (o *SybilProtection) Shutdown() {
-	o.TriggerStopped()
 }
 
 func (o *SybilProtection) TrackBlock(block *blocks.Block) {
@@ -111,7 +110,7 @@ func (o *SybilProtection) TrackBlock(block *blocks.Block) {
 
 	accountData, exists, err := o.ledger.Account(block.ProtocolBlock().Header.IssuerID, block.SlotCommitmentID().Slot())
 	if err != nil {
-		o.errHandler(ierrors.Wrapf(err, "error while retrieving account from account %s in slot %d from accounts ledger", block.ProtocolBlock().Header.IssuerID, block.SlotCommitmentID().Slot()))
+		o.errHandler(ierrors.Wrapf(err, "error while retrieving data for account %s in slot %d from accounts ledger", block.ProtocolBlock().Header.IssuerID, block.SlotCommitmentID().Slot()))
 
 		return
 	}
@@ -132,7 +131,6 @@ func (o *SybilProtection) TrackBlock(block *blocks.Block) {
 	// then don't consider it because the validator can't be part of the committee in the next epoch
 	if accountData.StakeEndEpoch == blockEpoch ||
 		block.ID().Slot()+o.apiProvider.APIForSlot(block.ID().Slot()).ProtocolParameters().EpochNearingThreshold() > o.apiProvider.APIForSlot(block.ID().Slot()).TimeProvider().EpochEnd(blockEpoch) {
-
 		return
 	}
 
@@ -314,7 +312,7 @@ func (o *SybilProtection) EligibleValidators(epoch iotago.EpochIndex) (accounts.
 			return ierrors.Wrapf(err, "failed to load account data for candidate %s", candidate)
 		}
 		if !exists {
-			return ierrors.Errorf("account of committee candidate does not exist: %s", candidate)
+			return ierrors.Errorf("account of committee candidate %s does not exist", candidate)
 		}
 		// if `End Epoch` is the current one or has passed, validator is no longer considered for validator selection
 		if accountData.StakeEndEpoch <= epoch {
@@ -349,7 +347,7 @@ func (o *SybilProtection) OrderedRegisteredCandidateValidatorsList(epoch iotago.
 			return ierrors.Wrapf(err, "failed to get account %s", candidate)
 		}
 		if !exists {
-			return ierrors.Errorf("account of committee candidate does not exist: %s", candidate)
+			return ierrors.Errorf("account of committee candidate %s does not exist", candidate)
 		}
 		// if `End Epoch` is the current one or has passed, validator is no longer considered for validator selection
 		if accountData.StakeEndEpoch <= epoch {
@@ -371,9 +369,14 @@ func (o *SybilProtection) OrderedRegisteredCandidateValidatorsList(epoch iotago.
 	}); err != nil {
 		return nil, ierrors.Wrapf(err, "failed to iterate over eligible validator candidates")
 	}
-	// sort candidates by stake
+
+	// sort validators by pool stake, then by address
 	sort.Slice(validatorResp, func(i int, j int) bool {
-		return validatorResp[i].ValidatorStake > validatorResp[j].ValidatorStake
+		if validatorResp[i].PoolStake == validatorResp[j].PoolStake {
+			return validatorResp[i].AddressBech32 < validatorResp[j].AddressBech32
+		}
+
+		return validatorResp[i].PoolStake > validatorResp[j].PoolStake
 	})
 
 	return validatorResp, nil

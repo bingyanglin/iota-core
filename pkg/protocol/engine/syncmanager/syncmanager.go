@@ -16,6 +16,10 @@ type SyncManager interface {
 	// IsNodeSynced returns bool indicating if a node is synced.
 	IsNodeSynced() bool
 
+	// IsFinalizationDelayed returns bool indicating if the finalization is delayed
+	// (latest committed slot - latest finalized slot > max committable age).
+	IsFinalizationDelayed() bool
+
 	// LastAcceptedBlockSlot returns the slot of the latest accepted block.
 	LastAcceptedBlockSlot() iotago.SlotIndex
 
@@ -34,15 +38,13 @@ type SyncManager interface {
 	// Reset resets the component to a clean state as if it was created at the last commitment.
 	Reset()
 
-	// Shutdown shuts down the SyncManager.
-	Shutdown()
-
-	module.Interface
+	module.Module
 }
 
 type SyncStatus struct {
 	NodeBootstrapped       bool
 	NodeSynced             bool
+	FinalizationDelayed    bool
 	LastAcceptedBlockSlot  iotago.SlotIndex
 	LastConfirmedBlockSlot iotago.SlotIndex
 	LatestCommitment       *model.Commitment

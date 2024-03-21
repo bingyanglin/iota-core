@@ -21,39 +21,33 @@ type TransactionMetadata interface {
 
 	IsSolid() bool
 
-	OnSolid(func())
+	OnSolid(callback func())
 
 	IsExecuted() bool
 
-	OnExecuted(func())
+	OnExecuted(callback func())
 
 	IsInvalid() bool
 
-	OnInvalid(func(error))
+	OnInvalid(callback func(error))
 
 	IsBooked() bool
 
-	OnBooked(func())
-
-	IsConflicting() bool
-
-	OnConflicting(func())
+	OnBooked(callback func())
 
 	ValidAttachments() []iotago.BlockID
 
 	EarliestIncludedAttachment() iotago.BlockID
 
-	OnEarliestIncludedAttachmentUpdated(func(prevID, newID iotago.BlockID))
+	OnEarliestIncludedAttachmentUpdated(callback func(prevID, newID iotago.BlockID))
 
-	OnEvicted(func())
+	OnEvicted(callback func())
 
 	inclusionFlags
 }
 
 type inclusionFlags interface {
 	IsPending() bool
-
-	OnPending(callback func())
 
 	IsAccepted() bool
 

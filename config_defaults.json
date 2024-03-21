@@ -48,7 +48,7 @@
       "/api/core/v3/accounts*",
       "/api/core/v3/validators*",
       "/api/core/v3/rewards*",
-      "/api/core/v3/committee",
+      "/api/core/v3/committee*",
       "/api/debug/v2/*",
       "/api/indexer/v2/*",
       "/api/mqtt/v2",
@@ -57,8 +57,7 @@
     "protectedRoutes": ["/api/*"],
     "debugRequestLoggerEnabled": false,
     "maxPageSize": 100,
-    "requestsMemoryCacheGranularity": 10,
-    "maxRequestedSlotAge": 10,
+    "maxCacheSize": "50MB",
     "jwtAuth": {
       "salt": "IOTA"
     },
@@ -100,6 +99,7 @@
       "path": "testnet/snapshot.bin",
       "depth": 5
     },
+    "commitmentCheck": true,
     "filter": {
       "maxAllowedClockDrift": "5s"
     },

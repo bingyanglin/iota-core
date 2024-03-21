@@ -60,7 +60,6 @@ func ShouldHandleTools() bool {
 
 // HandleTools handles available tools.
 func HandleTools() {
-
 	args := os.Args[1:]
 	if len(args) == 1 {
 		listTools()
@@ -114,7 +113,6 @@ func yesOrNo(value bool) string {
 }
 
 func parseFlagSet(fs *flag.FlagSet, args []string) error {
-
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -148,7 +146,7 @@ func loadConfigFile(filePath string, parameters map[string]any) error {
 	}
 
 	if err := config.LoadFile(filePath); err != nil {
-		return fmt.Errorf("loading config file failed: %w", err)
+		return ierrors.Wrap(err, "loading config file failed")
 	}
 
 	config.UpdateBoundParameters()

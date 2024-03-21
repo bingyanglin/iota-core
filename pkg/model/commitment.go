@@ -51,7 +51,7 @@ func CommitmentFromCommitment(iotaCommitment *iotago.Commitment, api iotago.API,
 
 func CommitmentFromBytes(apiProvider iotago.APIProvider) func([]byte) (*Commitment, int, error) {
 	return func(bytes []byte) (*Commitment, int, error) {
-		totalBytesRead := 0
+		var totalBytesRead int
 
 		// We read the version byte here to determine the API to use, but then we decode the entire commitment again.
 		// Thus, we don't count the version byte as read bytes.
@@ -126,7 +126,7 @@ func (c *Commitment) String() string {
 		panic(err)
 	}
 	var out bytes.Buffer
-	if json.Indent(&out, encode, "", "  ") != nil {
+	if err = json.Indent(&out, encode, "", "  "); err != nil {
 		panic(err)
 	}
 

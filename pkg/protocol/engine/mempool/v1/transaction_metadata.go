@@ -8,7 +8,6 @@ import (
 	"github.com/iotaledger/hive.go/ds"
 	"github.com/iotaledger/hive.go/ds/reactive"
 	"github.com/iotaledger/hive.go/ds/shrinkingmap"
-	"github.com/iotaledger/hive.go/ierrors"
 	"github.com/iotaledger/hive.go/lo"
 	"github.com/iotaledger/hive.go/runtime/syncutils"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/mempool"
@@ -38,7 +37,6 @@ type TransactionMetadata struct {
 	// predecessors for acceptance
 	unacceptedInputsCount uint64
 	allInputsAccepted     reactive.Variable[bool]
-	conflicting           reactive.Event
 	conflictAccepted      reactive.Event
 
 	// attachments
@@ -61,11 +59,8 @@ func (t *TransactionMetadata) ValidAttachments() []iotago.BlockID {
 	return t.validAttachments.Keys()
 }
 
-func NewTransactionMetadata(transaction mempool.Transaction, referencedInputs []mempool.StateReference) (*TransactionMetadata, error) {
-	transactionID, transactionIDErr := transaction.ID()
-	if transactionIDErr != nil {
-		return nil, ierrors.Errorf("failed to retrieve transaction ID: %w", transactionIDErr)
-	}
+func NewTransactionMetadata(transaction mempool.Transaction, referencedInputs []mempool.StateReference) *TransactionMetadata {
+	transactionID := transaction.MustID()
 
 	return (&TransactionMetadata{
 		id:               transactionID,
@@ -85,7 +80,6 @@ func NewTransactionMetadata(transaction mempool.Transaction, referencedInputs []
 
 		unacceptedInputsCount: uint64(len(referencedInputs)),
 		allInputsAccepted:     reactive.NewVariable[bool](),
-		conflicting:           reactive.NewEvent(),
 		conflictAccepted:      reactive.NewEvent(),
 
 		signingTransactions: reactive.NewSet[*SignedTransactionMetadata](),
@@ -95,7 +89,7 @@ func NewTransactionMetadata(transaction mempool.Transaction, referencedInputs []
 		allValidAttachmentsEvicted:      reactive.NewVariable[iotago.SlotIndex](),
 
 		inclusionFlags: newInclusionFlags(),
-	}).setup(), nil
+	}).setup()
 }
 
 func (t *TransactionMetadata) ID() iotago.TransactionID {
@@ -245,14 +239,6 @@ func (t *TransactionMetadata) Commit() {
 	t.committedSlot.Set(t.earliestIncludedValidAttachment.Get().Slot())
 }
 
-func (t *TransactionMetadata) IsConflicting() bool {
-	return t.conflicting.WasTriggered()
-}
-
-func (t *TransactionMetadata) OnConflicting(callback func()) {
-	t.conflicting.OnTrigger(callback)
-}
-
 func (t *TransactionMetadata) IsConflictAccepted() bool {
 	return t.conflictAccepted.WasTriggered()
 }
@@ -290,12 +276,6 @@ func (t *TransactionMetadata) setupInput(input *StateMetadata) {
 		}
 	})
 
-	input.OnPending(func() {
-		if atomic.AddUint64(&t.unacceptedInputsCount, 1) == 1 && t.allInputsAccepted.Set(false) {
-			t.accepted.Set(false)
-		}
-	})
-
 	input.OnAcceptedSpenderUpdated(func(spender mempool.TransactionMetadata) {
 		//nolint:forcetypeassert // we can be sure that the spender is a TransactionMetadata
 		if spender.(*TransactionMetadata) != nil && spender != t {
@@ -313,14 +293,6 @@ func (t *TransactionMetadata) setupInput(input *StateMetadata) {
 }
 
 func (t *TransactionMetadata) setup() (self *TransactionMetadata) {
-	cancelConflictInheritance := t.spenderIDs.InheritFrom(t.parentSpenderIDs)
-
-	t.OnConflicting(func() {
-		cancelConflictInheritance()
-
-		t.spenderIDs.Replace(ds.NewSet(t.id))
-	})
-
 	t.allValidAttachmentsEvicted.OnUpdate(func(_ iotago.SlotIndex, slot iotago.SlotIndex) {
 		if !lo.Return2(t.CommittedSlot()) {
 			t.orphanedSlot.Set(slot)
