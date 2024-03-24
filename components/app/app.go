@@ -19,6 +19,7 @@ import (
 	"github.com/iotaledger/iota-core/components/remotemetrics"
 	"github.com/iotaledger/iota-core/components/restapi"
 	coreapi "github.com/iotaledger/iota-core/components/restapi/core"
+	"github.com/iotaledger/iota-core/components/restapi/management"
 	"github.com/iotaledger/iota-core/pkg/toolset"
 )
 
@@ -46,6 +47,7 @@ Command line flags:
 			profiling.Component,
 			restapi.Component,
 			coreapi.Component,
+			management.Component,
 			debugapi.Component,
 			metricstracker.Component,
 			protocol.Component,
