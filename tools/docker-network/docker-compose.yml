@@ -33,9 +33,7 @@ services:
       --inx.bindAddress=0.0.0.0:9029
       --prometheus.goMetrics=true
       --prometheus.processMetrics=true
-      --remotelog.serverAddress=172.17.0.1:5213
-      --remotelog.enabled=true
-      --remotemetrics.enabled=true
+      --debugAPI.enabled=true
 
   node-2-validator:
     image: docker-network-node-1-validator:latest
