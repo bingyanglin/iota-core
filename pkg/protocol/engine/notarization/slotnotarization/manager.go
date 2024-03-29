@@ -115,7 +115,7 @@ func (m *Manager) tryCommitUntil(commitUntilSlot iotago.SlotIndex) {
 }
 
 func (m *Manager) ForceCommit(slot iotago.SlotIndex) (*model.Commitment, error) {
-	m.LogInfof("Force commit slot %d", slot)
+	m.LogInfof("force commit slot %d", slot)
 
 	if m.ShutdownEvent().WasTriggered() {
 		return nil, ierrors.New("notarization manager was stopped")
@@ -135,6 +135,8 @@ func (m *Manager) ForceCommit(slot iotago.SlotIndex) (*model.Commitment, error) 
 		return nil, ierrors.Wrapf(err, "failed to create commitment for slot %d", slot)
 	}
 
+	m.LogInfof("forced committment of %s", commitment.ID())
+
 	return commitment, nil
 }
 
@@ -146,6 +148,8 @@ func (m *Manager) ForceCommitUntil(commitUntilSlot iotago.SlotIndex) error {
 			return ierrors.Wrapf(err, "failed to force commit slot %d", i)
 		}
 	}
+
+	m.LogInfo("successfully forced commitment until", "slot", commitUntilSlot)
 
 	return nil
 }
@@ -184,6 +188,7 @@ func (m *Manager) tryCommitSlotUntil(acceptedBlockIndex iotago.SlotIndex) {
 
 		if _, err := m.createCommitment(i); err != nil {
 			m.errorHandler(ierrors.Wrapf(err, "failed to create commitment for slot %d", i))
+
 			return
 		}
 	}
