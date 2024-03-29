@@ -141,7 +141,7 @@ func (m *Manager) ForceCommit(slot iotago.SlotIndex) (*model.Commitment, error) 
 		return nil, ierrors.Wrapf(err, "failed to create commitment for slot %d", slot)
 	}
 
-	m.LogInfo("forced committment", "commitmentID", commitment.ID())
+	m.LogInfo("forced commitment", "commitmentID", commitment.ID())
 
 	return commitment, nil
 }
