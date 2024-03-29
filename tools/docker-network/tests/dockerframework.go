@@ -70,6 +70,8 @@ func (n *Node) AccountAddress(t *testing.T) *iotago.AccountAddress {
 
 type DockerTestFramework struct {
 	Testing *testing.T
+	// we use the fake testing so that actual tests don't fail if an assertion fails
+	fakeTesting *testing.T
 
 	nodes     map[string]*Node
 	nodesLock syncutils.RWMutex
@@ -90,6 +92,7 @@ type DockerTestFramework struct {
 func NewDockerTestFramework(t *testing.T, opts ...options.Option[DockerTestFramework]) *DockerTestFramework {
 	return options.Apply(&DockerTestFramework{
 		Testing:         t,
+		fakeTesting:     &testing.T{},
 		nodes:           make(map[string]*Node),
 		wallet:          NewDockerWallet(t),
 		optsWaitForSync: 5 * time.Minute,
@@ -225,13 +228,19 @@ func (d *DockerTestFramework) WaitUntilFaucetHealthy() {
 
 	d.Eventually(func() error {
 		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, d.optsFaucetURL+"/health", nil)
-		require.NoError(d.Testing, err)
+		if err != nil {
+			return err
+		}
 
 		res, err := http.DefaultClient.Do(req)
-		require.NoError(d.Testing, err)
+		if err != nil {
+			return err
+		}
 		defer res.Body.Close()
 
-		require.Equal(d.Testing, http.StatusOK, res.StatusCode)
+		if res.StatusCode != http.StatusOK {
+			return ierrors.Errorf("faucet is not healthy, status code: %d", res.StatusCode)
+		}
 
 		return nil
 	}, true)
