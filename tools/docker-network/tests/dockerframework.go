@@ -71,6 +71,7 @@ type DockerWalletClock struct {
 }
 
 func (c *DockerWalletClock) SetCurrentSlot(slot iotago.SlotIndex) {
+	panic("Cannot set current slot in DockerWalletClock, the slot is set by time.Now()")
 }
 
 func (c *DockerWalletClock) CurrentSlot() iotago.SlotIndex {
@@ -438,12 +439,10 @@ func (d *DockerTestFramework) CreateTaggedDataBlock(wallet *mock.Wallet, tag []b
 }
 
 func (d *DockerTestFramework) CreateBasicOutputBlock(wallet *mock.Wallet) (*iotago.Block, *iotago.SignedTransaction, *mock.OutputData) {
-	ctx := context.Background()
-
 	fundsOutputData := d.RequestFaucetFunds(ctx, wallet, iotago.AddressEd25519)
 
 	signedTx := wallet.CreateBasicOutputFromInput(fundsOutputData)
-	block, err := wallet.CreateBasicBlock(ctx, "", mock.WithPayload(signedTx))
+	block, err := wallet.CreateBasicBlock(context.Background(), "", mock.WithPayload(signedTx))
 	require.NoError(d.Testing, err)
 
 	return block.ProtocolBlock(), signedTx, fundsOutputData

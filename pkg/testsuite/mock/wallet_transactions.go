@@ -207,10 +207,7 @@ func (w *Wallet) DelayedClaimingTransition(transactionName string, inputName str
 }
 
 func (w *Wallet) TransitionAccount(transactionName string, inputName string, opts ...options.Option[builder.AccountOutputBuilder]) *iotago.SignedTransaction {
-	input, exists := w.outputs[inputName]
-	if !exists {
-		panic(fmt.Sprintf("account with alias %s does not exist", inputName))
-	}
+	input := w.OutputData(inputName)
 
 	accountOutput, ok := input.Output.Clone().(*iotago.AccountOutput)
 	if !ok {
