@@ -439,7 +439,7 @@ func (d *DockerTestFramework) CreateTaggedDataBlock(wallet *mock.Wallet, tag []b
 }
 
 func (d *DockerTestFramework) CreateBasicOutputBlock(wallet *mock.Wallet) (*iotago.Block, *iotago.SignedTransaction, *mock.OutputData) {
-	fundsOutputData := d.RequestFaucetFunds(ctx, wallet, iotago.AddressEd25519)
+	fundsOutputData := d.RequestFaucetFunds(context.Background(), wallet, iotago.AddressEd25519)
 
 	signedTx := wallet.CreateBasicOutputFromInput(fundsOutputData)
 	block, err := wallet.CreateBasicBlock(context.Background(), "", mock.WithPayload(signedTx))
