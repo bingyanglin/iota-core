@@ -315,7 +315,6 @@ func TestLossOfAcceptanceWithoutRestart(t *testing.T) {
 	node2 := ts.AddNode("node2")
 
 	ts.Run(true, nil)
-	node2.Protocol.SetLogLevel(log.LevelTrace)
 	// Issue up to slot 10, committing slot 8.
 	{
 		ts.IssueBlocksAtSlots("", []iotago.SlotIndex{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, 4, "Genesis", ts.Nodes(), true, true)
