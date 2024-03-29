@@ -520,12 +520,10 @@ func (w *DockerWallet) ClaimValidatorRewards(issuerAccountID iotago.AccountID, i
 
 	rewardResp, err := clt.Rewards(context.Background(), acc.OutputID)
 	require.NoError(w.Testing, err)
-	potentialMana := w.PotentialMana(apiForSlot, acc.Output, acc.OutputID, currentSlot)
-	storedMana := w.StoredMana(apiForSlot, acc.Output, acc.OutputID, currentSlot)
 
 	accountOutput := builder.NewAccountOutputBuilderFromPrevious(acc.Output).
 		RemoveFeature(iotago.FeatureStaking).
-		Mana(potentialMana + storedMana + rewardResp.Rewards).
+		Mana(rewardResp.Rewards).
 		MustBuild()
 
 	signedTx, err := builder.NewTransactionBuilder(apiForSlot, w.AddressSigner(acc.AddressIndex)).
@@ -563,14 +561,13 @@ func (w *DockerWallet) ClaimDelegatorRewards(delegationOutputID iotago.OutputID,
 
 	currentSlot := clt.LatestAPI().TimeProvider().SlotFromTime(time.Now())
 	apiForSlot := clt.APIForSlot(currentSlot)
-	potentialMana := w.PotentialMana(apiForSlot, delegationOutput.Output, delegationOutputID, currentSlot)
 
 	rewardsResp, err := clt.Rewards(context.Background(), delegationOutputID)
 	require.NoError(w.Testing, err)
 
 	// Create Basic Output where the reward will be put.
 	basicOutput := builder.NewBasicOutputBuilder(delegationOutput.Output.UnlockConditionSet().Address().Address, delegationOutput.Output.BaseTokenAmount()).
-		Mana(rewardsResp.Rewards + potentialMana).
+		Mana(rewardsResp.Rewards).
 		MustBuild()
 
 	signedTx, err := builder.NewTransactionBuilder(apiForSlot, w.AddressSigner(delegationOutput.AddressIndex)).
@@ -643,14 +640,4 @@ func (w *DockerWallet) DelayedClaimingTransition(delegationOutputID iotago.Outpu
 	})
 
 	return signedTx
-}
-
-// Computes the Potential Mana that the output generates until the current slot.
-func (w *DockerWallet) PotentialMana(api iotago.API, input iotago.Output, inputID iotago.OutputID, currentSlot iotago.SlotIndex) iotago.Mana {
-	return lo.PanicOnErr(iotago.PotentialMana(api.ManaDecayProvider(), api.StorageScoreStructure(), input, inputID.CreationSlot(), currentSlot))
-}
-
-// Computes the decay on stored mana that the output holds until the current slot.
-func (w *DockerWallet) StoredMana(api iotago.API, input iotago.Output, inputID iotago.OutputID, currentSlot iotago.SlotIndex) iotago.Mana {
-	return lo.PanicOnErr(api.ManaDecayProvider().DecayManaBySlots(input.StoredMana(), inputID.CreationSlot(), currentSlot))
 }
