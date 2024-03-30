@@ -121,7 +121,7 @@ func (m *Manager) tryCommitUntil(commitUntilSlot iotago.SlotIndex) {
 }
 
 func (m *Manager) ForceCommit(slot iotago.SlotIndex) (*model.Commitment, error) {
-	m.LogInfof("force commit", "slot", slot)
+	m.LogInfo("force commit", "slot", slot)
 
 	if m.ShutdownEvent().WasTriggered() {
 		return nil, ierrors.New("notarization manager was stopped")
