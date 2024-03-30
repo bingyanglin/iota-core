@@ -9,8 +9,9 @@ import (
 	"testing"
 	"time"
 
-	iotago "github.com/iotaledger/iota.go/v4"
 	"github.com/stretchr/testify/require"
+
+	iotago "github.com/iotaledger/iota.go/v4"
 )
 
 // Test_ValidatorRewards tests the rewards for a validator.
@@ -52,12 +53,12 @@ func Test_ValidatorRewards(t *testing.T) {
 	// create accounts and continue issuing candidacy payload for account in the background
 	account := d.CreateAccount(WithStakingFeature(100, 1, currentEpoch, endEpoch))
 	initialMana := account.Output.StoredMana()
-	issueCandidacyPayload(d, account.ID, clt.CommittedAPI().TimeProvider().CurrentSlot(), claimingSlot,
+	issueCandidacyPayloadInBackground(d, account.ID, clt.CommittedAPI().TimeProvider().CurrentSlot(), claimingSlot,
 		slotsDuration)
 
 	lazyAccount := d.CreateAccount(WithStakingFeature(100, 1, currentEpoch, endEpoch))
 	lazyInitialMana := lazyAccount.Output.StoredMana()
-	issueCandidacyPayload(d, lazyAccount.ID, clt.CommittedAPI().TimeProvider().CurrentSlot(), claimingSlot,
+	issueCandidacyPayloadInBackground(d, lazyAccount.ID, clt.CommittedAPI().TimeProvider().CurrentSlot(), claimingSlot,
 		slotsDuration)
 
 	// make sure the account is in the committee, so it can issue validation blocks
@@ -228,7 +229,7 @@ func Test_DelayedClaimingRewards(t *testing.T) {
 	}
 }
 
-func issueCandidacyPayload(d *DockerTestFramework, accountID iotago.AccountID, startSlot, endSlot iotago.SlotIndex, slotDuration uint8) {
+func issueCandidacyPayloadInBackground(d *DockerTestFramework, accountID iotago.AccountID, startSlot, endSlot iotago.SlotIndex, slotDuration uint8) {
 	go func() {
 		fmt.Println("Issuing candidacy payloads for account", accountID, "in the background...")
 		defer fmt.Println("Issuing candidacy payloads for account", accountID, "in the background......done")
@@ -238,18 +239,6 @@ func issueCandidacyPayload(d *DockerTestFramework, accountID iotago.AccountID, s
 			time.Sleep(time.Duration(slotDuration) * time.Second)
 		}
 	}()
-}
-
-func issueValidationBlock(d *DockerTestFramework, accountID iotago.AccountID, startSlot, endSlot iotago.SlotIndex, blocksPerSlot int, slotDuration uint8) {
-	fmt.Println("Issuing validation block for account", accountID, "in the background...")
-	defer fmt.Println("Issuing validation block for account", accountID, "in the background......done")
-
-	for i := startSlot; i < endSlot; i++ {
-		for range blocksPerSlot {
-			d.SubmitValidationBlock(accountID)
-		}
-		time.Sleep(time.Duration(slotDuration) * time.Second)
-	}
 }
 
 func issueValidationBlockInBackground(wg *sync.WaitGroup, d *DockerTestFramework, accountID iotago.AccountID, startSlot, endSlot iotago.SlotIndex, blocksPerSlot int, slotDuration uint8) {
