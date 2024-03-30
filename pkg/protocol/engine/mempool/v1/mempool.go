@@ -121,7 +121,6 @@ func (m *MemPool[VoteRank]) AttachSignedTransaction(signedTransaction mempool.Si
 
 		if isNewTransaction {
 			m.transactionAttached.Trigger(storedSignedTransaction.transactionMetadata)
-
 			m.solidifyInputs(storedSignedTransaction.transactionMetadata)
 		}
 	}

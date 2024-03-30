@@ -213,15 +213,15 @@ func attachEngineLogs(instance *engine.Engine) func() {
 		}).Unhook,
 
 		events.SeatManager.OnlineCommitteeSeatAdded.Hook(func(seat account.SeatIndex, accountID iotago.AccountID) {
-			instance.LogTrace("SybilProtection.OnlineCommitteeSeatAdded", "seat", seat, "accountID", accountID)
+			instance.LogInfo("SybilProtection.OnlineCommitteeSeatAdded", "seat", seat, "accountID", accountID)
 		}).Unhook,
 
 		events.SeatManager.OnlineCommitteeSeatRemoved.Hook(func(seat account.SeatIndex) {
-			instance.LogTrace("SybilProtection.OnlineCommitteeSeatRemoved", "seat", seat)
+			instance.LogInfo("SybilProtection.OnlineCommitteeSeatRemoved", "seat", seat)
 		}).Unhook,
 
 		events.SybilProtection.CommitteeSelected.Hook(func(committee *account.SeatedAccounts, epoch iotago.EpochIndex) {
-			instance.LogTrace("SybilProtection.CommitteeSelected", "epoch", epoch, "committee", committee.IDs())
+			instance.LogInfo("SybilProtection.CommitteeSelected", "epoch", epoch, "committee", committee.IDs())
 		}).Unhook,
 
 		events.SpendDAG.SpenderCreated.Hook(func(conflictID iotago.TransactionID) {
