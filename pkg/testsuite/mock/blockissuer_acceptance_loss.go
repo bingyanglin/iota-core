@@ -18,7 +18,7 @@ func (i *BlockIssuer) reviveChain(issuingTime time.Time, node *Node) (*iotago.Co
 	// The node should wait to warpsync those slots and use those commitments to avoid potentially creating a diverging commitment.
 	if issuingSlot > apiForSlot.ProtocolParameters().MaxCommittableAge() &&
 		node.Protocol.Chains.Main.Get().LatestCommitment.Get().Slot() < issuingSlot-apiForSlot.ProtocolParameters().MaxCommittableAge() {
-		return nil, iotago.EmptyBlockID, ierrors.Errorf("chain manager is aware of a newer commitment", issuingSlot, apiForSlot.ProtocolParameters().MinCommittableAge())
+		return nil, iotago.EmptyBlockID, ierrors.Errorf("chain manager is aware of a newer commitment, slot: %d, minCommittableAge: %d", issuingSlot, apiForSlot.ProtocolParameters().MinCommittableAge())
 	}
 
 	// Force commitments until minCommittableAge relative to the block's issuing time. We basically "pretend" that
