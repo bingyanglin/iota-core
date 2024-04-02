@@ -141,7 +141,9 @@ func (c *Commitments) initRequester() (shutdown func()) {
 // publishRootCommitment publishes the root commitment of the main engine.
 func (c *Commitments) publishRootCommitment(mainChain *Chain, mainEngine *engine.Engine) func() {
 	return mainEngine.RootCommitment.OnUpdate(func(_ *model.Commitment, rootCommitment *model.Commitment) {
-		// Use workerpool to avoid a deadlock when
+		// Use workerpool to avoid a deadlock when warpSync mode is being enabled at the same time.
+		// Two goroutines deadlock on Commitment.IsSynced
+		// https://github.com/iotaledger/iota-core/issues/898
 		c.workerPool.Submit(func() {
 			publishedCommitment, published, err := c.publishCommitment(rootCommitment)
 			if err != nil {
