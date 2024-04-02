@@ -161,13 +161,11 @@ func (s *Server) ForceCommitUntil(_ context.Context, slot *inx.SlotRequest) (*in
 	// If the chain manager is aware of a commitments on the main chain, then do not force commit.
 	// The node should wait to warpsync those slots and use those commitments to avoid potentially creating a diverging commitment.
 	unwrappedSlot := slot.Unwrap()
-	protocolParams := deps.Protocol.APIForSlot(unwrappedSlot).ProtocolParameters()
-	if latestChainCommitment := deps.Protocol.Chains.Main.Get().LatestCommitment.Get(); unwrappedSlot > protocolParams.MaxCommittableAge() &&
-		latestChainCommitment.Slot() < unwrappedSlot-protocolParams.MaxCommittableAge() {
+	if latestChainCommitment := deps.Protocol.Chains.Main.Get().LatestCommitment.Get(); latestChainCommitment.Slot() >= unwrappedSlot {
 		return nil, ierrors.Errorf("chain manager is aware of a newer commitment (%s) than target slot %d", latestChainCommitment, unwrappedSlot)
 	}
 
-	err := deps.Protocol.Engines.Main.Get().Notarization.ForceCommitUntil(slot.Unwrap())
+	err := deps.Protocol.Engines.Main.Get().Notarization.ForceCommitUntil(unwrappedSlot)
 	if err != nil {
 		return nil, ierrors.Wrapf(err, "error while performing force commit until %d", slot.GetSlot())
 	}
