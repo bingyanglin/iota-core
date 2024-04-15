@@ -183,9 +183,9 @@ func Test_ManagementAPI_Peers_BadRequests(t *testing.T) {
 func Test_ManagementAPI_Pruning(t *testing.T) {
 	d := NewDockerTestFramework(t,
 		WithProtocolParametersOptions(
-			iotago.WithSupplyOptions(1813620509061365, 63, 1, 3, 0, 0, 0),
-			iotago.WithTimeProviderOptions(5, time.Now().Unix(), 1, 3),
-			iotago.WithLivenessOptions(2, 2, 3, 4, 5),
+			iotago.WithSupplyOptions(1813620509061365, 63, 1, 4, 0, 0, 0),
+			iotago.WithTimeProviderOptions(0, time.Now().Unix(), 3, 4),
+			iotago.WithLivenessOptions(3, 4, 2, 4, 8),
 			iotago.WithCongestionControlOptions(1, 1, 1, 400_000, 250_000, 50_000_000, 1000, 100),
 			iotago.WithRewardsOptions(8, 10, 2, 384),
 			iotago.WithTargetCommitteeSize(4),
@@ -209,9 +209,14 @@ func Test_ManagementAPI_Pruning(t *testing.T) {
 	managementClient, err := nodeClientV1.Management(getContextWithTimeout(5 * time.Second))
 	require.NoError(t, err)
 
-	nextEpochStartSlotIndex := func(slot iotago.SlotIndex) iotago.SlotIndex {
-		currentEpoch := nodeClientV1.CommittedAPI().TimeProvider().EpochFromSlot(slot)
-		return nodeClientV1.CommittedAPI().TimeProvider().EpochStart(currentEpoch + 1)
+	awaitNextEpoch := func() {
+		info, err := nodeClientV1.Info(getContextWithTimeout(5 * time.Second))
+		require.NoError(t, err)
+
+		currentEpoch := nodeClientV1.CommittedAPI().TimeProvider().EpochFromSlot(info.Status.LatestCommitmentID.Slot())
+
+		// await the start slot of the next epoch
+		d.AwaitCommitment(nodeClientV1.CommittedAPI().TimeProvider().EpochStart(currentEpoch + 1))
 	}
 
 	type test struct {
@@ -223,10 +228,10 @@ func Test_ManagementAPI_Pruning(t *testing.T) {
 		{
 			name: "Test_PruneDatabase_ByEpoch",
 			testFunc: func(t *testing.T) {
-				// wait for the next epoch to start
-				info, err := nodeClientV1.Info(getContextWithTimeout(5 * time.Second))
-				require.NoError(t, err)
-				d.AwaitCommitment(nextEpochStartSlotIndex(info.Status.LatestCommitmentID.Slot()))
+				// we need to wait until epoch 3 to be able to prune epoch 1
+				awaitNextEpoch()
+				awaitNextEpoch()
+				awaitNextEpoch()
 
 				// prune database by epoch
 				pruneDatabaseResponse, err := managementClient.PruneDatabaseByEpoch(getContextWithTimeout(5*time.Second), 1)
@@ -238,9 +243,7 @@ func Test_ManagementAPI_Pruning(t *testing.T) {
 			name: "Test_PruneDatabase_ByDepth",
 			testFunc: func(t *testing.T) {
 				// wait for the next epoch to start
-				info, err := nodeClientV1.Info(getContextWithTimeout(5 * time.Second))
-				require.NoError(t, err)
-				d.AwaitCommitment(nextEpochStartSlotIndex(info.Status.LatestCommitmentID.Slot()))
+				awaitNextEpoch()
 
 				// prune database by depth
 				pruneDatabaseResponse, err := managementClient.PruneDatabaseByDepth(getContextWithTimeout(5*time.Second), 1)
@@ -252,9 +255,7 @@ func Test_ManagementAPI_Pruning(t *testing.T) {
 			name: "Test_PruneDatabase_BySize",
 			testFunc: func(t *testing.T) {
 				// wait for the next epoch to start
-				info, err := nodeClientV1.Info(getContextWithTimeout(5 * time.Second))
-				require.NoError(t, err)
-				d.AwaitCommitment(nextEpochStartSlotIndex(info.Status.LatestCommitmentID.Slot()))
+				awaitNextEpoch()
 
 				// prune database by size
 				pruneDatabaseResponse, err := managementClient.PruneDatabaseBySize(getContextWithTimeout(5*time.Second), "1M")
@@ -272,9 +273,9 @@ func Test_ManagementAPI_Pruning(t *testing.T) {
 func Test_ManagementAPI_Snapshots(t *testing.T) {
 	d := NewDockerTestFramework(t,
 		WithProtocolParametersOptions(
-			iotago.WithSupplyOptions(1813620509061365, 63, 1, 3, 0, 0, 0),
-			iotago.WithTimeProviderOptions(5, time.Now().Unix(), 1, 3),
-			iotago.WithLivenessOptions(2, 2, 3, 4, 5),
+			iotago.WithSupplyOptions(1813620509061365, 63, 1, 4, 0, 0, 0),
+			iotago.WithTimeProviderOptions(0, time.Now().Unix(), 3, 4),
+			iotago.WithLivenessOptions(3, 4, 2, 4, 8),
 			iotago.WithCongestionControlOptions(1, 1, 1, 400_000, 250_000, 50_000_000, 1000, 100),
 			iotago.WithRewardsOptions(8, 10, 2, 384),
 			iotago.WithTargetCommitteeSize(4),
@@ -298,9 +299,14 @@ func Test_ManagementAPI_Snapshots(t *testing.T) {
 	managementClient, err := nodeClientV1.Management(getContextWithTimeout(5 * time.Second))
 	require.NoError(t, err)
 
-	nextEpochStartSlotIndex := func(slot iotago.SlotIndex) iotago.SlotIndex {
-		currentEpoch := nodeClientV1.CommittedAPI().TimeProvider().EpochFromSlot(slot)
-		return nodeClientV1.CommittedAPI().TimeProvider().EpochStart(currentEpoch + 1)
+	awaitNextEpoch := func() {
+		info, err := nodeClientV1.Info(getContextWithTimeout(5 * time.Second))
+		require.NoError(t, err)
+
+		currentEpoch := nodeClientV1.CommittedAPI().TimeProvider().EpochFromSlot(info.Status.LatestCommitmentID.Slot())
+
+		// await the start slot of the next epoch
+		d.AwaitCommitment(nodeClientV1.CommittedAPI().TimeProvider().EpochStart(currentEpoch + 1))
 	}
 
 	type test struct {
@@ -313,9 +319,7 @@ func Test_ManagementAPI_Snapshots(t *testing.T) {
 			name: "Test_CreateSnapshot",
 			testFunc: func(t *testing.T) {
 				// wait for the next epoch to start
-				info, err := nodeClientV1.Info(getContextWithTimeout(5 * time.Second))
-				require.NoError(t, err)
-				d.AwaitCommitment(nextEpochStartSlotIndex(info.Status.LatestCommitmentID.Slot()))
+				awaitNextEpoch()
 
 				// create snapshot
 				snapshotResponse, err := managementClient.CreateSnapshot(getContextWithTimeout(5*time.Second), 1)
