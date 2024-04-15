@@ -141,30 +141,25 @@ func (c *Commitments) initRequester() (shutdown func()) {
 // publishRootCommitment publishes the root commitment of the main engine.
 func (c *Commitments) publishRootCommitment(mainChain *Chain, mainEngine *engine.Engine) func() {
 	return mainEngine.RootCommitment.OnUpdate(func(_ *model.Commitment, rootCommitment *model.Commitment) {
-		// Use workerpool to avoid a deadlock when warpSync mode is being enabled at the same time.
-		// Two goroutines deadlock on Commitment.IsSynced
-		// https://github.com/iotaledger/iota-core/issues/898
-		c.workerPool.Submit(func() {
-			publishedCommitment, published, err := c.publishCommitment(rootCommitment)
-			if err != nil {
-				c.LogError("failed to publish new root commitment", "id", rootCommitment.ID(), "error", err)
+		publishedCommitment, published, err := c.publishCommitment(rootCommitment)
+		if err != nil {
+			c.LogError("failed to publish new root commitment", "id", rootCommitment.ID(), "error", err)
 
-				return
-			}
+			return
+		}
 
-			publishedCommitment.IsRoot.Set(true)
-			if published {
-				publishedCommitment.Chain.Set(mainChain)
-			}
+		publishedCommitment.IsRoot.Set(true)
+		if published {
+			publishedCommitment.Chain.Set(mainChain)
+		}
 
-			// Update the forking point of a chain only if the root is empty or root belongs to the main chain or the published commitment is on the main chain.
-			// to avoid updating ForkingPoint of the new mainChain into the past.
-			if c.Root.Get() == nil || c.Root.Get().Chain.Get() == mainChain || publishedCommitment.Chain.Get() == mainChain {
-				mainChain.ForkingPoint.Set(publishedCommitment)
-			}
+		// Update the forking point of a chain only if the root is empty or root belongs to the main chain or the published commitment is on the main chain.
+		// to avoid updating ForkingPoint of the new mainChain into the past.
+		if c.Root.Get() == nil || c.Root.Get().Chain.Get() == mainChain || publishedCommitment.Chain.Get() == mainChain {
+			mainChain.ForkingPoint.Set(publishedCommitment)
+		}
 
-			c.Root.Set(publishedCommitment)
-		})
+		c.Root.Set(publishedCommitment)
 	})
 }
 
