@@ -18,6 +18,6 @@ type TipSelection interface {
 	// Reset resets the component to a clean state as if it was created at the last commitment.
 	Reset()
 
-	// Module embeds the module capabilities.
+	// Interface embeds the required methods of the module.Module.
 	module.Module
 }
