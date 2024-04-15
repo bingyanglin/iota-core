@@ -23,8 +23,6 @@ import (
 
 // TipSelection is a component that is used to abstract away the tip selection strategy, used to issue new blocks.
 type TipSelection struct {
-	payloadUtils *PayloadUtils
-
 	// tipManager is the TipManager that is used to access the tip related metadata.
 	tipManager tipmanager.TipManager
 
