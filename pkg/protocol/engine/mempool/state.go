@@ -16,7 +16,7 @@ type State interface {
 	// Whether the state is read only.
 	IsReadOnly() bool
 
-	// SlotBooked returns the slot index of the state if it is booked, otherwise -1.
+	// SlotBooked returns the slot index of the state if it is booked.
 	SlotBooked() iotago.SlotIndex
 }
 
