@@ -111,7 +111,7 @@ func (t *TipSelection) Construct(tipManager tipmanager.TipManager, spendDAG spen
 func (t *TipSelection) SelectTips(amount int) (references model.ParentReferences) {
 	references = make(model.ParentReferences)
 	strongParents := ds.NewSet[iotago.BlockID]()
-	shallowLikedParents := ds.NewSet[iotago.BlockID]()
+	shallowLikesParents := ds.NewSet[iotago.BlockID]()
 	_ = t.spendDAG.ReadConsistent(func(_ spenddag.ReadLockedSpendDAG[iotago.TransactionID, mempool.StateID, ledger.BlockVoteRank]) error {
 		previousLikedInsteadConflicts := ds.NewSet[iotago.TransactionID]()
 
@@ -123,7 +123,7 @@ func (t *TipSelection) SelectTips(amount int) (references model.ParentReferences
 				references[iotago.StrongParentType] = append(references[iotago.StrongParentType], tip.ID())
 				references[iotago.ShallowLikeParentType] = append(references[iotago.ShallowLikeParentType], addedLikedInsteadReferences...)
 
-				shallowLikedParents.AddAll(ds.NewSet(addedLikedInsteadReferences...))
+				shallowLikesParents.AddAll(ds.NewSet(addedLikedInsteadReferences...))
 				strongParents.Add(tip.ID())
 
 				previousLikedInsteadConflicts = updatedLikedInsteadConflicts
@@ -142,7 +142,7 @@ func (t *TipSelection) SelectTips(amount int) (references model.ParentReferences
 		t.collectReferences(func(tip tipmanager.TipMetadata) {
 			if !t.isValidWeakTip(tip.Block()) {
 				tip.TipPool().Set(tipmanager.DroppedTipPool)
-			} else if !shallowLikedParents.Has(tip.ID()) {
+			} else if !shallowLikesParents.Has(tip.ID()) {
 				references[iotago.WeakParentType] = append(references[iotago.WeakParentType], tip.ID())
 			}
 		}, func() int {
