@@ -252,7 +252,6 @@ func provide(c *dig.Container) error {
 	}
 
 	return c.Provide(func(inDeps p2pManagerDeps) network.Manager {
-
 		peersMultiAddresses, err := getMultiAddrsFromString(ParamsPeers.BootstrapPeers)
 		if err != nil {
 			Component.LogFatalf("Failed to parse bootstrapPeers param: %s", err)
@@ -353,7 +352,7 @@ func connectConfigKnownPeers() {
 			Component.LogPanicf("invalid peer address info: %s", err)
 		}
 
-		if err := deps.NetworkManager.AddManualPeers(multiAddr); err != nil {
+		if _, err := deps.NetworkManager.AddManualPeer(multiAddr); err != nil {
 			Component.LogInfof("failed to add peer: %s, error: %s", multiAddr.String(), err)
 		}
 	}

@@ -3,6 +3,7 @@
 package tests
 
 import (
+	"context"
 	"crypto/ed25519"
 	"math/big"
 	"sync"
@@ -506,6 +507,137 @@ func (w *DockerWallet) CreateBasicOutputFromInput(input *mock.OutputData, issuer
 		AddTaggedDataPayload(&iotago.TaggedData{Tag: []byte("basic")}).
 		Build()
 	require.NoError(w.Testing, err)
+
+	return signedTx
+}
+
+func (w *DockerWallet) ClaimValidatorRewards(issuerAccountID iotago.AccountID, issuerResp *api.IssuanceBlockHeaderResponse) *iotago.SignedTransaction {
+	acc := w.Account(issuerAccountID)
+	clt := w.DefaultClient()
+
+	currentSlot := clt.LatestAPI().TimeProvider().SlotFromTime(time.Now())
+	apiForSlot := clt.APIForSlot(currentSlot)
+
+	rewardResp, err := clt.Rewards(context.Background(), acc.OutputID)
+	require.NoError(w.Testing, err)
+
+	accountOutput := builder.NewAccountOutputBuilderFromPrevious(acc.Output).
+		RemoveFeature(iotago.FeatureStaking).
+		Mana(rewardResp.Rewards).
+		MustBuild()
+
+	signedTx, err := builder.NewTransactionBuilder(apiForSlot, w.AddressSigner(acc.AddressIndex)).
+		AddInput(&builder.TxInput{
+			UnlockTarget: acc.Output.UnlockConditionSet().Address().Address,
+			InputID:      acc.OutputID,
+			Input:        acc.Output,
+		}).
+		AddRewardInput(&iotago.RewardInput{Index: 0}, rewardResp.Rewards).
+		AddBlockIssuanceCreditInput(&iotago.BlockIssuanceCreditInput{
+			AccountID: accountOutput.AccountID,
+		}).
+		AddCommitmentInput(&iotago.CommitmentInput{CommitmentID: lo.Return1(issuerResp.LatestCommitment.ID())}).
+		AddOutput(accountOutput).
+		SetCreationSlot(currentSlot).
+		AllotAllMana(currentSlot, issuerAccountID, 0).
+		AddTaggedDataPayload(&iotago.TaggedData{Tag: []byte("basic")}).
+		Build()
+	require.NoError(w.Testing, err)
+
+	w.AddOutput(iotago.OutputIDFromTransactionIDAndIndex(signedTx.Transaction.MustID(), 0), &mock.OutputData{
+		ID:           iotago.OutputIDFromTransactionIDAndIndex(signedTx.Transaction.MustID(), 0),
+		Output:       accountOutput,
+		Address:      acc.Address,
+		AddressIndex: acc.AddressIndex,
+	})
+
+	return signedTx
+}
+
+func (w *DockerWallet) ClaimDelegatorRewards(delegationOutputID iotago.OutputID, issuerAccountID iotago.AccountID, issuerResp *api.IssuanceBlockHeaderResponse) *iotago.SignedTransaction {
+	delegationOutput := w.Output(delegationOutputID)
+	acc := w.Account(issuerAccountID)
+	clt := w.DefaultClient()
+
+	currentSlot := clt.LatestAPI().TimeProvider().SlotFromTime(time.Now())
+	apiForSlot := clt.APIForSlot(currentSlot)
+
+	rewardsResp, err := clt.Rewards(context.Background(), delegationOutputID)
+	require.NoError(w.Testing, err)
+
+	// Create Basic Output where the reward will be put.
+	basicOutput := builder.NewBasicOutputBuilder(delegationOutput.Output.UnlockConditionSet().Address().Address, delegationOutput.Output.BaseTokenAmount()).
+		Mana(rewardsResp.Rewards).
+		MustBuild()
+
+	signedTx, err := builder.NewTransactionBuilder(apiForSlot, w.AddressSigner(delegationOutput.AddressIndex)).
+		AddInput(&builder.TxInput{
+			UnlockTarget: delegationOutput.Output.UnlockConditionSet().Address().Address,
+			InputID:      delegationOutputID,
+			Input:        delegationOutput.Output,
+		}).
+		AddRewardInput(&iotago.RewardInput{Index: 0}, rewardsResp.Rewards).
+		AddBlockIssuanceCreditInput(&iotago.BlockIssuanceCreditInput{
+			AccountID: acc.ID,
+		}).
+		AddCommitmentInput(&iotago.CommitmentInput{CommitmentID: lo.Return1(issuerResp.LatestCommitment.ID())}).
+		AddOutput(basicOutput).
+		SetCreationSlot(currentSlot).
+		AllotAllMana(currentSlot, issuerAccountID, 0).
+		Build()
+	require.NoError(w.Testing, err)
+
+	w.AddOutput(iotago.OutputIDFromTransactionIDAndIndex(signedTx.Transaction.MustID(), 0), &mock.OutputData{
+		ID:           iotago.OutputIDFromTransactionIDAndIndex(signedTx.Transaction.MustID(), 0),
+		Output:       basicOutput,
+		Address:      delegationOutput.Output.UnlockConditionSet().Address().Address,
+		AddressIndex: delegationOutput.AddressIndex,
+	})
+
+	return signedTx
+}
+
+// DelayedClaimingTransition transitions DelegationOutput into delayed claiming state by setting DelegationID and EndEpoch.
+func (w *DockerWallet) DelayedClaimingTransition(delegationOutputID iotago.OutputID, issuerAccountID iotago.AccountID, issuerResp *api.IssuanceBlockHeaderResponse) *iotago.SignedTransaction {
+	input := w.Output(delegationOutputID)
+	require.Equal(w.Testing, iotago.OutputDelegation, input.Output.Type())
+
+	acc := w.Account(issuerAccountID)
+	clt := w.DefaultClient()
+	currentSlot := clt.LatestAPI().TimeProvider().SlotFromTime(time.Now())
+	apiForSlot := clt.APIForSlot(currentSlot)
+
+	prevOutput, ok := input.Output.Clone().(*iotago.DelegationOutput)
+	require.True(w.Testing, ok)
+
+	delegationBuilder := builder.NewDelegationOutputBuilderFromPrevious(prevOutput).EndEpoch(getDelegationEndEpoch(apiForSlot, currentSlot, issuerResp.LatestCommitment.Slot))
+	if prevOutput.DelegationID == iotago.EmptyDelegationID() {
+		delegationBuilder.DelegationID(iotago.DelegationIDFromOutputID(delegationOutputID))
+	}
+	output := delegationBuilder.MustBuild()
+
+	signedTx, err := builder.NewTransactionBuilder(apiForSlot, w.AddressSigner(input.AddressIndex)).
+		AddInput(&builder.TxInput{
+			UnlockTarget: input.Output.UnlockConditionSet().Address().Address,
+			InputID:      delegationOutputID,
+			Input:        input.Output,
+		}).
+		AddBlockIssuanceCreditInput(&iotago.BlockIssuanceCreditInput{
+			AccountID: acc.ID,
+		}).
+		AddCommitmentInput(&iotago.CommitmentInput{CommitmentID: lo.Return1(issuerResp.LatestCommitment.ID())}).
+		AddOutput(output).
+		SetCreationSlot(currentSlot).
+		AllotAllMana(currentSlot, issuerAccountID, 0).
+		Build()
+	require.NoError(w.Testing, err)
+
+	w.AddOutput(iotago.OutputIDFromTransactionIDAndIndex(signedTx.Transaction.MustID(), 0), &mock.OutputData{
+		ID:           iotago.OutputIDFromTransactionIDAndIndex(signedTx.Transaction.MustID(), 0),
+		Output:       output,
+		Address:      input.Output.UnlockConditionSet().Address().Address,
+		AddressIndex: input.AddressIndex,
+	})
 
 	return signedTx
 }

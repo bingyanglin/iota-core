@@ -185,14 +185,9 @@ func (t *Tracker) DelegatorReward(validatorID iotago.AccountID, delegatedAmount 
 			return 0, 0, 0, ierrors.Wrapf(err, "failed to multiply profitMarginComplement and poolReward for unDecayedEpochRewards due to overflow for epoch %d and validator accountID %s", epoch, validatorID)
 		}
 
-		result, err = safemath.SafeDiv(result>>profitMarginExponent, uint64(rewardsForAccountInEpoch.PoolStake))
+		undecayedEpochRewards, err := safemath.Safe64MulDiv(result>>profitMarginExponent, uint64(delegatedAmount), uint64(rewardsForAccountInEpoch.PoolStake))
 		if err != nil {
-			return 0, 0, 0, ierrors.Wrapf(err, "failed to divide by PoolStake for unDecayedEpochRewards due to overflow for epoch %d and validator accountID %s", epoch, validatorID)
-		}
-
-		undecayedEpochRewards, err := safemath.SafeMul(result, uint64(delegatedAmount))
-		if err != nil {
-			return 0, 0, 0, ierrors.Wrapf(err, "failed to multiply by delegatedAmmount for unDecayedEpochRewards due to overflow for epoch %d and validator accountID %s", epoch, validatorID)
+			return 0, 0, 0, ierrors.Wrapf(err, "failed to calculate unDecayedEpochRewards due to overflow for epoch %d and validator accountID %s", epoch, validatorID)
 		}
 
 		decayProvider := t.apiProvider.APIForEpoch(epoch).ManaDecayProvider()
@@ -231,7 +226,7 @@ func (t *Tracker) PoolRewardsForAccount(accountID iotago.AccountID) (
 // Hence, the smallest returned decay end epoch will be the lastRewardEpoch.
 func (t *Tracker) decayEndEpoch(claimingEpoch iotago.EpochIndex, lastRewardEpoch iotago.EpochIndex) iotago.EpochIndex {
 	if claimingEpoch >= 1 {
-		claimingEpoch = claimingEpoch - 1
+		claimingEpoch--
 	}
 
 	return lo.Max(claimingEpoch, lastRewardEpoch)
@@ -274,7 +269,6 @@ func (t *Tracker) rewardsForAccount(accountID iotago.AccountID, epoch iotago.Epo
 }
 
 func (t *Tracker) poolReward(slot iotago.SlotIndex, totalValidatorsStake iotago.BaseToken, totalStake iotago.BaseToken, poolStake iotago.BaseToken, validatorStake iotago.BaseToken, performanceFactor uint64) (iotago.Mana, error) {
-
 	apiForSlot := t.apiProvider.APIForSlot(slot)
 	epoch := apiForSlot.TimeProvider().EpochFromSlot(slot)
 	params := apiForSlot.ProtocolParameters()
@@ -298,7 +292,7 @@ func (t *Tracker) poolReward(slot iotago.SlotIndex, totalValidatorsStake iotago.
 		return 0, ierrors.Wrapf(err, "failed to calculate pool scaled reward due to overflow for slot %d", slot)
 	}
 
-	result = result >> params.RewardsParameters().PoolCoefficientExponent
+	result >>= params.RewardsParameters().PoolCoefficientExponent
 
 	// Since the result above uses at most 50 bits and `Performance Factor` uses at most 8 bits,
 	// this multiplication will not overflow using uint64 variables.

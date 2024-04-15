@@ -70,16 +70,22 @@ type TipSelection struct {
 }
 
 // New is the constructor for the TipSelection.
-func New(module module.Module, opts ...options.Option[TipSelection]) *TipSelection {
+func New(subModule module.Module, opts ...options.Option[TipSelection]) *TipSelection {
 	return options.Apply(&TipSelection{
-		Module:                                module,
+		Module:                                subModule,
 		livenessThresholdQueue:                timed.NewPriorityQueue[tipmanager.TipMetadata](true),
 		acceptanceTime:                        reactive.NewVariable[time.Time](monotonicallyIncreasing),
 		optMaxStrongParents:                   8,
 		optMaxLikedInsteadReferences:          8,
 		optMaxLikedInsteadReferencesPerParent: 4,
 		optMaxWeakReferences:                  8,
-	}, opts)
+	}, opts, func(t *TipSelection) {
+		t.ShutdownEvent().OnTrigger(func() {
+			t.StoppedEvent().Trigger()
+		})
+
+		t.ConstructedEvent().Trigger()
+	})
 }
 
 // Construct fills in the dependencies of the TipSelection and triggers the constructed and initialized events of the
@@ -147,8 +153,8 @@ func (t *TipSelection) SelectTips(amount int, optPayload ...iotago.Payload) (ref
 		},
 			// We select one validation tip as a strong parent. This is a security step to ensure that the tangle maintains
 			// acceptance by stitching together validation blocks.
-			types.NewTuple[func(optAmount ...int) []tipmanager.TipMetadata, int](t.tipManager.ValidationTips, 1),
-			types.NewTuple[func(optAmount ...int) []tipmanager.TipMetadata, int](t.tipManager.StrongTips, amount-1),
+			types.NewTuple[func(optAmount ...int) []tipmanager.TipMetadata, int](t.tipManager.ValidationTips, 2),
+			types.NewTuple[func(optAmount ...int) []tipmanager.TipMetadata, int](t.tipManager.StrongTips, amount-2),
 		); len(references[iotago.StrongParentType]) == 0 {
 			references[iotago.StrongParentType] = iotago.BlockIDs{t.rootBlock()}
 		}
@@ -185,11 +191,14 @@ func (t *TipSelection) Reset() {
 
 // classifyTip determines the initial tip pool of the given tip.
 func (t *TipSelection) classifyTip(tipMetadata tipmanager.TipMetadata) {
-	if t.isValidStrongTip(tipMetadata.Block()) {
+	switch {
+	case t.isValidStrongTip(tipMetadata.Block()):
 		tipMetadata.TipPool().Set(tipmanager.StrongTipPool)
-	} else if t.isValidWeakTip(tipMetadata.Block()) {
+
+	case t.isValidWeakTip(tipMetadata.Block()):
 		tipMetadata.TipPool().Set(tipmanager.WeakTipPool)
-	} else {
+
+	default:
 		tipMetadata.TipPool().Set(tipmanager.DroppedTipPool)
 	}
 
@@ -256,7 +265,7 @@ func (t *TipSelection) collectReferences(callback func(tipmanager.TipMetadata), 
 	for _, tipSelectorAmount := range tipSelectorsAmount {
 		// Make sure we select the total number of unique tips and not just the number of tips from the given tip pool,
 		// because of how selectUniqueTips works.
-		accumulatedTipAmount += tipSelectorAmount.B
+		accumulatedTipAmount += max(0, tipSelectorAmount.B)
 
 		tipCandidates := selectUniqueTips(tipSelectorAmount.A, referencesCountCallback(), accumulatedTipAmount)
 

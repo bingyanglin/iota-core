@@ -12,7 +12,6 @@ import (
 	"github.com/iotaledger/hive.go/runtime/event"
 	"github.com/iotaledger/hive.go/runtime/options"
 	"github.com/iotaledger/hive.go/runtime/syncutils"
-	"github.com/iotaledger/hive.go/runtime/workerpool"
 	"github.com/iotaledger/iota-core/pkg/core/promise"
 	"github.com/iotaledger/iota-core/pkg/core/vote"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/mempool"
@@ -60,9 +59,6 @@ type MemPool[VoteRank spenddag.VoteRankType[VoteRank]] struct {
 
 	errorHandler func(error)
 
-	// executionWorkers is the worker pool that is used to execute the state transitions of transactions.
-	executionWorkers *workerpool.WorkerPool
-
 	// lastCommittedSlot is the last slot that was committed in the MemPool.
 	lastCommittedSlot iotago.SlotIndex
 
@@ -81,7 +77,6 @@ func New[VoteRank spenddag.VoteRankType[VoteRank]](
 	vm mempool.VM,
 	stateResolver mempool.StateResolver,
 	mutationsFunc func(iotago.SlotIndex) (kvstore.KVStore, error),
-	workers *workerpool.Group,
 	spendDAG spenddag.SpendDAG[iotago.TransactionID, mempool.StateID, VoteRank],
 	apiProvider iotago.APIProvider,
 	errorHandler func(error),
@@ -96,7 +91,6 @@ func New[VoteRank spenddag.VoteRankType[VoteRank]](
 		cachedSignedTransactions:   shrinkingmap.New[iotago.SignedTransactionID, *SignedTransactionMetadata](),
 		cachedStateRequests:        shrinkingmap.New[mempool.StateID, *promise.Promise[*StateMetadata]](),
 		stateDiffs:                 shrinkingmap.New[iotago.SlotIndex, *StateDiff](),
-		executionWorkers:           workers.CreatePool("executionWorkers", workerpool.WithWorkerCount(1)),
 		delayedTransactionEviction: shrinkingmap.New[iotago.SlotIndex, ds.Set[iotago.TransactionID]](),
 		delayedOutputStateEviction: shrinkingmap.New[iotago.SlotIndex, *shrinkingmap.ShrinkingMap[iotago.Identifier, *StateMetadata]](),
 		spendDAG:                   spendDAG,
@@ -127,7 +121,6 @@ func (m *MemPool[VoteRank]) AttachSignedTransaction(signedTransaction mempool.Si
 
 		if isNewTransaction {
 			m.transactionAttached.Trigger(storedSignedTransaction.transactionMetadata)
-
 			m.solidifyInputs(storedSignedTransaction.transactionMetadata)
 		}
 	}
@@ -381,11 +374,9 @@ func (m *MemPool[VoteRank]) storeTransaction(signedTransaction mempool.SignedTra
 }
 
 func (m *MemPool[VoteRank]) solidifyInputs(transaction *TransactionMetadata) {
-	for i, inputReference := range transaction.inputReferences {
-		stateReference, index := inputReference, i
-
-		request, created := m.cachedStateRequests.GetOrCreate(stateReference.ReferencedStateID(), func() *promise.Promise[*StateMetadata] {
-			return m.requestState(stateReference, true)
+	for index, inputReference := range transaction.inputReferences {
+		request, created := m.cachedStateRequests.GetOrCreate(inputReference.ReferencedStateID(), func() *promise.Promise[*StateMetadata] {
+			return m.requestState(inputReference, true)
 		})
 
 		request.OnSuccess(func(inputState *StateMetadata) {
@@ -410,15 +401,13 @@ func (m *MemPool[VoteRank]) solidifyInputs(transaction *TransactionMetadata) {
 }
 
 func (m *MemPool[VoteRank]) executeTransaction(executionContext context.Context, transaction *TransactionMetadata) {
-	m.executionWorkers.Submit(func() {
-		if outputStates, err := m.vm.Execute(executionContext, transaction.Transaction()); err != nil {
-			transaction.setInvalid(err)
-		} else {
-			transaction.setExecuted(outputStates)
+	if outputStates, err := m.vm.Execute(executionContext, transaction.Transaction()); err != nil {
+		transaction.setInvalid(err)
+	} else {
+		transaction.setExecuted(outputStates)
 
-			m.bookTransaction(transaction)
-		}
-	})
+		m.bookTransaction(transaction)
+	}
 }
 
 func (m *MemPool[VoteRank]) bookTransaction(transaction *TransactionMetadata) {

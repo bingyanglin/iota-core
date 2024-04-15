@@ -20,6 +20,8 @@ import (
 	"github.com/iotaledger/hive.go/lo"
 	"github.com/iotaledger/hive.go/runtime/options"
 	"github.com/iotaledger/hive.go/runtime/syncutils"
+	"github.com/iotaledger/hive.go/serializer/v2/serix"
+	"github.com/iotaledger/iota-core/pkg/model"
 	"github.com/iotaledger/iota-core/pkg/protocol"
 	"github.com/iotaledger/iota-core/pkg/testsuite/mock"
 	"github.com/iotaledger/iota-core/pkg/testsuite/snapshotcreator"
@@ -68,6 +70,8 @@ func (n *Node) AccountAddress(t *testing.T) *iotago.AccountAddress {
 
 type DockerTestFramework struct {
 	Testing *testing.T
+	// we use the fake testing so that actual tests don't fail if an assertion fails
+	fakeTesting *testing.T
 
 	nodes     map[string]*Node
 	nodesLock syncutils.RWMutex
@@ -88,6 +92,7 @@ type DockerTestFramework struct {
 func NewDockerTestFramework(t *testing.T, opts ...options.Option[DockerTestFramework]) *DockerTestFramework {
 	return options.Apply(&DockerTestFramework{
 		Testing:         t,
+		fakeTesting:     &testing.T{},
 		nodes:           make(map[string]*Node),
 		wallet:          NewDockerWallet(t),
 		optsWaitForSync: 5 * time.Minute,
@@ -223,13 +228,19 @@ func (d *DockerTestFramework) WaitUntilFaucetHealthy() {
 
 	d.Eventually(func() error {
 		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, d.optsFaucetURL+"/health", nil)
-		require.NoError(d.Testing, err)
+		if err != nil {
+			return err
+		}
 
 		res, err := http.DefaultClient.Do(req)
-		require.NoError(d.Testing, err)
+		if err != nil {
+			return err
+		}
 		defer res.Body.Close()
 
-		require.Equal(d.Testing, http.StatusOK, res.StatusCode)
+		if res.StatusCode != http.StatusOK {
+			return ierrors.Errorf("faucet is not healthy, status code: %d", res.StatusCode)
+		}
 
 		return nil
 	}, true)
@@ -327,6 +338,11 @@ func (d *DockerTestFramework) NodeStatus(name string) *api.InfoResNodeStatus {
 	return info.Status
 }
 
+// Client returns the node client by the given node name.
+func (d *DockerTestFramework) Client(name string) *nodeclient.Client {
+	return d.wallet.Clients[name]
+}
+
 func (d *DockerTestFramework) AccountsFromNodes(nodes ...*Node) []string {
 	var accounts []string
 	for _, node := range nodes {
@@ -385,6 +401,42 @@ func (d *DockerTestFramework) CreateTaggedDataBlock(issuerID iotago.AccountID, t
 	return d.CreateBlock(&iotago.TaggedData{
 		Tag: tag,
 	}, issuerID, congestionResp, issuerResp)
+}
+
+func (d *DockerTestFramework) SubmitValidationBlock(issuerID iotago.AccountID) *iotago.Block {
+	issuer := d.wallet.Account(issuerID)
+	ctx := context.TODO()
+	issuingTime := time.Now()
+	clt := d.wallet.DefaultClient()
+	currentSlot := d.wallet.DefaultClient().LatestAPI().TimeProvider().SlotFromTime(issuingTime)
+	apiForSlot := d.wallet.DefaultClient().APIForSlot(currentSlot)
+
+	issuerResp, _ := d.PrepareBlockIssuance(ctx, clt, issuer.Address)
+
+	protocolParametersHash, err := apiForSlot.ProtocolParameters().Hash()
+	require.NoError(d.Testing, err)
+
+	blockBuilder := builder.NewValidationBlockBuilder(apiForSlot).
+		IssuingTime(issuingTime).
+		SlotCommitmentID(issuerResp.LatestCommitment.MustID()).
+		LatestFinalizedSlot(issuerResp.LatestFinalizedSlot).
+		StrongParents(issuerResp.StrongParents).
+		WeakParents(issuerResp.WeakParents).
+		ShallowLikeParents(issuerResp.ShallowLikeParents).
+		HighestSupportedVersion(clt.LatestAPI().Version()).
+		ProtocolParametersHash(protocolParametersHash).
+		Sign(issuerID, lo.Return1(d.wallet.KeyPair(issuer.AddressIndex)))
+
+	block, err := blockBuilder.Build()
+	require.NoError(d.Testing, err)
+
+	// Make sure we only create syntactically valid blocks.
+	_, err = model.BlockFromBlock(block, serix.WithValidation())
+	require.NoError(d.Testing, err)
+
+	d.SubmitBlock(ctx, block)
+
+	return block
 }
 
 func (d *DockerTestFramework) CreateBasicOutputBlock(issuerAccountID iotago.AccountID) (*iotago.Block, *iotago.SignedTransaction, *mock.OutputData) {
@@ -535,6 +587,50 @@ func (d *DockerTestFramework) CreateAccount(opts ...options.Option[builder.Accou
 	fmt.Printf("Account created, Bech addr: %s, in txID: %s, slot: %d\n", fullAccount.Address.Bech32(clt.CommittedAPI().ProtocolParameters().Bech32HRP()), signedTx.Transaction.MustID().ToHex(), blkID.Slot())
 
 	return fullAccount
+}
+
+func (d *DockerTestFramework) ClaimRewardsForValidator(ctx context.Context, validator *mock.AccountData) *mock.AccountData {
+	clt := d.wallet.DefaultClient()
+	issuerResp, congestionResp := d.PrepareBlockIssuance(ctx, clt, validator.Address)
+	signedTx := d.wallet.ClaimValidatorRewards(validator.ID, issuerResp)
+
+	d.SubmitPayload(ctx, signedTx, validator.ID, congestionResp, issuerResp)
+	d.AwaitTransactionPayloadAccepted(ctx, signedTx.Transaction.MustID())
+
+	// update account data of validator
+	accountInfo := &mock.AccountData{
+		ID:           validator.ID,
+		Address:      validator.Address,
+		AddressIndex: validator.AddressIndex,
+		OutputID:     iotago.OutputIDFromTransactionIDAndIndex(signedTx.Transaction.MustID(), 0),
+		Output:       signedTx.Transaction.Outputs[0].(*iotago.AccountOutput),
+	}
+	d.wallet.AddAccount(validator.ID, accountInfo)
+
+	return accountInfo
+}
+
+func (d *DockerTestFramework) ClaimRewardsForDelegator(ctx context.Context, account *mock.AccountData, delegationOutputID iotago.OutputID) iotago.OutputID {
+	clt := d.wallet.DefaultClient()
+	issuerResp, congestionResp := d.PrepareBlockIssuance(ctx, clt, account.Address)
+	signedTx := d.wallet.ClaimDelegatorRewards(delegationOutputID, account.ID, issuerResp)
+
+	d.SubmitPayload(ctx, signedTx, account.ID, congestionResp, issuerResp)
+	d.AwaitTransactionPayloadAccepted(ctx, signedTx.Transaction.MustID())
+
+	return iotago.OutputIDFromTransactionIDAndIndex(signedTx.Transaction.MustID(), 0)
+}
+
+func (d *DockerTestFramework) DelayedClaimingTransition(ctx context.Context, account *mock.AccountData, delegationOutputID iotago.OutputID) (iotago.OutputID, iotago.EpochIndex) {
+	clt := d.wallet.DefaultClient()
+	issuerResp, congestionResp := d.PrepareBlockIssuance(ctx, clt, account.Address)
+	signedTx := d.wallet.DelayedClaimingTransition(delegationOutputID, account.ID, issuerResp)
+
+	d.SubmitPayload(ctx, signedTx, account.ID, congestionResp, issuerResp)
+	d.AwaitTransactionPayloadAccepted(ctx, signedTx.Transaction.MustID())
+
+	return iotago.OutputIDFromTransactionIDAndIndex(signedTx.Transaction.MustID(), 0),
+		signedTx.Transaction.Outputs[0].(*iotago.DelegationOutput).EndEpoch
 }
 
 // DelegateToValidator requests faucet funds and delegate the UTXO output to the validator.

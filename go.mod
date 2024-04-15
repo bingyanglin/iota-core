@@ -12,27 +12,27 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.1
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
-	github.com/iotaledger/hive.go/ads v0.0.0-20240315104458-b689cbcfddbd
-	github.com/iotaledger/hive.go/app v0.0.0-20240315104458-b689cbcfddbd
-	github.com/iotaledger/hive.go/constraints v0.0.0-20240315104458-b689cbcfddbd
-	github.com/iotaledger/hive.go/core v1.0.0-rc.3.0.20240315104458-b689cbcfddbd
-	github.com/iotaledger/hive.go/crypto v0.0.0-20240315104458-b689cbcfddbd
-	github.com/iotaledger/hive.go/db v0.0.0-20240315104458-b689cbcfddbd
-	github.com/iotaledger/hive.go/ds v0.0.0-20240315104458-b689cbcfddbd
-	github.com/iotaledger/hive.go/ierrors v0.0.0-20240315104458-b689cbcfddbd
-	github.com/iotaledger/hive.go/kvstore v0.0.0-20240315104458-b689cbcfddbd
-	github.com/iotaledger/hive.go/lo v0.0.0-20240315104458-b689cbcfddbd
-	github.com/iotaledger/hive.go/log v0.0.0-20240315104458-b689cbcfddbd
-	github.com/iotaledger/hive.go/runtime v0.0.0-20240315104458-b689cbcfddbd
-	github.com/iotaledger/hive.go/serializer/v2 v2.0.0-rc.1.0.20240315104458-b689cbcfddbd
-	github.com/iotaledger/hive.go/sql v0.0.0-20240315104458-b689cbcfddbd
-	github.com/iotaledger/hive.go/stringify v0.0.0-20240315104458-b689cbcfddbd
+	github.com/iotaledger/hive.go/ads v0.0.0-20240326102522-2e37ab3611a3
+	github.com/iotaledger/hive.go/app v0.0.0-20240326102522-2e37ab3611a3
+	github.com/iotaledger/hive.go/constraints v0.0.0-20240326102522-2e37ab3611a3
+	github.com/iotaledger/hive.go/core v1.0.0-rc.3.0.20240326102522-2e37ab3611a3
+	github.com/iotaledger/hive.go/crypto v0.0.0-20240326102522-2e37ab3611a3
+	github.com/iotaledger/hive.go/db v0.0.0-20240326102522-2e37ab3611a3
+	github.com/iotaledger/hive.go/ds v0.0.0-20240326102522-2e37ab3611a3
+	github.com/iotaledger/hive.go/ierrors v0.0.0-20240326102522-2e37ab3611a3
+	github.com/iotaledger/hive.go/kvstore v0.0.0-20240326102522-2e37ab3611a3
+	github.com/iotaledger/hive.go/lo v0.0.0-20240326102522-2e37ab3611a3
+	github.com/iotaledger/hive.go/log v0.0.0-20240326102522-2e37ab3611a3
+	github.com/iotaledger/hive.go/runtime v0.0.0-20240326102522-2e37ab3611a3
+	github.com/iotaledger/hive.go/serializer/v2 v2.0.0-rc.1.0.20240326102522-2e37ab3611a3
+	github.com/iotaledger/hive.go/sql v0.0.0-20240326102522-2e37ab3611a3
+	github.com/iotaledger/hive.go/stringify v0.0.0-20240326102522-2e37ab3611a3
 	github.com/iotaledger/inx-app v1.0.0-rc.3.0.20240307101848-db58eb9353ec
 	github.com/iotaledger/inx/go v1.0.0-rc.2.0.20240307100839-48553e1d2022
-	github.com/iotaledger/iota.go/v4 v4.0.0-20240313065735-74f8cf10c361
+	github.com/iotaledger/iota.go/v4 v4.0.0-20240325092426-32979eef3205
 	github.com/labstack/echo/v4 v4.11.4
 	github.com/labstack/gommon v0.4.2
-	github.com/libp2p/go-libp2p v0.33.0
+	github.com/libp2p/go-libp2p v0.33.1
 	github.com/libp2p/go-libp2p-kad-dht v0.25.2
 	github.com/mr-tron/base58 v1.2.0
 	github.com/multiformats/go-multiaddr v0.12.2
@@ -41,14 +41,14 @@ require (
 	github.com/prometheus/client_golang v1.19.0
 	github.com/sajari/regression v1.0.1
 	github.com/spf13/pflag v1.0.5
-	github.com/stretchr/testify v1.8.4
+	github.com/stretchr/testify v1.9.0
 	github.com/zyedidia/generic v1.2.1
 	go.uber.org/atomic v1.11.0
 	go.uber.org/dig v1.17.1
 	golang.org/x/crypto v0.21.0
 	google.golang.org/grpc v1.62.1
 	google.golang.org/protobuf v1.33.0
-	gorm.io/gorm v1.25.7
+	gorm.io/gorm v1.25.8
 )
 
 require (
@@ -84,7 +84,7 @@ require (
 	github.com/google/go-github v17.0.0+incompatible // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/gopacket v1.1.19 // indirect
-	github.com/google/pprof v0.0.0-20240227163752-401108e1b7e7 // indirect
+	github.com/google/pprof v0.0.0-20240319011627-a57c5dfe54fd // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-version v1.6.0 // indirect
@@ -93,7 +93,7 @@ require (
 	github.com/huin/goupnp v1.3.0 // indirect
 	github.com/iancoleman/orderedmap v0.3.0 // indirect
 	github.com/iotaledger/grocksdb v1.7.5-0.20230220105546-5162e18885c7 // indirect
-	github.com/iotaledger/iota-crypto-demo v0.0.0-20240216103559-27ca8dffd1e7 // indirect
+	github.com/iotaledger/iota-crypto-demo v0.0.0-20240320124000-d02f37a4fdff // indirect
 	github.com/ipfs/boxo v0.18.0 // indirect
 	github.com/ipfs/go-cid v0.4.1 // indirect
 	github.com/ipfs/go-datastore v0.6.0 // indirect
@@ -102,7 +102,7 @@ require (
 	github.com/ipld/go-ipld-prime v0.21.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20231201235250-de7065d80cb9 // indirect
-	github.com/jackc/pgx/v5 v5.5.4 // indirect
+	github.com/jackc/pgx/v5 v5.5.5 // indirect
 	github.com/jackc/puddle/v2 v2.2.1 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.2 // indirect
 	github.com/jbenet/go-temp-err-catcher v0.1.0 // indirect
@@ -150,7 +150,7 @@ require (
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/pasztorpisti/qs v0.0.0-20171216220353-8d6c33ee906c // indirect
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58 // indirect
-	github.com/pelletier/go-toml/v2 v2.1.1 // indirect
+	github.com/pelletier/go-toml/v2 v2.2.0 // indirect
 	github.com/petermattis/goid v0.0.0-20231207134359-e60b3f734c67 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
@@ -160,7 +160,7 @@ require (
 	github.com/prometheus/common v0.50.0 // indirect
 	github.com/prometheus/procfs v0.12.0 // indirect
 	github.com/quic-go/qpack v0.4.0 // indirect
-	github.com/quic-go/quic-go v0.41.0 // indirect
+	github.com/quic-go/quic-go v0.42.0 // indirect
 	github.com/quic-go/webtransport-go v0.6.0 // indirect
 	github.com/raulk/go-watchdog v1.3.0 // indirect
 	github.com/sasha-s/go-deadlock v0.3.1 // indirect
@@ -191,7 +191,7 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240304212257-790db918fca8 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	gorm.io/driver/postgres v1.5.6 // indirect
+	gorm.io/driver/postgres v1.5.7 // indirect
 	gorm.io/driver/sqlite v1.5.5 // indirect
 	lukechampine.com/blake3 v1.2.1 // indirect
 )

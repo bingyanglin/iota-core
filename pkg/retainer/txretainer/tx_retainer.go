@@ -90,6 +90,7 @@ type (
 
 // TransactionRetainer keeps and resolves all the transaction-related metadata needed in the API and INX.
 type TransactionRetainer struct {
+	events                  *retainer.TransactionRetainerEvents
 	workerPool              *workerpool.WorkerPool
 	txRetainerDatabase      *transactionRetainerDatabase
 	latestCommittedSlotFunc SlotFunc
@@ -110,22 +111,28 @@ func WithDebugStoreErrorMessages(store bool) options.Option[TransactionRetainer]
 	}
 }
 
-func New(parentModule module.Module, workersGroup *workerpool.Group, dbExecFunc storage.SQLDatabaseExecFunc, latestCommittedSlotFunc SlotFunc, finalizedSlotFunc SlotFunc, errorHandler func(error), opts ...options.Option[TransactionRetainer]) *TransactionRetainer {
-	return module.InitSimpleLifecycle(options.Apply(&TransactionRetainer{
-		Module:                  parentModule.NewSubModule("TransactionRetainer"),
+func New(subModule module.Module, workersGroup *workerpool.Group, dbExecFunc storage.SQLDatabaseExecFunc, latestCommittedSlotFunc SlotFunc, finalizedSlotFunc SlotFunc, errorHandler func(error), opts ...options.Option[TransactionRetainer]) *TransactionRetainer {
+	return options.Apply(&TransactionRetainer{
+		Module:                  subModule,
+		events:                  retainer.NewTransactionRetainerEvents(),
 		workerPool:              workersGroup.CreatePool("TxRetainer", workerpool.WithWorkerCount(1)),
 		txRetainerCache:         NewTransactionRetainerCache(),
 		txRetainerDatabase:      NewTransactionRetainerDB(dbExecFunc),
 		latestCommittedSlotFunc: latestCommittedSlotFunc,
 		finalizedSlotFunc:       finalizedSlotFunc,
 		errorHandler:            errorHandler,
-	}, opts), (*TransactionRetainer).shutdown)
+	}, opts, func(r *TransactionRetainer) {
+		r.ShutdownEvent().OnTrigger(r.shutdown)
+
+		r.ConstructedEvent().Trigger()
+	})
 }
 
 // NewProvider creates a new TransactionRetainer provider.
 func NewProvider(opts ...options.Option[TransactionRetainer]) module.Provider[*engine.Engine, retainer.TransactionRetainer] {
 	return module.Provide(func(e *engine.Engine) retainer.TransactionRetainer {
-		r := New(e, e.Workers.CreateGroup("TransactionRetainer"),
+		r := New(e.NewSubModule("TransactionRetainer"),
+			e.Workers.CreateGroup("TransactionRetainer"),
 			e.Storage.TransactionRetainerDatabaseExecFunc(),
 			func() iotago.SlotIndex {
 				return e.SyncManager.LatestCommitment().Slot()
@@ -139,7 +146,7 @@ func NewProvider(opts ...options.Option[TransactionRetainer]) module.Provider[*e
 
 		asyncOpt := event.WithWorkerPool(r.workerPool)
 
-		e.InitializedEvent().OnTrigger(func() {
+		e.ConstructedEvent().OnTrigger(func() {
 			// attaching the transaction failed for some reason => store the error
 			// HINT: we treat the transaction as unsigned here, because we don't know if it was signed or not.
 			// This should not be a problem, because the error reason will still be stored and visible to the user,
@@ -157,6 +164,8 @@ func NewProvider(opts ...options.Option[TransactionRetainer]) module.Provider[*e
 				// if there is already an entry with a valid signature, it should not be overwritten,
 				// therefore we use false for the "validSignature" argument.
 				r.UpdateTransactionMetadata(transactionMetadata.ID(), false, transactionMetadata.EarliestIncludedAttachment().Slot(), api.TransactionStatePending, nil)
+
+				r.events.TransactionRetained.Trigger(transactionMetadata.ID())
 
 				// the transaction was accepted
 				transactionMetadata.OnAccepted(func() {
@@ -214,7 +223,6 @@ func NewProvider(opts ...options.Option[TransactionRetainer]) module.Provider[*e
 
 			// this event is fired when an attachment of a transaction is detected
 			e.Ledger.MemPool().OnSignedTransactionAttached(func(signedTransactionMetadata mempool.SignedTransactionMetadata) {
-
 				// attachment with invalid signature detected
 				signedTransactionMetadata.OnSignaturesInvalid(func(err error) {
 					transactionMetadata := signedTransactionMetadata.TransactionMetadata()
@@ -241,6 +249,10 @@ func NewProvider(opts ...options.Option[TransactionRetainer]) module.Provider[*e
 					r.errorHandler(err)
 				}
 			}, asyncOpt)
+
+			e.Events.TransactionRetainer.TransactionRetained.LinkTo(r.events.TransactionRetained)
+
+			r.InitializedEvent().Trigger()
 		})
 
 		return r
@@ -279,12 +291,12 @@ func (r *TransactionRetainer) Prune(targetSlot iotago.SlotIndex) error {
 
 // CommitSlot applies all uncommitted changes of a slot from the cache to the database and deletes them from the cache.
 func (r *TransactionRetainer) CommitSlot(slot iotago.SlotIndex) error {
-	uncommitedChanges := r.txRetainerCache.DeleteAndReturnTxMetadataChangesBySlot(slot)
-	if len(uncommitedChanges) == 0 {
+	uncommittedChanges := r.txRetainerCache.DeleteAndReturnTxMetadataChangesBySlot(slot)
+	if len(uncommittedChanges) == 0 {
 		return nil
 	}
 
-	if err := r.txRetainerDatabase.ApplyTxMetadataChanges(uncommitedChanges); err != nil {
+	if err := r.txRetainerDatabase.ApplyTxMetadataChanges(uncommittedChanges); err != nil {
 		return ierrors.Wrapf(err, "failed to commit slot: %d", slot)
 	}
 

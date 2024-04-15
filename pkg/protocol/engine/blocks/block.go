@@ -7,7 +7,6 @@ import (
 
 	"github.com/iotaledger/hive.go/ds"
 	"github.com/iotaledger/hive.go/ds/reactive"
-	"github.com/iotaledger/hive.go/ds/types"
 	"github.com/iotaledger/hive.go/lo"
 	"github.com/iotaledger/hive.go/runtime/syncutils"
 	"github.com/iotaledger/hive.go/stringify"
@@ -30,6 +29,7 @@ type Block struct {
 	strongChildren      []*Block
 	weakChildren        []*Block
 	shallowLikeChildren []*Block
+	allChildren         ds.Set[*Block]
 
 	// Booker block
 	booked    reactive.Variable[bool]
@@ -40,7 +40,7 @@ type Block struct {
 	payloadSpenderIDs ds.Set[iotago.TransactionID]
 
 	// BlockGadget block
-	preAccepted           bool
+	preAccepted           reactive.Variable[bool]
 	acceptanceRatifiers   ds.Set[account.SeatIndex]
 	accepted              reactive.Variable[bool]
 	preConfirmed          bool
@@ -80,8 +80,7 @@ func (r *rootBlock) String() string {
 	return builder.String()
 }
 
-// NewBlock creates a new Block with the given options.
-func NewBlock(modelBlock *model.Block) *Block {
+func newEmptyBlock() *Block {
 	return &Block{
 		AllParentsBooked:          reactive.NewEvent(),
 		AllDependenciesReady:      reactive.NewEvent(),
@@ -92,76 +91,55 @@ func NewBlock(modelBlock *model.Block) *Block {
 		payloadSpenderIDs:     ds.NewSet[iotago.TransactionID](),
 		acceptanceRatifiers:   ds.NewSet[account.SeatIndex](),
 		confirmationRatifiers: ds.NewSet[account.SeatIndex](),
-		modelBlock:            modelBlock,
 		solid:                 reactive.NewVariable[bool](),
 		invalid:               reactive.NewVariable[bool](),
 		booked:                reactive.NewVariable[bool](),
+		preAccepted:           reactive.NewVariable[bool](),
 		accepted:              reactive.NewVariable[bool](),
 		weightPropagated:      reactive.NewVariable[bool](),
 		notarized:             reactive.NewEvent(),
-		workScore:             modelBlock.WorkScore(),
+		allChildren:           ds.NewSet[*Block](),
 	}
 }
 
+// NewBlock creates a new Block with the given options.
+func NewBlock(modelBlock *model.Block) *Block {
+	b := newEmptyBlock()
+	b.modelBlock = modelBlock
+	b.workScore = modelBlock.WorkScore()
+
+	return b
+}
+
 func NewRootBlock(blockID iotago.BlockID, commitmentID iotago.CommitmentID, issuingTime time.Time) *Block {
-	b := &Block{
-		AllParentsBooked:          reactive.NewEvent(),
-		AllDependenciesReady:      reactive.NewEvent(),
-		SignedTransactionMetadata: reactive.NewVariable[mempool.SignedTransactionMetadata](),
-
-		witnesses:             ds.NewSet[account.SeatIndex](),
-		spenderIDs:            ds.NewSet[iotago.TransactionID](),
-		payloadSpenderIDs:     ds.NewSet[iotago.TransactionID](),
-		acceptanceRatifiers:   ds.NewSet[account.SeatIndex](),
-		confirmationRatifiers: ds.NewSet[account.SeatIndex](),
-
-		rootBlock: &rootBlock{
-			blockID:      blockID,
-			commitmentID: commitmentID,
-			issuingTime:  issuingTime,
-		},
-		solid:            reactive.NewVariable[bool](),
-		invalid:          reactive.NewVariable[bool](),
-		booked:           reactive.NewVariable[bool](),
-		preAccepted:      true,
-		accepted:         reactive.NewVariable[bool](),
-		weightPropagated: reactive.NewVariable[bool](),
-		notarized:        reactive.NewEvent(),
-		scheduled:        true,
+	b := newEmptyBlock()
+	b.rootBlock = &rootBlock{
+		blockID:      blockID,
+		commitmentID: commitmentID,
+		issuingTime:  issuingTime,
 	}
+
+	b.scheduled = true
 
 	// This should be true since we commit and evict on acceptance.
 	b.AllParentsBooked.Set(true)
 	b.AllDependenciesReady.Set(true)
-	b.solid.Set(true)
-	b.booked.Set(true)
-	b.weightPropagated.Set(true)
-	b.notarized.Set(true)
-	b.accepted.Set(true)
+	b.solid.Init(true)
+	b.booked.Init(true)
+	b.weightPropagated.Init(true)
+	b.preAccepted.Init(true)
+	b.accepted.Init(true)
+	b.notarized.Trigger()
 
 	return b
 }
 
 func NewMissingBlock(blockID iotago.BlockID) *Block {
-	return &Block{
-		AllParentsBooked:          reactive.NewEvent(),
-		AllDependenciesReady:      reactive.NewEvent(),
-		SignedTransactionMetadata: reactive.NewVariable[mempool.SignedTransactionMetadata](),
+	b := newEmptyBlock()
+	b.missing = true
+	b.missingBlockID = blockID
 
-		missing:               true,
-		missingBlockID:        blockID,
-		witnesses:             ds.NewSet[account.SeatIndex](),
-		spenderIDs:            ds.NewSet[iotago.TransactionID](),
-		payloadSpenderIDs:     ds.NewSet[iotago.TransactionID](),
-		acceptanceRatifiers:   ds.NewSet[account.SeatIndex](),
-		confirmationRatifiers: ds.NewSet[account.SeatIndex](),
-		solid:                 reactive.NewVariable[bool](),
-		invalid:               reactive.NewVariable[bool](),
-		booked:                reactive.NewVariable[bool](),
-		accepted:              reactive.NewVariable[bool](),
-		weightPropagated:      reactive.NewVariable[bool](),
-		notarized:             reactive.NewEvent(),
-	}
+	return b
 }
 
 func (b *Block) ProtocolBlock() *iotago.Block {
@@ -314,25 +292,11 @@ func (b *Block) SetInvalid() (wasUpdated bool) {
 }
 
 // Children returns the children of the Block.
-func (b *Block) Children() (children []*Block) {
+func (b *Block) Children() ds.ReadableSet[*Block] {
 	b.mutex.RLock()
 	defer b.mutex.RUnlock()
 
-	seenBlockIDs := make(map[iotago.BlockID]types.Empty)
-	for _, parentsByType := range [][]*Block{
-		b.strongChildren,
-		b.weakChildren,
-		b.shallowLikeChildren,
-	} {
-		for _, childMetadata := range parentsByType {
-			if _, exists := seenBlockIDs[childMetadata.ID()]; !exists {
-				children = append(children, childMetadata)
-				seenBlockIDs[childMetadata.ID()] = types.Void
-			}
-		}
-	}
-
-	return children
+	return b.allChildren
 }
 
 func (b *Block) StrongChildren() []*Block {
@@ -368,6 +332,8 @@ func (b *Block) AppendChild(child *Block, childType iotago.ParentsType) {
 	case iotago.ShallowLikeParentType:
 		b.shallowLikeChildren = append(b.shallowLikeChildren, child)
 	}
+
+	b.allChildren.Add(child)
 }
 
 // Update publishes the given Block data to the underlying Block and marks it as no longer missing.
@@ -413,11 +379,11 @@ func (b *Block) WitnessCount() int {
 	return b.witnesses.Size()
 }
 
-func (b *Block) Witnesses() []account.SeatIndex {
+func (b *Block) Witnesses() ds.ReadableSet[account.SeatIndex] {
 	b.mutex.RLock()
 	defer b.mutex.RUnlock()
 
-	return b.witnesses.ToSlice()
+	return b.witnesses
 }
 
 func (b *Block) SpenderIDs() ds.Set[iotago.TransactionID] {
@@ -448,24 +414,19 @@ func (b *Block) SetPayloadSpenderIDs(payloadSpenderIDs ds.Set[iotago.Transaction
 	b.payloadSpenderIDs = payloadSpenderIDs
 }
 
+// PreAccepted returns a reactive variable that is true if the Block was pre accepted.
+func (b *Block) PreAccepted() reactive.Variable[bool] {
+	return b.preAccepted
+}
+
 // IsPreAccepted returns true if the Block was preAccepted.
 func (b *Block) IsPreAccepted() bool {
-	b.mutex.RLock()
-	defer b.mutex.RUnlock()
-
-	return b.preAccepted
+	return b.preAccepted.Get()
 }
 
 // SetPreAccepted sets the Block as preAccepted.
 func (b *Block) SetPreAccepted() (wasUpdated bool) {
-	b.mutex.Lock()
-	defer b.mutex.Unlock()
-
-	if wasUpdated = !b.preAccepted; wasUpdated {
-		b.preAccepted = true
-	}
-
-	return wasUpdated
+	return !b.preAccepted.Set(true)
 }
 
 func (b *Block) AddAcceptanceRatifier(seat account.SeatIndex) (added bool) {
@@ -475,11 +436,11 @@ func (b *Block) AddAcceptanceRatifier(seat account.SeatIndex) (added bool) {
 	return b.acceptanceRatifiers.Add(seat)
 }
 
-func (b *Block) AcceptanceRatifiers() []account.SeatIndex {
+func (b *Block) AcceptanceRatifiers() ds.ReadableSet[account.SeatIndex] {
 	b.mutex.RLock()
 	defer b.mutex.RUnlock()
 
-	return b.acceptanceRatifiers.ToSlice()
+	return b.acceptanceRatifiers
 }
 
 // Accepted returns a reactive variable that is true if the Block was accepted.
@@ -587,11 +548,11 @@ func (b *Block) AddConfirmationRatifier(seat account.SeatIndex) (added bool) {
 	return b.confirmationRatifiers.Add(seat)
 }
 
-func (b *Block) ConfirmationRatifiers() []account.SeatIndex {
+func (b *Block) ConfirmationRatifiers() ds.ReadableSet[account.SeatIndex] {
 	b.mutex.RLock()
 	defer b.mutex.RUnlock()
 
-	return b.confirmationRatifiers.ToSlice()
+	return b.confirmationRatifiers
 }
 
 func (b *Block) IsConfirmed() bool {
@@ -664,7 +625,7 @@ func (b *Block) String() string {
 	builder.AddField(stringify.NewStructField("Invalid", b.invalid.Get()))
 	builder.AddField(stringify.NewStructField("Booked", b.booked.Get()))
 	builder.AddField(stringify.NewStructField("Witnesses", b.witnesses))
-	builder.AddField(stringify.NewStructField("PreAccepted", b.preAccepted))
+	builder.AddField(stringify.NewStructField("PreAccepted", b.preAccepted.Get()))
 	builder.AddField(stringify.NewStructField("AcceptanceRatifiers", b.acceptanceRatifiers.String()))
 	builder.AddField(stringify.NewStructField("Accepted", b.accepted.Get()))
 	builder.AddField(stringify.NewStructField("PreConfirmed", b.preConfirmed))
@@ -687,6 +648,10 @@ func (b *Block) String() string {
 
 	for index, child := range b.shallowLikeChildren {
 		builder.AddField(stringify.NewStructField(fmt.Sprintf("shallowLikeChildren%d", index), child.ID().String()))
+	}
+
+	for index, child := range b.allChildren.ToSlice() {
+		builder.AddField(stringify.NewStructField(fmt.Sprintf("allChildren%d", index), child.ID().String()))
 	}
 
 	if b.rootBlock != nil {

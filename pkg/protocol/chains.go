@@ -176,16 +176,20 @@ func attachEngineLogs(instance *engine.Engine) func() {
 			instance.LogTrace("BlockProcessed", "block", blockID)
 		}).Unhook,
 
-		events.Retainer.BlockRetained.Hook(func(block *blocks.Block) {
+		events.BlockRetainer.BlockRetained.Hook(func(block *blocks.Block) {
 			instance.LogTrace("Retainer.BlockRetained", "block", block.ID())
 		}).Unhook,
 
+		events.TransactionRetainer.TransactionRetained.Hook(func(txID iotago.TransactionID) {
+			instance.LogTrace("Retainer.TransactionRetained", "transaction", txID)
+		}).Unhook,
+
 		events.Notarization.SlotCommitted.Hook(func(details *notarization.SlotCommittedDetails) {
-			instance.LogTrace("NotarizationManager.SlotCommitted", "commitment", details.Commitment.ID(), "acceptedBlocks count", details.AcceptedBlocks.Size(), "accepted transactions", len(details.Mutations))
+			instance.LogDebug("NotarizationManager.SlotCommitted", "commitment", details.Commitment.ID(), "acceptedBlocks count", details.AcceptedBlocks.Size(), "accepted transactions", len(details.Mutations))
 		}).Unhook,
 
 		events.Notarization.LatestCommitmentUpdated.Hook(func(commitment *model.Commitment) {
-			instance.LogTrace("NotarizationManager.LatestCommitmentUpdated", "commitment", commitment.ID())
+			instance.LogDebug("NotarizationManager.LatestCommitmentUpdated", "commitment", commitment.ID())
 		}).Unhook,
 
 		events.BlockGadget.BlockPreAccepted.Hook(func(block *blocks.Block) {
@@ -205,19 +209,19 @@ func attachEngineLogs(instance *engine.Engine) func() {
 		}).Unhook,
 
 		events.SlotGadget.SlotFinalized.Hook(func(slot iotago.SlotIndex) {
-			instance.LogTrace("SlotGadget.SlotFinalized", "slot", slot)
+			instance.LogDebug("SlotGadget.SlotFinalized", "slot", slot)
 		}).Unhook,
 
 		events.SeatManager.OnlineCommitteeSeatAdded.Hook(func(seat account.SeatIndex, accountID iotago.AccountID) {
-			instance.LogTrace("SybilProtection.OnlineCommitteeSeatAdded", "seat", seat, "accountID", accountID)
+			instance.LogInfo("SybilProtection.OnlineCommitteeSeatAdded", "seat", seat, "accountID", accountID)
 		}).Unhook,
 
 		events.SeatManager.OnlineCommitteeSeatRemoved.Hook(func(seat account.SeatIndex) {
-			instance.LogTrace("SybilProtection.OnlineCommitteeSeatRemoved", "seat", seat)
+			instance.LogInfo("SybilProtection.OnlineCommitteeSeatRemoved", "seat", seat)
 		}).Unhook,
 
 		events.SybilProtection.CommitteeSelected.Hook(func(committee *account.SeatedAccounts, epoch iotago.EpochIndex) {
-			instance.LogTrace("SybilProtection.CommitteeSelected", "epoch", epoch, "committee", committee.IDs())
+			instance.LogInfo("SybilProtection.CommitteeSelected", "epoch", epoch, "committee", committee.IDs())
 		}).Unhook,
 
 		events.SpendDAG.SpenderCreated.Hook(func(conflictID iotago.TransactionID) {
@@ -306,7 +310,7 @@ func (c *Chains) initLogger(logger log.Logger) (shutdown func()) {
 		c.HeaviestAttestedCandidate.LogUpdates(c, log.LevelTrace, "HeaviestAttestedCandidate", (*Chain).LogName),
 		c.HeaviestVerifiedCandidate.LogUpdates(c, log.LevelTrace, "HeaviestVerifiedCandidate", (*Chain).LogName),
 
-		logger.UnsubscribeFromParentLogger,
+		logger.Shutdown,
 	)
 }
 
@@ -438,7 +442,7 @@ func (c *ChainsCandidate) measureAt(slot iotago.SlotIndex) (teardown func()) {
 	// sanitize protocol parameters
 	chainSwitchingThreshold := c.chains.protocol.APIForSlot(slot).ProtocolParameters().ChainSwitchingThreshold()
 	if slot < iotago.SlotIndex(chainSwitchingThreshold) {
-		return
+		return nil
 	}
 
 	// get the sorted commitments for the given slot
@@ -451,9 +455,9 @@ func (c *ChainsCandidate) measureAt(slot iotago.SlotIndex) (teardown func()) {
 
 			// abort if the heaviest commitment is the main chain or main chain is heavier
 			if mainChain := c.chains.Main.Get(); heaviestChain == mainChain {
-				return
+				return nil
 			} else if mainChain.CumulativeVerifiedWeightAt(heaviestCommitment.Slot()) > candidateWeight {
-				return
+				return nil
 			}
 
 			// create counter for the number of slots with the same chain

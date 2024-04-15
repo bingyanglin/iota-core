@@ -40,16 +40,20 @@ type TestFramework struct {
 	api      iotago.API
 	test     *testing.T
 
+	testBlocks   map[string]*blocks.Block
 	testBlockIDs map[string]iotago.BlockID
 
 	lastCommittedSlot iotago.SlotIndex
 	lastFinalizedSlot iotago.SlotIndex
 }
 
-func NewTestFramework(test *testing.T) *TestFramework {
+func NewTestFramework(t *testing.T) *TestFramework {
+	t.Helper()
+
 	tf := &TestFramework{
 		stores:            make(map[iotago.SlotIndex]*slotstore.BlockMetadataStore),
 		lastCommittedSlot: iotago.SlotIndex(0),
+		testBlocks:        make(map[string]*blocks.Block),
 		testBlockIDs:      make(map[string]iotago.BlockID),
 		api: iotago.V3API(
 			iotago.NewV3SnapshotProtocolParameters(
@@ -57,10 +61,10 @@ func NewTestFramework(test *testing.T) *TestFramework {
 				iotago.WithLivenessOptions(5, 5, 1, 2, 3),
 			),
 		),
-		test: test,
+		test: t,
 	}
 
-	workers := workerpool.NewGroup(test.Name())
+	workers := workerpool.NewGroup(t.Name())
 
 	storeFunc := func(slotIndex iotago.SlotIndex) (*slotstore.BlockMetadataStore, error) {
 		if _, exists := tf.stores[slotIndex]; !exists {
@@ -75,10 +79,10 @@ func NewTestFramework(test *testing.T) *TestFramework {
 	}
 
 	errorHandlerFunc := func(err error) {
-		require.NoError(test, err)
+		require.NoError(t, err)
 	}
 
-	tf.Instance = blockretainer.New(module.NewTestModule(test), workers, storeFunc, lastFinalizedSlotFunc, errorHandlerFunc)
+	tf.Instance = blockretainer.New(module.NewTestModule(t), workers, storeFunc, lastFinalizedSlotFunc, errorHandlerFunc)
 
 	return tf
 }
@@ -90,6 +94,16 @@ func (tf *TestFramework) commitSlot(slot iotago.SlotIndex) {
 
 func (tf *TestFramework) finalizeSlot(slot iotago.SlotIndex) {
 	tf.lastFinalizedSlot = slot
+}
+
+func (tf *TestFramework) getBlock(alias string) *blocks.Block {
+	if block, exists := tf.testBlocks[alias]; exists {
+		return block
+	}
+
+	require.Errorf(tf.test, nil, "model block not found in the test framework")
+
+	return nil
 }
 
 func (tf *TestFramework) getBlockID(alias string) iotago.BlockID {
@@ -110,6 +124,7 @@ func (tf *TestFramework) createBlock(alias string, slot iotago.SlotIndex) *block
 
 	block := blocks.NewBlock(modelBlock)
 
+	tf.testBlocks[alias] = block
 	tf.testBlockIDs[alias] = block.ID()
 
 	return block
@@ -140,9 +155,9 @@ func (tf *TestFramework) triggerBlockRetainerAction(alias string, act action) er
 	case none:
 		// no action
 	case eventAccepted:
-		err = tf.Instance.OnBlockAccepted(tf.getBlockID(alias))
+		err = tf.Instance.OnBlockAccepted(tf.getBlock(alias))
 	case eventConfirmed:
-		err = tf.Instance.OnBlockConfirmed(tf.getBlockID(alias))
+		err = tf.Instance.OnBlockConfirmed(tf.getBlock(alias))
 	case eventDropped:
 		err = tf.Instance.OnBlockDropped(tf.getBlockID(alias))
 	default:

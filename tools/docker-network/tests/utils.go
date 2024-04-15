@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/iotaledger/hive.go/ierrors"
@@ -70,8 +71,8 @@ func (d *DockerTestFramework) AssertIndexerAccount(account *mock.AccountData) {
 			return err
 		}
 
-		require.EqualValues(d.Testing, account.OutputID, *outputID)
-		require.EqualValues(d.Testing, account.Output, output)
+		assert.EqualValues(d.fakeTesting, account.OutputID, *outputID)
+		assert.EqualValues(d.fakeTesting, account.Output, output)
 
 		return nil
 	})
@@ -363,6 +364,19 @@ func getDelegationStartEpoch(api iotago.API, commitmentSlot iotago.SlotIndex) io
 	}
 
 	return pastBoundedEpoch + 2
+}
+
+func getDelegationEndEpoch(api iotago.API, slot, latestCommitmentSlot iotago.SlotIndex) iotago.EpochIndex {
+	futureBoundedSlotIndex := latestCommitmentSlot + api.ProtocolParameters().MinCommittableAge()
+	futureBoundedEpochIndex := api.TimeProvider().EpochFromSlot(futureBoundedSlotIndex)
+
+	registrationSlot := api.TimeProvider().EpochEnd(api.TimeProvider().EpochFromSlot(slot)) - api.ProtocolParameters().EpochNearingThreshold()
+
+	if futureBoundedSlotIndex <= registrationSlot {
+		return futureBoundedEpochIndex
+	}
+
+	return futureBoundedEpochIndex + 1
 }
 
 func isStatusCode(err error, status int) bool {
