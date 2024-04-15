@@ -10,8 +10,8 @@ import (
 )
 
 func pruneDatabase(c echo.Context) (*api.PruneDatabaseResponse, error) {
-	if deps.Protocol.Engines.Main.Get().Storage.IsPruning() {
-		return nil, ierrors.WithMessage(echo.ErrServiceUnavailable, "node is already pruning")
+	if deps.Protocol.Engines.Main.Get().IsSnapshotting() || deps.Protocol.Engines.Main.Get().Storage.IsPruning() {
+		return nil, ierrors.WithMessage(echo.ErrServiceUnavailable, "node is already creating a snapshot or pruning is running")
 	}
 
 	request := &api.PruneDatabaseRequest{}

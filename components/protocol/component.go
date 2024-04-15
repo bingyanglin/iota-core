@@ -90,6 +90,7 @@ func initConfigParams(c *dig.Container) error {
 		DatabaseEngine     db.Engine `name:"databaseEngine"`
 		BaseToken          *BaseToken
 		ProtocolParameters []iotago.ProtocolParameters
+		SnapshotFilePath   string `name:"snapshotFilePath"`
 	}
 
 	if err := c.Provide(func() cfgResult {
@@ -102,6 +103,7 @@ func initConfigParams(c *dig.Container) error {
 			DatabaseEngine:     dbEngine,
 			BaseToken:          &ParamsProtocol.BaseToken,
 			ProtocolParameters: readProtocolParameters(),
+			SnapshotFilePath:   ParamsProtocol.Snapshot.Path,
 		}
 	}); err != nil {
 		Component.LogPanic(err.Error())

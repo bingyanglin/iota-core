@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -41,6 +42,10 @@ import (
 	"github.com/iotaledger/iota-core/pkg/storage"
 	"github.com/iotaledger/iota-core/pkg/storage/database"
 	iotago "github.com/iotaledger/iota.go/v4"
+)
+
+var (
+	ErrSnapshottingInProgress = ierrors.New("snapshotting is already in progress")
 )
 
 // region Engine /////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -83,6 +88,8 @@ type Engine struct {
 
 	chainID iotago.CommitmentID
 	mutex   syncutils.RWMutex
+
+	isSnapshotting atomic.Bool
 
 	optsSnapshotPath     string
 	optsEntryPointsDepth int
@@ -351,10 +358,27 @@ func (e *Engine) CommitmentAPI(commitmentID iotago.CommitmentID) (*CommitmentAPI
 	return NewCommitmentAPI(e, commitmentID), nil
 }
 
-func (e *Engine) WriteSnapshot(filePath string, targetSlot ...iotago.SlotIndex) (err error) {
+func (e *Engine) IsSnapshotting() bool {
+	return e.isSnapshotting.Load()
+}
+
+func (e *Engine) WriteSnapshot(filePath string, targetSlot ...iotago.SlotIndex) error {
+	if e.isSnapshotting.Swap(true) {
+		return ErrSnapshottingInProgress
+	}
+	defer e.isSnapshotting.Store(false)
+
+	latestCommittedSlot := e.Storage.Settings().LatestCommitment().Slot()
+
 	if len(targetSlot) == 0 {
-		targetSlot = append(targetSlot, e.Storage.Settings().LatestCommitment().Slot())
-	} else if lastPrunedEpoch, hasPruned := e.Storage.LastPrunedEpoch(); hasPruned && e.APIForSlot(targetSlot[0]).TimeProvider().EpochFromSlot(targetSlot[0]) <= lastPrunedEpoch {
+		targetSlot = append(targetSlot, latestCommittedSlot)
+	}
+
+	if targetSlot[0] > latestCommittedSlot {
+		return ierrors.Errorf("impossible to create a snapshot for slot %d because it is not committed yet (latest committed slot %d)", targetSlot[0], latestCommittedSlot)
+	}
+
+	if lastPrunedEpoch, hasPruned := e.Storage.LastPrunedEpoch(); hasPruned && e.APIForSlot(targetSlot[0]).TimeProvider().EpochFromSlot(targetSlot[0]) <= lastPrunedEpoch {
 		return ierrors.Errorf("impossible to create a snapshot for slot %d because it is pruned (last pruned slot %d)", targetSlot[0], lo.Return1(e.Storage.LastPrunedEpoch()))
 	}
 
@@ -366,7 +390,7 @@ func (e *Engine) WriteSnapshot(filePath string, targetSlot ...iotago.SlotIndex) 
 		return ierrors.Wrap(err, "failed to close snapshot file")
 	}
 
-	return
+	return nil
 }
 
 func (e *Engine) ImportSettings(reader io.ReadSeeker) (err error) {

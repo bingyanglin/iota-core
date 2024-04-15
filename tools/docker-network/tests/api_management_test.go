@@ -20,14 +20,14 @@ func getContextWithTimeout(duration time.Duration) context.Context {
 	return ctx
 }
 
-// Test_PeerManagementAPI tests if the peer management API returns the expected results.
+// Test_ManagementAPI_Peers tests if the peer management API returns the expected results.
 // 1. Run docker network.
 // 2. List all peers of node 1.
 // 3. Delete a peer from node 1.
 // 4. List all peers of node 1 again and check if the peer was deleted.
 // 5. Re-Add the peer to node 1.
 // 6. List all peers of node 1 again and check if the peer was added.
-func Test_PeerManagementAPI(t *testing.T) {
+func Test_ManagementAPI_Peers(t *testing.T) {
 	d := NewDockerTestFramework(t,
 		WithProtocolParametersOptions(
 			iotago.WithTimeProviderOptions(5, time.Now().Unix(), 10, 4),
@@ -116,7 +116,7 @@ func Test_PeerManagementAPI(t *testing.T) {
 	}
 }
 
-func Test_PeerManagementAPI_BadRequests(t *testing.T) {
+func Test_ManagementAPI_Peers_BadRequests(t *testing.T) {
 	d := NewDockerTestFramework(t,
 		WithProtocolParametersOptions(
 			iotago.WithTimeProviderOptions(5, time.Now().Unix(), 10, 4),
@@ -171,6 +171,156 @@ func Test_PeerManagementAPI_BadRequests(t *testing.T) {
 				peerInfo, err := managementClient.PeerByID(getContextWithTimeout(5*time.Second), "unknown-peer-id")
 				require.Error(t, err)
 				require.Nil(t, peerInfo)
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, test.testFunc)
+	}
+}
+
+func Test_ManagementAPI_Pruning(t *testing.T) {
+	d := NewDockerTestFramework(t,
+		WithProtocolParametersOptions(
+			iotago.WithSupplyOptions(1813620509061365, 63, 1, 3, 0, 0, 0),
+			iotago.WithTimeProviderOptions(5, time.Now().Unix(), 1, 3),
+			iotago.WithLivenessOptions(2, 2, 3, 4, 5),
+			iotago.WithCongestionControlOptions(1, 1, 1, 400_000, 250_000, 50_000_000, 1000, 100),
+			iotago.WithRewardsOptions(8, 10, 2, 384),
+			iotago.WithTargetCommitteeSize(4),
+		))
+	defer d.Stop()
+
+	d.AddValidatorNode("V1", "docker-network-inx-validator-1-1", "http://localhost:8050", "rms1pzg8cqhfxqhq7pt37y8cs4v5u4kcc48lquy2k73ehsdhf5ukhya3y5rx2w6")
+	d.AddValidatorNode("V2", "docker-network-inx-validator-2-1", "http://localhost:8060", "rms1pqm4xk8e9ny5w5rxjkvtp249tfhlwvcshyr3pc0665jvp7g3hc875k538hl")
+	d.AddValidatorNode("V3", "docker-network-inx-validator-3-1", "http://localhost:8070", "rms1pp4wuuz0y42caz48vv876qfpmffswsvg40zz8v79sy8cp0jfxm4kunflcgt")
+	d.AddValidatorNode("V4", "docker-network-inx-validator-4-1", "http://localhost:8040", "rms1pr8cxs3dzu9xh4cduff4dd4cxdthpjkpwmz2244f75m0urslrsvtsshrrjw")
+	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8090")
+
+	runErr := d.Run()
+	require.NoError(t, runErr)
+
+	d.WaitUntilNetworkReady()
+
+	nodeClientV1 := d.Client("V1")
+
+	// get the management client
+	managementClient, err := nodeClientV1.Management(getContextWithTimeout(5 * time.Second))
+	require.NoError(t, err)
+
+	nextEpochStartSlotIndex := func(slot iotago.SlotIndex) iotago.SlotIndex {
+		currentEpoch := nodeClientV1.CommittedAPI().TimeProvider().EpochFromSlot(slot)
+		return nodeClientV1.CommittedAPI().TimeProvider().EpochStart(currentEpoch + 1)
+	}
+
+	type test struct {
+		name     string
+		testFunc func(t *testing.T)
+	}
+
+	tests := []*test{
+		{
+			name: "Test_PruneDatabase_ByEpoch",
+			testFunc: func(t *testing.T) {
+				// wait for the next epoch to start
+				info, err := nodeClientV1.Info(getContextWithTimeout(5 * time.Second))
+				require.NoError(t, err)
+				d.AwaitCommitment(nextEpochStartSlotIndex(info.Status.LatestCommitmentID.Slot()))
+
+				// prune database by epoch
+				pruneDatabaseResponse, err := managementClient.PruneDatabaseByEpoch(getContextWithTimeout(5*time.Second), 1)
+				require.NoError(t, err)
+				require.NotNil(t, pruneDatabaseResponse)
+			},
+		},
+		{
+			name: "Test_PruneDatabase_ByDepth",
+			testFunc: func(t *testing.T) {
+				// wait for the next epoch to start
+				info, err := nodeClientV1.Info(getContextWithTimeout(5 * time.Second))
+				require.NoError(t, err)
+				d.AwaitCommitment(nextEpochStartSlotIndex(info.Status.LatestCommitmentID.Slot()))
+
+				// prune database by depth
+				pruneDatabaseResponse, err := managementClient.PruneDatabaseByDepth(getContextWithTimeout(5*time.Second), 1)
+				require.NoError(t, err)
+				require.NotNil(t, pruneDatabaseResponse)
+			},
+		},
+		{
+			name: "Test_PruneDatabase_BySize",
+			testFunc: func(t *testing.T) {
+				// wait for the next epoch to start
+				info, err := nodeClientV1.Info(getContextWithTimeout(5 * time.Second))
+				require.NoError(t, err)
+				d.AwaitCommitment(nextEpochStartSlotIndex(info.Status.LatestCommitmentID.Slot()))
+
+				// prune database by size
+				pruneDatabaseResponse, err := managementClient.PruneDatabaseBySize(getContextWithTimeout(5*time.Second), "1M")
+				require.NoError(t, err)
+				require.NotNil(t, pruneDatabaseResponse)
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, test.testFunc)
+	}
+}
+
+func Test_ManagementAPI_Snapshots(t *testing.T) {
+	d := NewDockerTestFramework(t,
+		WithProtocolParametersOptions(
+			iotago.WithSupplyOptions(1813620509061365, 63, 1, 3, 0, 0, 0),
+			iotago.WithTimeProviderOptions(5, time.Now().Unix(), 1, 3),
+			iotago.WithLivenessOptions(2, 2, 3, 4, 5),
+			iotago.WithCongestionControlOptions(1, 1, 1, 400_000, 250_000, 50_000_000, 1000, 100),
+			iotago.WithRewardsOptions(8, 10, 2, 384),
+			iotago.WithTargetCommitteeSize(4),
+		))
+	defer d.Stop()
+
+	d.AddValidatorNode("V1", "docker-network-inx-validator-1-1", "http://localhost:8050", "rms1pzg8cqhfxqhq7pt37y8cs4v5u4kcc48lquy2k73ehsdhf5ukhya3y5rx2w6")
+	d.AddValidatorNode("V2", "docker-network-inx-validator-2-1", "http://localhost:8060", "rms1pqm4xk8e9ny5w5rxjkvtp249tfhlwvcshyr3pc0665jvp7g3hc875k538hl")
+	d.AddValidatorNode("V3", "docker-network-inx-validator-3-1", "http://localhost:8070", "rms1pp4wuuz0y42caz48vv876qfpmffswsvg40zz8v79sy8cp0jfxm4kunflcgt")
+	d.AddValidatorNode("V4", "docker-network-inx-validator-4-1", "http://localhost:8040", "rms1pr8cxs3dzu9xh4cduff4dd4cxdthpjkpwmz2244f75m0urslrsvtsshrrjw")
+	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8090")
+
+	runErr := d.Run()
+	require.NoError(t, runErr)
+
+	d.WaitUntilNetworkReady()
+
+	nodeClientV1 := d.Client("V1")
+
+	// get the management client
+	managementClient, err := nodeClientV1.Management(getContextWithTimeout(5 * time.Second))
+	require.NoError(t, err)
+
+	nextEpochStartSlotIndex := func(slot iotago.SlotIndex) iotago.SlotIndex {
+		currentEpoch := nodeClientV1.CommittedAPI().TimeProvider().EpochFromSlot(slot)
+		return nodeClientV1.CommittedAPI().TimeProvider().EpochStart(currentEpoch + 1)
+	}
+
+	type test struct {
+		name     string
+		testFunc func(t *testing.T)
+	}
+
+	tests := []*test{
+		{
+			name: "Test_CreateSnapshot",
+			testFunc: func(t *testing.T) {
+				// wait for the next epoch to start
+				info, err := nodeClientV1.Info(getContextWithTimeout(5 * time.Second))
+				require.NoError(t, err)
+				d.AwaitCommitment(nextEpochStartSlotIndex(info.Status.LatestCommitmentID.Slot()))
+
+				// create snapshot
+				snapshotResponse, err := managementClient.CreateSnapshot(getContextWithTimeout(5*time.Second), 1)
+				require.NoError(t, err)
+				require.NotNil(t, snapshotResponse)
 			},
 		},
 	}
