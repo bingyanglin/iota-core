@@ -56,6 +56,7 @@ func Test_IssuingTransactionsOutOfOrder(t *testing.T) {
 	// confirm 2nd block so block1 gets booked
 	{
 		ts.IssueValidationBlockWithHeaderOptions("block3", node1, mock.WithStrongParents(ts.BlockID("block2")))
+		ts.IssueValidationBlockWithHeaderOptions("block4", node1, mock.WithStrongParents(ts.BlockID("block3")))
 
 		ts.AssertBlocksInCacheBooked(ts.Blocks("block1", "block2", "block3"), true, node1)
 		ts.AssertBlocksInCacheConflicts(map[*blocks.Block][]string{
