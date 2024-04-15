@@ -531,12 +531,11 @@ func (m *Manager) commitAccountTree(slot iotago.SlotIndex, accountDiffChanges ma
 
 		if diffChange.BICChange != 0 || !exists {
 			// decay the credits to the current slot if the account exists
-			if exists {
+			if exists && accountData.Credits.Value > 0 {
 				decayedPreviousCredits, err := m.apiProvider.APIForSlot(slot).ManaDecayProvider().DecayManaBySlots(iotago.Mana(accountData.Credits.Value), accountData.Credits.UpdateSlot, slot)
 				if err != nil {
 					return ierrors.Wrapf(err, "can't retrieve account, could not decay credits for account %s in slot %d", accountData.ID, slot)
 				}
-
 				// update the account data diff taking into account the decay, the modified diff will be stored in the calling
 				// ApplyDiff function to be able to properly rollback the account to a previous slot.
 				diffChange.BICChange -= accountData.Credits.Value - iotago.BlockIssuanceCredits(decayedPreviousCredits)
