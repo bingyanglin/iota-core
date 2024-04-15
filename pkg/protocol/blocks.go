@@ -61,12 +61,19 @@ func newBlocks(protocol *Protocol) *Blocks {
 			})
 		})
 
-		//nolint:revive
 		protocol.Chains.WithInitializedEngines(func(chain *Chain, engine *engine.Engine) (shutdown func()) {
 			return lo.BatchReverse(
 				engine.Events.BlockRequester.Tick.Hook(b.SendRequest).Unhook,
-				engine.Events.Scheduler.BlockScheduled.Hook(func(block *blocks.Block) { b.SendResponse(block.ModelBlock()) }).Unhook,
-				engine.Events.Scheduler.BlockSkipped.Hook(func(block *blocks.Block) { b.SendResponse(block.ModelBlock()) }).Unhook,
+				engine.Events.Scheduler.BlockScheduled.Hook(func(block *blocks.Block) {
+					if !chain.WarpSyncMode.Get() {
+						b.SendResponse(block.ModelBlock())
+					}
+				}).Unhook,
+				engine.Events.Scheduler.BlockSkipped.Hook(func(block *blocks.Block) {
+					if !chain.WarpSyncMode.Get() {
+						b.SendResponse(block.ModelBlock())
+					}
+				}).Unhook,
 			)
 		})
 	})
