@@ -110,26 +110,8 @@ func (t *TipSelection) Construct(tipManager tipmanager.TipManager, spendDAG spen
 }
 
 // SelectTips selects the tips that should be used as references for a new block.
-func (t *TipSelection) SelectTips(amount int, optPayload ...iotago.Payload) (references model.ParentReferences, err error) {
+func (t *TipSelection) SelectTips(amount int) (references model.ParentReferences) {
 	references = make(model.ParentReferences)
-	if len(optPayload) != 0 {
-		dependenciesToReference, dependenciesErr := t.payloadUtils.UnacceptedTransactionDependencies(optPayload[0])
-		if dependenciesErr != nil {
-			return nil, ierrors.Wrap(dependenciesErr, "failed to retrieve unaccepted transaction dependencies")
-		}
-
-		latestValidAttachments, latestValidAttachmentsErr := t.payloadUtils.LatestValidAttachments(dependenciesToReference)
-		if latestValidAttachmentsErr != nil {
-			return nil, ierrors.Wrap(latestValidAttachmentsErr, "failed to retrieve latest valid attachments")
-		}
-
-		if latestValidAttachments.Size() > t.optMaxWeakReferences {
-			return nil, ierrors.New("payload requires too many weak references")
-		}
-
-		references[iotago.WeakParentType] = latestValidAttachments.ToSlice()
-	}
-
 	strongParents := ds.NewSet[iotago.BlockID]()
 	shallowLikedParents := ds.NewSet[iotago.BlockID]()
 	_ = t.spendDAG.ReadConsistent(func(_ spenddag.ReadLockedSpendDAG[iotago.TransactionID, mempool.StateID, ledger.BlockVoteRank]) error {
@@ -172,7 +154,7 @@ func (t *TipSelection) SelectTips(amount int, optPayload ...iotago.Payload) (ref
 		return nil
 	})
 
-	return references, nil
+	return references
 }
 
 // SetAcceptanceTime updates the acceptance time of the TipSelection.

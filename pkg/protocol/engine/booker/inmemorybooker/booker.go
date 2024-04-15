@@ -109,6 +109,12 @@ func (b *Booker) Queue(block *blocks.Block) error {
 	signedTransactionMetadata.OnSignaturesValid(func() {
 		transactionMetadata := signedTransactionMetadata.TransactionMetadata()
 
+		if orphanedSlot, isOrphaned := transactionMetadata.OrphanedSlot(); isOrphaned && orphanedSlot <= block.SlotCommitmentID().Slot() {
+			block.SetInvalid()
+
+			return
+		}
+
 		transactionMetadata.OnBooked(func() {
 			block.SetPayloadSpenderIDs(transactionMetadata.SpenderIDs())
 			b.setupBlock(block)
