@@ -17,8 +17,13 @@ import (
 )
 
 type Block struct {
-	AllParentsBooked          reactive.Event
-	AllDependenciesReady      reactive.Event
+	// ParentsBooked is triggered when all parents of the block are booked.
+	ParentsBooked reactive.Event
+
+	// PayloadDependenciesAvailable is triggered when the dependencies of the block's payload are available.
+	PayloadDependenciesAvailable reactive.Event
+
+	// SignedTransactionMetadata contains the signed transaction metadata of the block.
 	SignedTransactionMetadata reactive.Variable[mempool.SignedTransactionMetadata]
 
 	// BlockDAG block
@@ -82,9 +87,9 @@ func (r *rootBlock) String() string {
 
 func newEmptyBlock() *Block {
 	return &Block{
-		AllParentsBooked:          reactive.NewEvent(),
-		AllDependenciesReady:      reactive.NewEvent(),
-		SignedTransactionMetadata: reactive.NewVariable[mempool.SignedTransactionMetadata](),
+		ParentsBooked:                reactive.NewEvent(),
+		PayloadDependenciesAvailable: reactive.NewEvent(),
+		SignedTransactionMetadata:    reactive.NewVariable[mempool.SignedTransactionMetadata](),
 
 		witnesses:             ds.NewSet[account.SeatIndex](),
 		spenderIDs:            ds.NewSet[iotago.TransactionID](),
@@ -122,8 +127,8 @@ func NewRootBlock(blockID iotago.BlockID, commitmentID iotago.CommitmentID, issu
 	b.scheduled = true
 
 	// This should be true since we commit and evict on acceptance.
-	b.AllParentsBooked.Set(true)
-	b.AllDependenciesReady.Set(true)
+	b.ParentsBooked.Set(true)
+	b.PayloadDependenciesAvailable.Set(true)
 	b.solid.Init(true)
 	b.booked.Init(true)
 	b.weightPropagated.Init(true)
@@ -676,9 +681,9 @@ func (b *Block) WorkScore() iotago.WorkScore {
 	return b.workScore
 }
 
-func (b *Block) WaitForUTXODependencies(dependencies ds.Set[mempool.StateMetadata]) {
+func (b *Block) WaitForPayloadDependencies(dependencies ds.Set[mempool.StateMetadata]) {
 	if dependencies == nil || dependencies.Size() == 0 {
-		b.AllDependenciesReady.Trigger()
+		b.PayloadDependenciesAvailable.Trigger()
 
 		return
 	}
@@ -695,7 +700,7 @@ func (b *Block) WaitForUTXODependencies(dependencies ds.Set[mempool.StateMetadat
 					dependencyReady = true
 
 					if unreferencedOutputCount.Add(-1) == 0 {
-						b.AllDependenciesReady.Trigger()
+						b.PayloadDependenciesAvailable.Trigger()
 					}
 				}
 			})

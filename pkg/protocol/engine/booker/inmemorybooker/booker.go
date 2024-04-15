@@ -136,10 +136,10 @@ func (b *Booker) Queue(block *blocks.Block) error {
 func (b *Booker) Reset() { /* nothing to reset but comply with interface */ }
 
 func (b *Booker) setupBlock(block *blocks.Block) {
-	var utxoDependencies, directlyReferencedUTXODependencies ds.Set[mempool.StateMetadata]
+	var payloadDependencies, directlyReferencedPayloadDependencies ds.Set[mempool.StateMetadata]
 	if signedTransactionMetadata := block.SignedTransactionMetadata.Get(); signedTransactionMetadata != nil && signedTransactionMetadata.SignaturesInvalid() == nil && !signedTransactionMetadata.TransactionMetadata().IsInvalid() {
-		utxoDependencies = signedTransactionMetadata.TransactionMetadata().Inputs()
-		directlyReferencedUTXODependencies = ds.NewSet[mempool.StateMetadata]()
+		payloadDependencies = signedTransactionMetadata.TransactionMetadata().Inputs()
+		directlyReferencedPayloadDependencies = ds.NewSet[mempool.StateMetadata]()
 	}
 
 	var unbookedParentsCount atomic.Int32
@@ -154,14 +154,14 @@ func (b *Booker) setupBlock(block *blocks.Block) {
 		}
 
 		parentBlock.Booked().OnUpdateOnce(func(_ bool, _ bool) {
-			if directlyReferencedUTXODependencies != nil {
+			if directlyReferencedPayloadDependencies != nil {
 				if parentTransactionMetadata := parentBlock.SignedTransactionMetadata.Get(); parentTransactionMetadata != nil {
-					directlyReferencedUTXODependencies.AddAll(parentTransactionMetadata.TransactionMetadata().Outputs())
+					directlyReferencedPayloadDependencies.AddAll(parentTransactionMetadata.TransactionMetadata().Outputs())
 				}
 			}
 
 			if unbookedParentsCount.Add(-1) == 0 {
-				block.AllParentsBooked.Trigger()
+				block.ParentsBooked.Trigger()
 			}
 		})
 
@@ -172,15 +172,15 @@ func (b *Booker) setupBlock(block *blocks.Block) {
 		})
 	})
 
-	block.AllParentsBooked.OnTrigger(func() {
-		if directlyReferencedUTXODependencies != nil {
-			utxoDependencies.DeleteAll(directlyReferencedUTXODependencies)
+	block.ParentsBooked.OnTrigger(func() {
+		if directlyReferencedPayloadDependencies != nil {
+			payloadDependencies.DeleteAll(directlyReferencedPayloadDependencies)
 		}
 
-		block.WaitForUTXODependencies(utxoDependencies)
+		block.WaitForPayloadDependencies(payloadDependencies)
 	})
 
-	block.AllDependenciesReady.OnTrigger(func() {
+	block.PayloadDependenciesAvailable.OnTrigger(func() {
 		if err := b.book(block); err != nil {
 			if block.SetInvalid() {
 				b.events.BlockInvalid.Trigger(block, ierrors.Wrap(err, "failed to book block"))
