@@ -52,12 +52,12 @@ func Test_ValidatorRewards(t *testing.T) {
 	// create accounts and continue issuing candidacy payload for account in the background
 	account := d.CreateAccount(WithStakingFeature(100, 1, currentEpoch, endEpoch))
 	initialMana := account.Output.StoredMana()
-	issueCandidacyPayload(d, account.ID, clt.CommittedAPI().TimeProvider().CurrentSlot(), claimingSlot,
+	issueCandidacyPayloadInBackground(d, account.ID, clt.CommittedAPI().TimeProvider().CurrentSlot(), claimingSlot,
 		slotsDuration)
 
 	lazyAccount := d.CreateAccount(WithStakingFeature(100, 1, currentEpoch, endEpoch))
 	lazyInitialMana := lazyAccount.Output.StoredMana()
-	issueCandidacyPayload(d, lazyAccount.ID, clt.CommittedAPI().TimeProvider().CurrentSlot(), claimingSlot,
+	issueCandidacyPayloadInBackground(d, lazyAccount.ID, clt.CommittedAPI().TimeProvider().CurrentSlot(), claimingSlot,
 		slotsDuration)
 
 	// make sure the account is in the committee, so it can issue validation blocks
@@ -72,8 +72,8 @@ func Test_ValidatorRewards(t *testing.T) {
 	fmt.Println("Wait for ", secToWait, "until expected slot: ", claimingSlot)
 
 	var wg sync.WaitGroup
-	issueValidationBlockInBackground(&wg, d, account.ID, currentSlot, claimingSlot, 3, slotsDuration)
-	issueValidationBlockInBackground(&wg, d, lazyAccount.ID, currentSlot, claimingSlot, 1, slotsDuration)
+	issueValidationBlockInBackground(&wg, d, account.ID, currentSlot, claimingSlot, 5)
+	issueValidationBlockInBackground(&wg, d, lazyAccount.ID, currentSlot, claimingSlot, 1)
 
 	wg.Wait()
 
@@ -228,7 +228,7 @@ func Test_DelayedClaimingRewards(t *testing.T) {
 	}
 }
 
-func issueCandidacyPayload(d *DockerTestFramework, accountID iotago.AccountID, startSlot, endSlot iotago.SlotIndex, slotDuration uint8) {
+func issueCandidacyPayloadInBackground(d *DockerTestFramework, accountID iotago.AccountID, startSlot, endSlot iotago.SlotIndex, slotDuration uint8) {
 	go func() {
 		fmt.Println("Issuing candidacy payloads for account", accountID, "in the background...")
 		defer fmt.Println("Issuing candidacy payloads for account", accountID, "in the background......done")
@@ -240,31 +240,28 @@ func issueCandidacyPayload(d *DockerTestFramework, accountID iotago.AccountID, s
 	}()
 }
 
-func issueValidationBlock(d *DockerTestFramework, accountID iotago.AccountID, startSlot, endSlot iotago.SlotIndex, blocksPerSlot int, slotDuration uint8) {
-	fmt.Println("Issuing validation block for account", accountID, "in the background...")
-	defer fmt.Println("Issuing validation block for account", accountID, "in the background......done")
-
-	for i := startSlot; i < endSlot; i++ {
-		for range blocksPerSlot {
-			d.SubmitValidationBlock(accountID)
-		}
-		time.Sleep(time.Duration(slotDuration) * time.Second)
-	}
-}
-
-func issueValidationBlockInBackground(wg *sync.WaitGroup, d *DockerTestFramework, accountID iotago.AccountID, startSlot, endSlot iotago.SlotIndex, blocksPerSlot int, slotDuration uint8) {
+func issueValidationBlockInBackground(wg *sync.WaitGroup, d *DockerTestFramework, accountID iotago.AccountID, startSlot, endSlot iotago.SlotIndex, blocksPerSlot int) {
 	wg.Add(1)
 
 	go func() {
 		defer wg.Done()
 		fmt.Println("Issuing validation block for account", accountID, "in the background...")
 		defer fmt.Println("Issuing validation block for account", accountID, "in the background......done")
+		clt := d.wallet.DefaultClient()
 
 		for i := startSlot; i < endSlot; i++ {
+			// wait until the slot is reached
+			for {
+				if clt.CommittedAPI().TimeProvider().CurrentSlot() == i {
+					break
+				}
+				time.Sleep(2 * time.Second)
+			}
+
 			for range blocksPerSlot {
 				d.SubmitValidationBlock(accountID)
+				time.Sleep(1 * time.Second)
 			}
-			time.Sleep(time.Duration(slotDuration) * time.Second)
 		}
 	}()
 }

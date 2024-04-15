@@ -534,7 +534,7 @@ func (w *DockerWallet) ClaimValidatorRewards(issuerAccountID iotago.AccountID, i
 		}).
 		AddRewardInput(&iotago.RewardInput{Index: 0}, rewardResp.Rewards).
 		AddBlockIssuanceCreditInput(&iotago.BlockIssuanceCreditInput{
-			AccountID: accountOutput.AccountID,
+			AccountID: issuerAccountID,
 		}).
 		AddCommitmentInput(&iotago.CommitmentInput{CommitmentID: lo.Return1(issuerResp.LatestCommitment.ID())}).
 		AddOutput(accountOutput).

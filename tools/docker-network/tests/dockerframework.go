@@ -403,11 +403,14 @@ func (d *DockerTestFramework) CreateTaggedDataBlock(issuerID iotago.AccountID, t
 	}, issuerID, congestionResp, issuerResp)
 }
 
-func (d *DockerTestFramework) SubmitValidationBlock(issuerID iotago.AccountID) *iotago.Block {
+func (d *DockerTestFramework) SubmitValidationBlock(issuerID iotago.AccountID, issueNode ...string) *iotago.Block {
 	issuer := d.wallet.Account(issuerID)
 	ctx := context.TODO()
 	issuingTime := time.Now()
 	clt := d.wallet.DefaultClient()
+	if issueNode != nil {
+		clt = d.wallet.Clients[issueNode[0]]
+	}
 	currentSlot := d.wallet.DefaultClient().LatestAPI().TimeProvider().SlotFromTime(issuingTime)
 	apiForSlot := d.wallet.DefaultClient().APIForSlot(currentSlot)
 
