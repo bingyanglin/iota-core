@@ -9,8 +9,9 @@ import (
 	"testing"
 	"time"
 
-	iotago "github.com/iotaledger/iota.go/v4"
 	"github.com/stretchr/testify/require"
+
+	iotago "github.com/iotaledger/iota.go/v4"
 )
 
 // Test_ValidatorRewards tests the rewards for a validator.
