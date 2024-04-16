@@ -9,6 +9,7 @@ import (
 
 	"github.com/iotaledger/hive.go/lo"
 	"github.com/iotaledger/hive.go/log"
+	"github.com/iotaledger/iota-core/pkg/core/account"
 	"github.com/iotaledger/iota-core/pkg/protocol"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/blocks"
 	"github.com/iotaledger/iota-core/pkg/testsuite"
@@ -47,12 +48,18 @@ func TestLossOfAcceptanceFromGenesis(t *testing.T) {
 
 	ts.Run(true, nil)
 
-	node0.Protocol.SetLogLevel(log.LevelTrace)
-	node1.Protocol.SetLogLevel(log.LevelTrace)
+	node0.Protocol.SetLogLevel(log.LevelFatal)
+	node1.Protocol.SetLogLevel(log.LevelFatal)
+	node2.Protocol.SetLogLevel(log.LevelFatal)
 
 	// Create snapshot to use later.
 	snapshotPath := ts.Directory.Path(fmt.Sprintf("%d_snapshot", time.Now().Unix()))
 	require.NoError(t, node0.Protocol.Engines.Main.Get().WriteSnapshot(snapshotPath))
+
+	seatIndexes := []account.SeatIndex{
+		lo.Return1(lo.Return1(node0.Protocol.Engines.Main.Get().SybilProtection.SeatManager().CommitteeInSlot(1)).GetSeat(node0.Validator.AccountData.ID)),
+		lo.Return1(lo.Return1(node1.Protocol.Engines.Main.Get().SybilProtection.SeatManager().CommitteeInSlot(1)).GetSeat(node1.Validator.AccountData.ID)),
+	}
 
 	// Revive chain on node0.
 	{
@@ -73,44 +80,52 @@ func TestLossOfAcceptanceFromGenesis(t *testing.T) {
 		ts.AssertEqualStoredCommitmentAtIndex(50, ts.Nodes()...)
 		ts.AssertBlocksExist(ts.Blocks("block0"), true, ts.ClientsForNodes()...)
 	}
+	ts.AssertSybilProtectionOnlineCommittee(seatIndexes[0:1], ts.Nodes()...)
 
 	ts.SplitIntoPartitions(map[string][]*mock.Node{
 		"P1": nodesP1,
 		"P2": nodesP2,
 	})
 
+	ts.AssertSybilProtectionOnlineCommittee(seatIndexes[0:1], node0)
+	ts.AssertSybilProtectionOnlineCommittee(seatIndexes[0:1], node1)
+
 	// Issue in P1
 	{
-		ts.IssueBlocksAtSlots("P1:", []iotago.SlotIndex{53, 54, 55, 56, 57}, 3, "52.1", nodesP1, true, false)
+		ts.IssueBlocksAtSlots("P1:", []iotago.SlotIndex{53, 54, 55, 56, 57, 58, 59, 60, 61}, 3, "52.1", nodesP1, true, true)
 
-		ts.AssertBlocksInCacheAccepted(ts.BlocksWithPrefix("57.0"), true, nodesP1...)
-		ts.AssertLatestCommitmentSlotIndex(55, nodesP1...)
-		ts.AssertEqualStoredCommitmentAtIndex(55, nodesP1...)
+		ts.AssertBlocksInCacheAccepted(ts.BlocksWithPrefix("61.0"), true, nodesP1...)
+		ts.AssertLatestCommitmentSlotIndex(59, nodesP1...)
+		ts.AssertEqualStoredCommitmentAtIndex(59, nodesP1...)
 
 		ts.AssertBlocksExist(ts.BlocksWithPrefix("P1"), true, ts.ClientsForNodes(nodesP1...)...)
 		ts.AssertBlocksExist(ts.BlocksWithPrefix("P1"), false, ts.ClientsForNodes(nodesP2...)...)
 	}
+	ts.AssertSybilProtectionOnlineCommittee(seatIndexes[0:1], node0, node2)
+	ts.AssertSybilProtectionOnlineCommittee(seatIndexes[0:1], node1)
 
 	// Issue in P2
 	{
-		ts.IssueBlocksAtSlots("P2:", []iotago.SlotIndex{53, 54, 55, 56, 57}, 3, "52.1", nodesP2, true, false)
+		ts.IssueBlocksAtSlots("P2:", []iotago.SlotIndex{53, 54, 55, 56, 57, 58, 59, 60, 61}, 3, "52.1", nodesP2, false, false)
 
-		ts.AssertBlocksInCacheAccepted(ts.BlocksWithPrefix("57.0"), true, nodesP2...)
-		ts.AssertLatestCommitmentSlotIndex(55, nodesP2...)
-		ts.AssertEqualStoredCommitmentAtIndex(55, nodesP2...)
+		ts.AssertBlocksInCacheAccepted(ts.BlocksWithPrefix("61.0"), true, nodesP2...)
+		ts.AssertLatestCommitmentSlotIndex(59, nodesP2...)
+		ts.AssertEqualStoredCommitmentAtIndex(59, nodesP2...)
 
 		ts.AssertBlocksExist(ts.BlocksWithPrefix("P2"), false, ts.ClientsForNodes(nodesP1...)...)
 		ts.AssertBlocksExist(ts.BlocksWithPrefix("P2"), true, ts.ClientsForNodes(nodesP2...)...)
 	}
+	ts.AssertSybilProtectionOnlineCommittee(seatIndexes[0:1], node0, node2)
+	ts.AssertSybilProtectionOnlineCommittee(seatIndexes[1:2], node1)
 
 	// Start node3 from genesis snapshot.
+	node3 := ts.AddNode("node3")
 	{
-		node3 := ts.AddNode("node3")
 		node3.Initialize(true,
 			protocol.WithSnapshotPath(snapshotPath),
 			protocol.WithBaseDirectory(ts.Directory.PathWithCreate(node3.Name)),
 		)
-		// node3.Protocol.SetLogLevel(log.LevelTrace)
+		node3.Protocol.SetLogLevel(log.LevelTrace)
 		ts.Wait()
 	}
 
@@ -119,28 +134,13 @@ func TestLossOfAcceptanceFromGenesis(t *testing.T) {
 
 	// Continue issuing on all nodes on top of their chain, respectively.
 	{
-		ts.IssueBlocksAtSlots("P1:", []iotago.SlotIndex{58, 59}, 3, "P1:57.2", nodesP1, true, false)
-		ts.IssueBlocksAtSlots("P2:", []iotago.SlotIndex{58, 59}, 3, "P2:57.2", nodesP2, true, false)
+		ts.IssueBlocksAtSlots("P2:", []iotago.SlotIndex{62}, 1, "P2:61.2", nodesP2, false, false)
+		ts.IssueBlocksAtSlots("P1:", []iotago.SlotIndex{62}, 1, "P1:61.2", nodesP1, false, false)
 
 		// ts.AssertBlocksInCacheAccepted(ts.BlocksWithPrefix("59.0"), true, ts.Nodes()...)
-		ts.AssertLatestCommitmentSlotIndex(57, ts.Nodes()...)
-		ts.AssertEqualStoredCommitmentAtIndex(57, ts.Nodes()...)
-	}
+		ts.AssertLatestCommitmentSlotIndex(59, ts.Nodes()...)
 
-	return
-
-	// Continue issuing on all nodes for a few slots.
-	{
-		ts.IssueBlocksAtSlots("", []iotago.SlotIndex{53, 54, 55, 56, 57}, 3, "52.1", ts.Nodes(), true, false)
-
-		ts.AssertBlocksInCacheAccepted(ts.BlocksWithPrefix("57.0"), true, ts.Nodes()...)
-		ts.AssertLatestCommitmentSlotIndex(55, ts.Nodes()...)
-		ts.AssertEqualStoredCommitmentAtIndex(55, ts.Nodes()...)
-	}
-
-	// Check that commitments from 1-49 are empty.
-	for slot := iotago.SlotIndex(1); slot <= 49; slot++ {
-		ts.AssertStorageCommitmentBlocks(slot, nil, ts.Nodes()...)
+		ts.AssertEqualStoredCommitmentAtIndex(59, ts.Nodes()...)
 	}
 }
 

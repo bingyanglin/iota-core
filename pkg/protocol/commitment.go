@@ -60,6 +60,10 @@ type Commitment struct {
 	// IsRoot contains a flag indicating if this Commitment is the root of the Chain.
 	IsRoot reactive.Event
 
+	// IsSolid contains a flag indicating if this Commitment is solid (has all the commitments in its past cone until
+	// the RootCommitment).
+	IsSolid reactive.Event
+
 	// IsAttested contains a flag indicating if we have received attestations for this Commitment.
 	IsAttested reactive.Event
 
@@ -108,6 +112,7 @@ func newCommitment(commitments *Commitments, model *model.Commitment) *Commitmen
 		CumulativeAttestedWeight:        reactive.NewVariable[uint64](),
 		CumulativeVerifiedWeight:        reactive.NewVariable[uint64](),
 		IsRoot:                          reactive.NewEvent(),
+		IsSolid:                         reactive.NewEvent(),
 		IsAttested:                      reactive.NewEvent(),
 		IsSynced:                        reactive.NewEvent(),
 		IsCommittable:                   reactive.NewEvent(),
@@ -219,6 +224,7 @@ func (c *Commitment) initLogger() (shutdown func()) {
 		c.CumulativeAttestedWeight.LogUpdates(c, log.LevelTrace, "CumulativeAttestedWeight"),
 		c.CumulativeVerifiedWeight.LogUpdates(c, log.LevelTrace, "CumulativeVerifiedWeight"),
 		c.IsRoot.LogUpdates(c, log.LevelTrace, "IsRoot"),
+		c.IsSolid.LogUpdates(c, log.LevelTrace, "IsSolid"),
 		c.IsAttested.LogUpdates(c, log.LevelTrace, "IsAttested"),
 		c.IsSynced.LogUpdates(c, log.LevelTrace, "IsSynced"),
 		c.IsCommittable.LogUpdates(c, log.LevelTrace, "IsCommittable"),
@@ -235,6 +241,7 @@ func (c *Commitment) initDerivedProperties() (shutdown func()) {
 	return lo.BatchReverse(
 		// mark commitments that are marked as root as verified
 		c.IsVerified.InheritFrom(c.IsRoot),
+		c.IsSolid.InheritFrom(c.IsRoot),
 
 		// mark commitments that are marked as verified as attested and synced
 		c.IsAttested.InheritFrom(c.IsVerified),
@@ -252,7 +259,7 @@ func (c *Commitment) initDerivedProperties() (shutdown func()) {
 
 			return lo.BatchReverse(
 				c.deriveChain(parent),
-
+				c.IsSolid.InheritFrom(parent.IsSolid),
 				c.deriveCumulativeAttestedWeight(parent),
 				c.deriveIsAboveLatestVerifiedCommitment(parent),
 
@@ -294,9 +301,9 @@ func (c *Commitment) registerChild(child *Commitment) {
 // deriveChain derives the Chain of this Commitment which is either inherited from the parent if we are the main child
 // or a newly created chain.
 func (c *Commitment) deriveChain(parent *Commitment) func() {
-	return c.Chain.DeriveValueFrom(reactive.NewDerivedVariable3(func(currentChain *Chain, isRoot bool, mainChild *Commitment, parentChain *Chain) *Chain {
+	return c.Chain.DeriveValueFrom(reactive.NewDerivedVariable4(func(currentChain *Chain, isRoot bool, isSolid bool, mainChild *Commitment, parentChain *Chain) *Chain {
 		// do not adjust the chain of the root commitment (it is set from the outside)
-		if isRoot {
+		if isRoot || !isSolid {
 			return currentChain
 		}
 
@@ -315,13 +322,14 @@ func (c *Commitment) deriveChain(parent *Commitment) func() {
 		// then we inherit the parent chain and evict the current one.
 		// We will spawn a new one if we ever change back to not being the main child.
 		// Here we basically move commitments to the parent chain.
-		if currentChain != nil && currentChain != parentChain {
-			// TODO: refactor it to use a dedicated WorkerPool
-			go currentChain.IsEvicted.Trigger()
-		}
+
+		//if currentChain != nil && currentChain != parentChain {
+		//	// TODO: refactor it to use a dedicated WorkerPool
+		//	go currentChain.IsEvicted.Trigger()
+		//}
 
 		return parentChain
-	}, c.IsRoot, parent.MainChild, parent.Chain, c.Chain.Get()))
+	}, c.IsRoot, c.IsSolid, parent.MainChild, parent.Chain, c.Chain.Get()))
 }
 
 // deriveCumulativeAttestedWeight derives the CumulativeAttestedWeight of this Commitment which is the sum of the
