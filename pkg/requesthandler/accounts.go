@@ -37,7 +37,7 @@ func (r *RequestHandler) CongestionByAccountAddress(accountAddress *iotago.Accou
 
 	blockIssuanceCredits := acc.Credits.Value
 	// Apply decay to BIC if the value is positive
-	if acc.Credits.Value > 0 {
+	if blockIssuanceCredits > 0 {
 		manaDecayProvider := r.APIProvider().APIForSlot(commitment.Slot()).ManaDecayProvider()
 		decayedBIC, err := manaDecayProvider.DecayManaBySlots(iotago.Mana(acc.Credits.Value), acc.Credits.UpdateSlot, commitment.Slot())
 		if err != nil {
@@ -45,7 +45,7 @@ func (r *RequestHandler) CongestionByAccountAddress(accountAddress *iotago.Accou
 		}
 		blockIssuanceCredits = iotago.BlockIssuanceCredits(decayedBIC)
 	}
-	
+
 	return &api.CongestionResponse{
 		Slot:                 commitment.Slot(),
 		Ready:                r.protocol.Engines.Main.Get().Scheduler.IsBlockIssuerReady(accountID, workScores...),
