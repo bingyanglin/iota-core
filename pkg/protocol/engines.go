@@ -105,7 +105,7 @@ func (e *Engines) ForkAtSlot(slot iotago.SlotIndex) (*engine.Engine, error) {
 	evictionState.Initialize(latestCommitment.Slot())
 
 	blockCache := blocks.New(evictionState, newStorage.Settings().APIProvider())
-	accountsManager := accountsledger.New(module.New(log.NewLogger(log.WithName("ForkedAccountsLedger"))), newStorage.Settings().APIProvider(), blockCache.Block, newStorage.AccountDiffs, newStorage.Accounts())
+	accountsManager := accountsledger.New(e.protocol.NewSubModule("ForkedAccountsLedger"), newStorage.Settings().APIProvider(), blockCache.Block, newStorage.AccountDiffs, newStorage.Accounts())
 
 	accountsManager.SetLatestCommittedSlot(latestCommitment.Slot())
 	if err = accountsManager.Rollback(slot); err != nil {
