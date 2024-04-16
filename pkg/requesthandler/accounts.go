@@ -35,11 +35,22 @@ func (r *RequestHandler) CongestionByAccountAddress(accountAddress *iotago.Accou
 		return nil, ierrors.WithMessagef(echo.ErrNotFound, "account %s not found", accountID.ToHex())
 	}
 
+	blockIssuanceCredits := acc.Credits.Value
+	// Apply decay to BIC if the value is positive
+	if acc.Credits.Value > 0 {
+		manaDecayProvider := r.APIProvider().APIForSlot(commitment.Slot()).ManaDecayProvider()
+		decayedBIC, err := manaDecayProvider.DecayManaBySlots(iotago.Mana(acc.Credits.Value), acc.Credits.UpdateSlot, commitment.Slot())
+		if err != nil {
+			return nil, ierrors.WithMessagef(echo.ErrInternalServerError, "failed to decay BIC for account %s: %w", accountID.ToHex(), err)
+		}
+		blockIssuanceCredits = iotago.BlockIssuanceCredits(decayedBIC)
+	}
+	
 	return &api.CongestionResponse{
 		Slot:                 commitment.Slot(),
 		Ready:                r.protocol.Engines.Main.Get().Scheduler.IsBlockIssuerReady(accountID, workScores...),
 		ReferenceManaCost:    commitment.ReferenceManaCost(),
-		BlockIssuanceCredits: acc.Credits.Value,
+		BlockIssuanceCredits: blockIssuanceCredits,
 	}, nil
 }
 
