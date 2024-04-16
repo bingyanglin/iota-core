@@ -127,11 +127,6 @@ func (m *Manager) AccountsTreeRoot() iotago.Identifier {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 
-	_ = m.accountsTree.Stream(func(accountID iotago.AccountID, accountData *accounts.AccountData) error {
-		m.LogDebug(">> committing account account", "accountID", accountID, "BIC.VALUE", accountData.Credits.Value, "BIC.UpdateSlot", accountData.Credits.UpdateSlot)
-		return nil
-	})
-
 	return m.accountsTree.Root()
 }
 

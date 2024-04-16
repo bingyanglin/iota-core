@@ -1,8 +1,6 @@
 package protocol
 
 import (
-	"fmt"
-
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/iotaledger/hive.go/core/eventticker"
@@ -131,11 +129,7 @@ func (a *Attestations) setupCommitmentVerifier(chain *Chain) (shutdown func()) {
 	}
 
 	a.commitmentVerifiers.GetOrCreate(forkingPoint.ID(), func() (commitmentVerifier *CommitmentVerifier) {
-		engine := forkingPoint.Chain.Get().LatestEngine()
-		if engine == nil {
-			fmt.Println("engine not available ", a.ParentLogger().LogName(), a.LogName())
-		}
-		commitmentVerifier, err := newCommitmentVerifier(engine, parentOfForkingPoint.Commitment)
+		commitmentVerifier, err := newCommitmentVerifier(forkingPoint.Chain.Get().LatestEngine(), parentOfForkingPoint.Commitment)
 		if err != nil {
 			a.LogError("failed to create commitment verifier", "chain", chain.LogName(), "error", err)
 		}
