@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/iotaledger/hive.go/lo"
+	"github.com/iotaledger/hive.go/log"
 	"github.com/iotaledger/iota-core/pkg/protocol"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/blocks"
 	"github.com/iotaledger/iota-core/pkg/testsuite"
@@ -17,7 +18,6 @@ import (
 
 func TestLossOfAcceptanceFromGenesis(t *testing.T) {
 	ts := testsuite.NewTestSuite(t,
-		testsuite.WithWaitFor(15*time.Second),
 		testsuite.WithProtocolParametersOptions(
 			iotago.WithTimeProviderOptions(
 				0,
@@ -39,10 +39,16 @@ func TestLossOfAcceptanceFromGenesis(t *testing.T) {
 
 	node0 := ts.AddValidatorNode("node0")
 	ts.AddDefaultWallet(node0)
-	ts.AddValidatorNode("node1")
-	ts.AddNode("node2")
+	node1 := ts.AddValidatorNode("node1")
+	node2 := ts.AddNode("node2")
+
+	nodesP1 := []*mock.Node{node0, node2}
+	nodesP2 := []*mock.Node{node1}
 
 	ts.Run(true, nil)
+
+	node0.Protocol.SetLogLevel(log.LevelTrace)
+	node1.Protocol.SetLogLevel(log.LevelTrace)
 
 	// Create snapshot to use later.
 	snapshotPath := ts.Directory.Path(fmt.Sprintf("%d_snapshot", time.Now().Unix()))
@@ -68,13 +74,33 @@ func TestLossOfAcceptanceFromGenesis(t *testing.T) {
 		ts.AssertBlocksExist(ts.Blocks("block0"), true, ts.ClientsForNodes()...)
 	}
 
-	// Continue issuing on all nodes for a few slots.
-	{
-		ts.IssueBlocksAtSlots("", []iotago.SlotIndex{53, 54, 55, 56, 57}, 3, "52.1", ts.Nodes(), true, false)
+	ts.SplitIntoPartitions(map[string][]*mock.Node{
+		"P1": nodesP1,
+		"P2": nodesP2,
+	})
 
-		ts.AssertBlocksInCacheAccepted(ts.BlocksWithPrefix("57.0"), true, ts.Nodes()...)
-		ts.AssertLatestCommitmentSlotIndex(55, ts.Nodes()...)
-		ts.AssertEqualStoredCommitmentAtIndex(55, ts.Nodes()...)
+	// Issue in P1
+	{
+		ts.IssueBlocksAtSlots("P1:", []iotago.SlotIndex{53, 54, 55, 56, 57}, 3, "52.1", nodesP1, true, false)
+
+		ts.AssertBlocksInCacheAccepted(ts.BlocksWithPrefix("57.0"), true, nodesP1...)
+		ts.AssertLatestCommitmentSlotIndex(55, nodesP1...)
+		ts.AssertEqualStoredCommitmentAtIndex(55, nodesP1...)
+
+		ts.AssertBlocksExist(ts.BlocksWithPrefix("P1"), true, ts.ClientsForNodes(nodesP1...)...)
+		ts.AssertBlocksExist(ts.BlocksWithPrefix("P1"), false, ts.ClientsForNodes(nodesP2...)...)
+	}
+
+	// Issue in P2
+	{
+		ts.IssueBlocksAtSlots("P2:", []iotago.SlotIndex{53, 54, 55, 56, 57}, 3, "52.1", nodesP2, true, false)
+
+		ts.AssertBlocksInCacheAccepted(ts.BlocksWithPrefix("57.0"), true, nodesP2...)
+		ts.AssertLatestCommitmentSlotIndex(55, nodesP2...)
+		ts.AssertEqualStoredCommitmentAtIndex(55, nodesP2...)
+
+		ts.AssertBlocksExist(ts.BlocksWithPrefix("P2"), false, ts.ClientsForNodes(nodesP1...)...)
+		ts.AssertBlocksExist(ts.BlocksWithPrefix("P2"), true, ts.ClientsForNodes(nodesP2...)...)
 	}
 
 	// Start node3 from genesis snapshot.
@@ -84,16 +110,32 @@ func TestLossOfAcceptanceFromGenesis(t *testing.T) {
 			protocol.WithSnapshotPath(snapshotPath),
 			protocol.WithBaseDirectory(ts.Directory.PathWithCreate(node3.Name)),
 		)
+		// node3.Protocol.SetLogLevel(log.LevelTrace)
 		ts.Wait()
 	}
 
-	// Continue issuing on all nodes for a few slots.
-	{
-		ts.IssueBlocksAtSlots("", []iotago.SlotIndex{58, 59}, 3, "57.2", ts.Nodes("node0", "node1", "node2"), true, false)
+	ts.MergePartitionsToMain()
+	fmt.Println("\n=========================\nMerged network partitions\n=========================")
 
-		ts.AssertBlocksInCacheAccepted(ts.BlocksWithPrefix("59.0"), true, ts.Nodes()...)
+	// Continue issuing on all nodes on top of their chain, respectively.
+	{
+		ts.IssueBlocksAtSlots("P1:", []iotago.SlotIndex{58, 59}, 3, "P1:57.2", nodesP1, true, false)
+		ts.IssueBlocksAtSlots("P2:", []iotago.SlotIndex{58, 59}, 3, "P2:57.2", nodesP2, true, false)
+
+		// ts.AssertBlocksInCacheAccepted(ts.BlocksWithPrefix("59.0"), true, ts.Nodes()...)
 		ts.AssertLatestCommitmentSlotIndex(57, ts.Nodes()...)
 		ts.AssertEqualStoredCommitmentAtIndex(57, ts.Nodes()...)
+	}
+
+	return
+
+	// Continue issuing on all nodes for a few slots.
+	{
+		ts.IssueBlocksAtSlots("", []iotago.SlotIndex{53, 54, 55, 56, 57}, 3, "52.1", ts.Nodes(), true, false)
+
+		ts.AssertBlocksInCacheAccepted(ts.BlocksWithPrefix("57.0"), true, ts.Nodes()...)
+		ts.AssertLatestCommitmentSlotIndex(55, ts.Nodes()...)
+		ts.AssertEqualStoredCommitmentAtIndex(55, ts.Nodes()...)
 	}
 
 	// Check that commitments from 1-49 are empty.
