@@ -259,7 +259,7 @@ func (c *Commitment) initDerivedProperties() (shutdown func()) {
 
 			return lo.BatchReverse(
 				c.deriveChain(parent),
-				c.IsSolid.InheritFrom(parent.IsSolid),
+
 				c.deriveCumulativeAttestedWeight(parent),
 				c.deriveIsAboveLatestVerifiedCommitment(parent),
 
@@ -273,6 +273,8 @@ func (c *Commitment) initDerivedProperties() (shutdown func()) {
 						}),
 					)
 				}),
+
+				c.IsSolid.InheritFrom(parent.IsSolid),
 			)
 		}),
 
@@ -301,9 +303,9 @@ func (c *Commitment) registerChild(child *Commitment) {
 // deriveChain derives the Chain of this Commitment which is either inherited from the parent if we are the main child
 // or a newly created chain.
 func (c *Commitment) deriveChain(parent *Commitment) func() {
-	return c.Chain.DeriveValueFrom(reactive.NewDerivedVariable4(func(currentChain *Chain, isRoot bool, isSolid bool, mainChild *Commitment, parentChain *Chain) *Chain {
+	return c.Chain.DeriveValueFrom(reactive.NewDerivedVariable3(func(currentChain *Chain, isRoot bool, mainChild *Commitment, parentChain *Chain) *Chain {
 		// do not adjust the chain of the root commitment (it is set from the outside)
-		if isRoot || !isSolid {
+		if isRoot {
 			return currentChain
 		}
 
@@ -329,7 +331,7 @@ func (c *Commitment) deriveChain(parent *Commitment) func() {
 		//}
 
 		return parentChain
-	}, c.IsRoot, c.IsSolid, parent.MainChild, parent.Chain, c.Chain.Get()))
+	}, c.IsRoot, parent.MainChild, parent.Chain, c.Chain.Get()))
 }
 
 // deriveCumulativeAttestedWeight derives the CumulativeAttestedWeight of this Commitment which is the sum of the
