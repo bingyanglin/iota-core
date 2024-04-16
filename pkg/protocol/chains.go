@@ -213,15 +213,15 @@ func attachEngineLogs(instance *engine.Engine) func() {
 		}).Unhook,
 
 		events.SeatManager.OnlineCommitteeSeatAdded.Hook(func(seat account.SeatIndex, accountID iotago.AccountID) {
-			instance.LogTrace("SybilProtection.OnlineCommitteeSeatAdded", "seat", seat, "accountID", accountID)
+			instance.LogInfo("SybilProtection.OnlineCommitteeSeatAdded", "seat", seat, "accountID", accountID)
 		}).Unhook,
 
 		events.SeatManager.OnlineCommitteeSeatRemoved.Hook(func(seat account.SeatIndex) {
-			instance.LogTrace("SybilProtection.OnlineCommitteeSeatRemoved", "seat", seat)
+			instance.LogInfo("SybilProtection.OnlineCommitteeSeatRemoved", "seat", seat)
 		}).Unhook,
 
 		events.SybilProtection.CommitteeSelected.Hook(func(committee *account.SeatedAccounts, epoch iotago.EpochIndex) {
-			instance.LogTrace("SybilProtection.CommitteeSelected", "epoch", epoch, "committee", committee.IDs())
+			instance.LogInfo("SybilProtection.CommitteeSelected", "epoch", epoch, "committee", committee.IDs())
 		}).Unhook,
 
 		events.SpendDAG.SpenderCreated.Hook(func(conflictID iotago.TransactionID) {
@@ -378,12 +378,18 @@ func (c *Chains) deriveLatestSeenSlot(protocol *Protocol) func() {
 		return lo.BatchReverse(
 			c.WithInitializedEngines(func(_ *Chain, engine *engine.Engine) (shutdown func()) {
 				return engine.LatestCommitment.OnUpdate(func(_ *model.Commitment, latestCommitment *model.Commitment) {
-					c.LatestSeenSlot.Set(latestCommitment.Slot())
+					// Check the value to avoid having to acquire write locks inside of the Set method.
+					if c.LatestSeenSlot.Get() < latestCommitment.Slot() {
+						c.LatestSeenSlot.Set(latestCommitment.Slot())
+					}
 				})
 			}),
 
 			protocol.Network.OnBlockReceived(func(block *model.Block, _ peer.ID) {
-				c.LatestSeenSlot.Set(block.ProtocolBlock().Header.SlotCommitmentID.Slot())
+				// Check the value to avoid having to acquire write locks inside of the Set method.
+				if c.LatestSeenSlot.Get() < block.ProtocolBlock().Header.SlotCommitmentID.Slot() {
+					c.LatestSeenSlot.Set(block.ProtocolBlock().Header.SlotCommitmentID.Slot())
+				}
 			}),
 		)
 	})

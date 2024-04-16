@@ -2,7 +2,6 @@ package p2p
 
 import (
 	"context"
-	"time"
 
 	"github.com/libp2p/go-libp2p/core/host"
 	p2pnetwork "github.com/libp2p/go-libp2p/core/network"
@@ -145,7 +144,7 @@ func (m *Manager) DialPeer(ctx context.Context, peer *network.Peer) error {
 		return ierrors.Wrapf(err, "failed to update peer %s", peer.ID.String())
 	}
 
-	if err := m.addNeighbor(ctx, peer, ps); err != nil {
+	if err := m.addNeighbor(peer, ps); err != nil {
 		m.closeStream(stream)
 
 		return ierrors.Wrapf(err, "failed to add neighbor %s", peer.ID.String())
@@ -347,7 +346,7 @@ func (m *Manager) handleStream(stream p2pnetwork.Stream) {
 		return
 	}
 
-	if err := m.addNeighbor(m.ctx, networkPeer, ps); err != nil {
+	if err := m.addNeighbor(networkPeer, ps); err != nil {
 		m.logger.LogErrorf("failed to add neighbor, peerID: %s, error: %s", peerID.String(), err.Error())
 		m.closeStream(stream)
 
@@ -376,7 +375,7 @@ func (m *Manager) neighbor(id peer.ID) (*neighbor, error) {
 	return nbr, nil
 }
 
-func (m *Manager) addNeighbor(ctx context.Context, peer *network.Peer, ps *PacketsStream) error {
+func (m *Manager) addNeighbor(peer *network.Peer, ps *PacketsStream) error {
 	if peer.ID == m.libp2pHost.ID() {
 		return ierrors.WithStack(network.ErrLoopbackPeer)
 	}
@@ -391,9 +390,6 @@ func (m *Manager) addNeighbor(ctx context.Context, peer *network.Peer, ps *Packe
 	if m.NeighborExists(peer.ID) {
 		return ierrors.WithStack(network.ErrDuplicatePeer)
 	}
-
-	firstPacketReceivedCtx, firstPacketReceivedCancel := context.WithDeadline(ctx, time.Now().Add(5*time.Second))
-	defer firstPacketReceivedCancel()
 
 	var innerErr error
 	nbr := newNeighbor(m.logger, peer, ps, func(nbr *neighbor, packet proto.Message) {
@@ -410,7 +406,6 @@ func (m *Manager) addNeighbor(ctx context.Context, peer *network.Peer, ps *Packe
 	}, func(nbr *neighbor) {
 		nbr.logger.LogInfof("Neighbor connected: %s", nbr.Peer().ID.String())
 		nbr.Peer().SetConnStatus(network.ConnStatusConnected)
-		firstPacketReceivedCancel()
 		m.neighborAdded.Trigger(nbr)
 	}, func(nbr *neighbor) {
 		m.deleteNeighbor(nbr)
@@ -425,15 +420,6 @@ func (m *Manager) addNeighbor(ctx context.Context, peer *network.Peer, ps *Packe
 	}
 	nbr.readLoop()
 	nbr.writeLoop()
-
-	<-firstPacketReceivedCtx.Done()
-
-	if ierrors.Is(firstPacketReceivedCtx.Err(), context.DeadlineExceeded) {
-		nbr.logger.LogErrorf("First packet not received within deadline")
-		nbr.Close()
-
-		return ierrors.WithStack(network.ErrFirstPacketNotReceived)
-	}
 
 	return innerErr
 }

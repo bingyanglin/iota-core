@@ -3,7 +3,6 @@ package prometheus
 import (
 	"time"
 
-	"github.com/iotaledger/hive.go/ierrors"
 	"github.com/iotaledger/hive.go/runtime/event"
 	"github.com/iotaledger/iota-core/components/prometheus/collector"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/blocks"
@@ -16,7 +15,6 @@ const (
 	queueSizePerNodeCount          = "queue_size_per_node_count"
 	validatorQueueSizePerNodeCount = "validator_queue_size_per_node_count"
 	schedulerProcessedBlocks       = "processed_blocks"
-	manaAmountPerNode              = "mana_per_node"
 	scheduledBlockLabel            = "scheduled"
 	skippedBlockLabel              = "skipped"
 	droppedBlockLabel              = "dropped"
@@ -113,24 +111,6 @@ var SchedulerMetrics = collector.NewCollection(schedulerNamespace,
 				if _, isValidation := block.ValidationBlock(); isValidation {
 					deps.Collector.Update(schedulerNamespace, validatorQueueSizePerNodeCount, float64(deps.Protocol.Engines.Main.Get().Scheduler.ValidatorQueueBlockCount(block.ProtocolBlock().Header.IssuerID)), block.ProtocolBlock().Header.IssuerID.String())
 				}
-			}, event.WithWorkerPool(Component.WorkerPool))
-		}),
-	)),
-	collector.WithMetric(collector.NewMetric(manaAmountPerNode,
-		collector.WithType(collector.Gauge),
-		collector.WithLabels("issuer_id"),
-		collector.WithPruningDelay(10*time.Minute),
-		collector.WithHelp("Current amount of mana of each issuer in the queue."),
-		collector.WithInitFunc(func() {
-			deps.Protocol.Events.Engine.Scheduler.BlockEnqueued.Hook(func(block *blocks.Block) {
-				mana, err := deps.Protocol.Engines.Main.Get().Ledger.ManaManager().GetManaOnAccount(block.ProtocolBlock().Header.IssuerID, block.SlotCommitmentID().Slot())
-				if err != nil {
-					deps.Protocol.Engines.Main.Get().ErrorHandler("metrics")(ierrors.Wrapf(err, "failed to retrieve mana on account %s for slot %d", block.ProtocolBlock().Header.IssuerID.ToHex(), block.SlotCommitmentID().Slot()))
-
-					return
-				}
-
-				deps.Collector.Update(schedulerNamespace, manaAmountPerNode, float64(mana), block.ProtocolBlock().Header.IssuerID.String())
 			}, event.WithWorkerPool(Component.WorkerPool))
 		}),
 	)),
