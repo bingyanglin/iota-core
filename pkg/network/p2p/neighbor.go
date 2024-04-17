@@ -11,6 +11,7 @@ import (
 	"github.com/iotaledger/hive.go/ierrors"
 	"github.com/iotaledger/hive.go/log"
 	"github.com/iotaledger/iota-core/pkg/network"
+	nwmodels "github.com/iotaledger/iota-core/pkg/network/protocols/core/models"
 )
 
 const (
@@ -34,7 +35,8 @@ type neighbor struct {
 
 	logger log.Logger
 
-	packetReceivedFunc PacketReceivedFunc
+	packetReceivedFunc  PacketReceivedFunc
+	onBlockSentCallback func()
 
 	connectedFunc    NeighborConnectedFunc
 	disconnectedFunc NeighborDisconnectedFunc
@@ -54,19 +56,20 @@ type neighbor struct {
 var _ network.Neighbor = (*neighbor)(nil)
 
 // newNeighbor creates a new neighbor from the provided peer and connection.
-func newNeighbor(parentLogger log.Logger, p *network.Peer, stream *PacketsStream, packetReceivedCallback PacketReceivedFunc, connectedCallback NeighborConnectedFunc, disconnectedCallback NeighborDisconnectedFunc) *neighbor {
+func newNeighbor(parentLogger log.Logger, p *network.Peer, stream *PacketsStream, packetReceivedCallback PacketReceivedFunc, onBlockSentCallback func(), connectedCallback NeighborConnectedFunc, disconnectedCallback NeighborDisconnectedFunc) *neighbor {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	n := &neighbor{
-		peer:               p,
-		logger:             parentLogger.NewChildLogger("peer", true),
-		packetReceivedFunc: packetReceivedCallback,
-		connectedFunc:      connectedCallback,
-		disconnectedFunc:   disconnectedCallback,
-		loopCtx:            ctx,
-		loopCtxCancel:      cancel,
-		stream:             stream,
-		sendQueue:          make(chan *queuedPacket, NeighborsSendQueueSize),
+		peer:                p,
+		logger:              parentLogger.NewChildLogger("peer", true),
+		packetReceivedFunc:  packetReceivedCallback,
+		onBlockSentCallback: onBlockSentCallback,
+		connectedFunc:       connectedCallback,
+		disconnectedFunc:    disconnectedCallback,
+		loopCtx:             ctx,
+		loopCtxCancel:       cancel,
+		stream:              stream,
+		sendQueue:           make(chan *queuedPacket, NeighborsSendQueueSize),
 	}
 
 	n.logger.LogInfo("created", "ID", n.Peer().ID.String())
@@ -153,6 +156,7 @@ func (n *neighbor) writeLoop() {
 
 					return
 				}
+
 				if err := n.stream.WritePacket(sendPacket.packet); err != nil {
 					n.logger.LogWarnf("send error, peerID: %s, error: %s", n.Peer().ID.String(), err.Error())
 					if disconnectErr := n.disconnect(); disconnectErr != nil {
@@ -160,6 +164,12 @@ func (n *neighbor) writeLoop() {
 					}
 
 					return
+				}
+
+				if n.onBlockSentCallback != nil {
+					if block := sendPacket.packet.(*nwmodels.Packet).GetBlock(); block != nil {
+						n.onBlockSentCallback()
+					}
 				}
 			}
 		}
