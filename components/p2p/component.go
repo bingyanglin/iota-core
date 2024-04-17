@@ -245,8 +245,8 @@ func provide(c *dig.Container) error {
 		Component.LogPanic(err.Error())
 	}
 
-	if err := c.Provide(func() *p2p.P2PMetrics {
-		return &p2p.P2PMetrics{}
+	if err := c.Provide(func() *p2p.Metrics {
+		return &p2p.Metrics{}
 	}); err != nil {
 		Component.LogPanic(err.Error())
 	}
@@ -255,7 +255,7 @@ func provide(c *dig.Container) error {
 		dig.In
 		Host       host.Host
 		PeerDB     *network.DB
-		P2PMetrics *p2p.P2PMetrics
+		P2PMetrics *p2p.Metrics
 	}
 
 	return c.Provide(func(inDeps p2pManagerDeps) network.Manager {

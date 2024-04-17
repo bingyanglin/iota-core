@@ -58,7 +58,7 @@ type dependencies struct {
 	Protocol         *protocol.Protocol
 	RestRouteManager *restapipkg.RestRouteManager
 	AppInfo          *app.Info
-	P2PMetrics       *p2p.P2PMetrics
+	P2PMetrics       *p2p.Metrics
 }
 
 func configure() error {
@@ -67,7 +67,7 @@ func configure() error {
 		deps.P2PMetrics.IncomingBlocks.Add(1)
 	})
 
-	deps.Protocol.Events.Engine.BlockRetainer.BlockRetained.Hook(func(block *blocks.Block) {
+	deps.Protocol.Events.Engine.BlockRetainer.BlockRetained.Hook(func(_ *blocks.Block) {
 		deps.P2PMetrics.IncomingNewBlocks.Add(1)
 	})
 

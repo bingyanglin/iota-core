@@ -120,9 +120,7 @@ func run() error {
 }
 
 func provide(c *dig.Container) error {
-	return c.Provide(func() *collector.Collector {
-		return collector.New()
-	})
+	return c.Provide(collector.New)
 }
 
 func registerMetrics() {

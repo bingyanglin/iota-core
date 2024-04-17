@@ -167,6 +167,7 @@ func (n *neighbor) writeLoop() {
 				}
 
 				if n.onBlockSentCallback != nil {
+					//nolint:forcetypeassert // we know that the packet is a nwmodels.Packet
 					if block := sendPacket.packet.(*nwmodels.Packet).GetBlock(); block != nil {
 						n.onBlockSentCallback()
 					}
