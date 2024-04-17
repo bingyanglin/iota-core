@@ -1,6 +1,8 @@
 package epochstore
 
 import (
+	"fmt"
+
 	"github.com/iotaledger/hive.go/ierrors"
 	"github.com/iotaledger/hive.go/kvstore"
 	"github.com/iotaledger/hive.go/lo"
@@ -108,10 +110,12 @@ func (e *EpochKVStore) Prune(epoch iotago.EpochIndex, defaultPruningDelay iotago
 
 func (e *EpochKVStore) RollbackEpochs(epoch iotago.EpochIndex) (lastPrunedEpoch iotago.EpochIndex, err error) {
 	lastAccessedEpoch, err := e.LastAccessedEpoch()
+	fmt.Println("lastAccessedEpoch: ", lastAccessedEpoch)
 	if err != nil {
 		return lastAccessedEpoch, ierrors.Wrap(err, "failed to get last accessed epoch")
 	}
 
+	fmt.Println("epoch: ", epoch)
 	for epochToPrune := epoch; epochToPrune <= lastAccessedEpoch; epochToPrune++ {
 		if err = e.DeleteEpoch(epochToPrune); err != nil {
 			return epochToPrune, ierrors.Wrapf(err, "error while deleting epoch %d", epochToPrune)

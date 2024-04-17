@@ -2,6 +2,9 @@ package tests
 
 import (
 	"fmt"
+	"net/http"
+	_ "net/http"
+	_ "net/http/pprof"
 	"testing"
 	"time"
 
@@ -18,6 +21,12 @@ import (
 )
 
 func TestLossOfAcceptanceFromGenesis(t *testing.T) {
+	// debug.SetEnabled(true)
+
+	go func() {
+		fmt.Println(http.ListenAndServe("localhost:6061", nil))
+	}()
+
 	ts := testsuite.NewTestSuite(t,
 		testsuite.WithProtocolParametersOptions(
 			iotago.WithTimeProviderOptions(
@@ -36,21 +45,21 @@ func TestLossOfAcceptanceFromGenesis(t *testing.T) {
 		),
 		testsuite.WithWaitFor(15*time.Second),
 	)
-	defer ts.Shutdown()
+	// defer ts.Shutdown()
 
 	node0 := ts.AddValidatorNode("node0")
 	ts.AddDefaultWallet(node0)
 	node1 := ts.AddValidatorNode("node1")
-	node2 := ts.AddNode("node2")
+	// node2 := ts.AddNode("node2")
 
-	nodesP1 := []*mock.Node{node0, node2}
+	nodesP1 := []*mock.Node{node0}
 	nodesP2 := []*mock.Node{node1}
 
 	ts.Run(true, nil)
 
-	node0.Protocol.SetLogLevel(log.LevelFatal)
-	node1.Protocol.SetLogLevel(log.LevelFatal)
-	node2.Protocol.SetLogLevel(log.LevelFatal)
+	node0.Protocol.SetLogLevel(log.LevelTrace)
+	// node1.Protocol.SetLogLevel(log.LevelTrace)
+	// node2.Protocol.SetLogLevel(log.LevelFatal)
 
 	// Create snapshot to use later.
 	snapshotPath := ts.Directory.Path(fmt.Sprintf("%d_snapshot", time.Now().Unix()))
@@ -101,8 +110,8 @@ func TestLossOfAcceptanceFromGenesis(t *testing.T) {
 		ts.AssertBlocksExist(ts.BlocksWithPrefix("P1"), true, ts.ClientsForNodes(nodesP1...)...)
 		ts.AssertBlocksExist(ts.BlocksWithPrefix("P1"), false, ts.ClientsForNodes(nodesP2...)...)
 	}
-	ts.AssertSybilProtectionOnlineCommittee(seatIndexes[0:1], node0, node2)
-	ts.AssertSybilProtectionOnlineCommittee(seatIndexes[0:1], node1)
+	ts.AssertSybilProtectionOnlineCommittee(seatIndexes[0:1], nodesP1...)
+	ts.AssertSybilProtectionOnlineCommittee(seatIndexes[0:1], nodesP2...)
 
 	// Issue in P2
 	{
@@ -115,32 +124,36 @@ func TestLossOfAcceptanceFromGenesis(t *testing.T) {
 		ts.AssertBlocksExist(ts.BlocksWithPrefix("P2"), false, ts.ClientsForNodes(nodesP1...)...)
 		ts.AssertBlocksExist(ts.BlocksWithPrefix("P2"), true, ts.ClientsForNodes(nodesP2...)...)
 	}
-	ts.AssertSybilProtectionOnlineCommittee(seatIndexes[0:1], node0, node2)
-	ts.AssertSybilProtectionOnlineCommittee(seatIndexes[1:2], node1)
+	ts.AssertSybilProtectionOnlineCommittee(seatIndexes[0:1], nodesP1...)
+	ts.AssertSybilProtectionOnlineCommittee(seatIndexes[1:2], nodesP2...)
 
 	// Start node3 from genesis snapshot.
-	node3 := ts.AddNode("node3")
-	{
-		node3.Initialize(true,
-			protocol.WithSnapshotPath(snapshotPath),
-			protocol.WithBaseDirectory(ts.Directory.PathWithCreate(node3.Name)),
-		)
-		node3.Protocol.SetLogLevel(log.LevelTrace)
-		ts.Wait()
-	}
-
+	// node3 := ts.AddNode("node3")
+	// {
+	// 	node3.Initialize(true,
+	// 		protocol.WithSnapshotPath(snapshotPath),
+	// 		protocol.WithBaseDirectory(ts.Directory.PathWithCreate(node3.Name)),
+	// 	)
+	// 	node3.Protocol.SetLogLevel(log.LevelTrace)
+	// 	ts.Wait()
+	// }
 	ts.MergePartitionsToMain()
 	fmt.Println("\n=========================\nMerged network partitions\n=========================")
 
 	// Continue issuing on all nodes on top of their chain, respectively.
 	{
-		ts.IssueBlocksAtSlots("P2:", []iotago.SlotIndex{62}, 1, "P2:61.2", nodesP2, false, false)
-		ts.IssueBlocksAtSlots("P1:", []iotago.SlotIndex{62}, 1, "P1:61.2", nodesP1, false, false)
+		ts.IssueBlocksAtSlots("P2:", []iotago.SlotIndex{61}, 1, "P2:61.2", nodesP2, false, false)
+		ts.IssueBlocksAtSlots("P1:", []iotago.SlotIndex{61}, 1, "P1:61.2", nodesP1, false, false)
 
+		ts.Wait()
+
+		fmt.Println(">>>>>>> Checking stuff...")
 		// ts.AssertBlocksInCacheAccepted(ts.BlocksWithPrefix("59.0"), true, ts.Nodes()...)
 		ts.AssertLatestCommitmentSlotIndex(59, ts.Nodes()...)
-
+		fmt.Println(">>>>>>> Latest commitment slot index:", 59)
+		// pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
 		ts.AssertEqualStoredCommitmentAtIndex(59, ts.Nodes()...)
+		fmt.Println(">>>>>>> Stored commitment at index 59 is equal for all nodes.")
 	}
 }
 

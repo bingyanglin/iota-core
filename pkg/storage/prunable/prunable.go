@@ -1,6 +1,8 @@
 package prunable
 
 import (
+	"fmt"
+
 	copydir "github.com/otiai10/copy"
 
 	"github.com/iotaledger/hive.go/ierrors"
@@ -171,33 +173,46 @@ func (p *Prunable) Flush() {
 }
 
 func (p *Prunable) Rollback(targetEpoch iotago.EpochIndex, startPruneRange iotago.SlotIndex, endPruneRange iotago.SlotIndex) error {
+	fmt.Println("Rollback", targetEpoch, startPruneRange, endPruneRange)
+
 	if err := p.prunableSlotStore.PruneSlots(targetEpoch, startPruneRange, endPruneRange); err != nil {
 		return ierrors.Wrapf(err, "failed to prune slots in range [%d, %d] from target epoch %d", startPruneRange, endPruneRange, targetEpoch)
 	}
 
+	fmt.Println("Rollback 2", targetEpoch, startPruneRange, endPruneRange)
+
 	if err := p.rollbackCommitteesCandidates(targetEpoch, startPruneRange); err != nil {
 		return ierrors.Wrapf(err, "failed to rollback committee candidates to target epoch %d", targetEpoch)
 	}
+	fmt.Println("Rollback 3", targetEpoch, startPruneRange, endPruneRange)
 
 	lastPrunedCommitteeEpoch, err := p.rollbackCommitteeEpochs(targetEpoch+1, startPruneRange-1)
 	if err != nil {
 		return ierrors.Wrapf(err, "failed to rollback committee epochs to target epoch %d", targetEpoch)
 	}
 
+	fmt.Println("Rollback 4", targetEpoch, startPruneRange, endPruneRange)
+
 	lastPrunedPoolStatsEpoch, _, err := p.poolStats.RollbackEpochs(targetEpoch)
 	if err != nil {
 		return ierrors.Wrapf(err, "failed to rollback pool stats epochs to target epoch %d", targetEpoch)
 	}
+
+	fmt.Println("Rollback 5", targetEpoch, startPruneRange, endPruneRange)
 
 	lastPrunedDecidedUpgradeSignalsEpoch, _, err := p.decidedUpgradeSignals.RollbackEpochs(targetEpoch)
 	if err != nil {
 		return ierrors.Wrapf(err, "failed to rollback decided upgrade signals epochs to target epoch %d", targetEpoch)
 	}
 
+	fmt.Println("Rollback 6", targetEpoch, startPruneRange, endPruneRange)
+
 	lastPrunedPoolRewardsEpoch, err := p.poolRewards.RollbackEpochs(targetEpoch)
 	if err != nil {
 		return ierrors.Wrapf(err, "failed to rollback pool rewards epochs to target epoch %d", targetEpoch)
 	}
+
+	fmt.Println("Rollback 7 ", targetEpoch, startPruneRange, endPruneRange)
 
 	for epochToPrune := targetEpoch + 1; epochToPrune <= max(
 		lastPrunedCommitteeEpoch,
@@ -207,6 +222,7 @@ func (p *Prunable) Rollback(targetEpoch iotago.EpochIndex, startPruneRange iotag
 	); epochToPrune++ {
 		p.prunableSlotStore.DeleteBucket(epochToPrune)
 	}
+	fmt.Println("Rollback 8", targetEpoch, startPruneRange, endPruneRange)
 
 	return nil
 }

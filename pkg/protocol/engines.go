@@ -81,10 +81,14 @@ func (e *Engines) initLogging() (shutdown func()) {
 
 // ForkAtSlot creates a new engine instance that forks from the main engine at the given slot.
 func (e *Engines) ForkAtSlot(slot iotago.SlotIndex) (*engine.Engine, error) {
+	e.LogInfo("forking engine at slot", "slot", slot)
+
 	newEngineAlias := lo.PanicOnErr(uuid.NewUUID()).String()
 	errorHandler := func(err error) {
 		e.protocol.LogError("engine error", "err", err, "name", newEngineAlias[0:8])
 	}
+
+	e.LogInfo("forking engine at slot 2", "slot", slot)
 
 	// copy raw data on disk.
 	newStorage, err := storage.Clone(e, e.Main.Get().Storage, e.directory.Path(newEngineAlias), DatabaseVersion, errorHandler, e.protocol.Options.StorageOptions...)
@@ -92,17 +96,23 @@ func (e *Engines) ForkAtSlot(slot iotago.SlotIndex) (*engine.Engine, error) {
 		return nil, ierrors.Wrapf(err, "failed to copy storage from active engine instance (%s) to new engine instance (%s)", e.Main.Get().Storage.Directory(), e.directory.Path(newEngineAlias))
 	}
 
+	e.LogInfo("forking engine at slot 3", "slot", slot)
+
 	// remove commitments that after forking point.
 	latestCommitment := newStorage.Settings().LatestCommitment()
 	if err = newStorage.Commitments().Rollback(slot, latestCommitment.Slot()); err != nil {
 		return nil, ierrors.Wrap(err, "failed to rollback commitments")
 	}
 
+	e.LogInfo("forking engine at slot 4", "slot", slot)
+
 	// some components are automatically rolled back by deleting their data on disk (e.g. slot based storage).
 	// some other components need to be rolled back manually, like the UTXO ledger for example.
 	// we need to create temporary components to rollback their permanent state, which will be reflected on disk.
 	evictionState := eviction.NewState(newStorage.Settings(), newStorage.RootBlocks)
 	evictionState.Initialize(latestCommitment.Slot())
+
+	e.LogInfo("forking engine at slot 5", "slot", slot)
 
 	blockCache := blocks.New(evictionState, newStorage.Settings().APIProvider())
 	accountsManager := accountsledger.New(e.protocol.NewSubModule("ForkedAccountsLedger"), newStorage.Settings().APIProvider(), blockCache.Block, newStorage.AccountDiffs, newStorage.Accounts())
@@ -119,18 +129,26 @@ func (e *Engines) ForkAtSlot(slot iotago.SlotIndex) (*engine.Engine, error) {
 		return nil, err
 	}
 
+	e.LogInfo("forking engine at slot 6", "slot", slot)
+
 	targetCommitment, err := newStorage.Commitments().Load(slot)
 	if err != nil {
 		return nil, ierrors.Wrapf(err, "error while retrieving commitment for target index %d", slot)
 	}
 
+	e.LogInfo("forking engine at slot 6.1", "slot", slot)
+
 	if err = newStorage.Settings().Rollback(targetCommitment); err != nil {
 		return nil, err
 	}
 
+	e.LogInfo("forking engine at slot 6.2", "slot", slot)
 	if err = newStorage.Rollback(slot); err != nil {
+		e.LogError("failed to rollback storage", "err", err)
 		return nil, err
 	}
+
+	e.LogInfo("forking engine at slot 7", "slot", slot)
 
 	candidateEngine := e.loadEngineInstanceWithStorage(newEngineAlias, newStorage)
 
@@ -138,6 +156,8 @@ func (e *Engines) ForkAtSlot(slot iotago.SlotIndex) (*engine.Engine, error) {
 	if err = candidateEngine.Attestations.Rollback(slot); err != nil {
 		return nil, ierrors.Wrap(err, "error while rolling back attestations storage on candidate engine")
 	}
+
+	e.LogInfo("forking engine at slot 8", "slot", slot)
 
 	return candidateEngine, nil
 }
@@ -274,7 +294,9 @@ func (e *Engines) injectEngineInstances() (shutdown func()) {
 				} else {
 					e.protocol.Network.OnShutdown(func() { newEngine.ShutdownEvent().Trigger() })
 
+					e.LogInfo("injecting engine instance before", "chain", chain.LogName())
 					chain.Engine.Set(newEngine)
+					e.LogInfo("injecting engine instance after", "chain", chain.LogName())
 				}
 			})
 		})
