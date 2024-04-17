@@ -135,10 +135,10 @@ func (b *Booker) Queue(block *blocks.Block) error {
 func (b *Booker) Reset() { /* nothing to reset but comply with interface */ }
 
 func (b *Booker) setupBlock(block *blocks.Block, signedTransactionMetadata mempool.SignedTransactionMetadata) {
-	var payloadDependencies, directlyReferencedPayloadDependencies ds.Set[mempool.StateMetadata]
+	var _, directlyReferencedPayloadDependencies ds.Set[mempool.StateMetadata]
 
 	if signedTransactionMetadata != nil && signedTransactionMetadata.SignaturesInvalid() == nil && !signedTransactionMetadata.TransactionMetadata().IsInvalid() {
-		payloadDependencies = signedTransactionMetadata.TransactionMetadata().Inputs()
+		_ = signedTransactionMetadata.TransactionMetadata().Inputs()
 		directlyReferencedPayloadDependencies = ds.NewSet[mempool.StateMetadata]()
 	}
 
@@ -164,6 +164,7 @@ func (b *Booker) setupBlock(block *blocks.Block, signedTransactionMetadata mempo
 
 			if unbookedParentsCount.Add(-1) == 0 {
 				block.ParentsBooked.Trigger()
+				block.PayloadDependenciesAvailable.Trigger()
 			}
 		})
 
@@ -174,13 +175,13 @@ func (b *Booker) setupBlock(block *blocks.Block, signedTransactionMetadata mempo
 		})
 	})
 
-	block.ParentsBooked.OnTrigger(func() {
-		if directlyReferencedPayloadDependencies != nil {
-			payloadDependencies.DeleteAll(directlyReferencedPayloadDependencies)
-		}
-
-		block.WaitForPayloadDependencies(payloadDependencies)
-	})
+	//block.ParentsBooked.OnTrigger(func() {
+	//	if directlyReferencedPayloadDependencies != nil {
+	//		payloadDependencies.DeleteAll(directlyReferencedPayloadDependencies)
+	//	}
+	//
+	//	block.WaitForPayloadDependencies(payloadDependencies)
+	//})
 
 	block.PayloadDependenciesAvailable.OnTrigger(func() {
 		if err := b.book(block); err != nil {
