@@ -232,15 +232,16 @@ func (d *DockerTestFramework) prepareAssets(totalAssetsNum int) (coreAPIAssets, 
 		assets[valueBlockSlot].reattachments = append(assets[valueBlockSlot].reattachments, secondAttachment.ID())
 
 		// delegation
-		delegationOutputID, delegationOutput := d.DelegateToValidator(wallet, d.Node("V1").AccountAddress(d.Testing))
-		assets.setupAssetsForSlot(delegationOutputID.CreationSlot())
-		assets[delegationOutputID.CreationSlot()].delegationOutputs[delegationOutputID] = delegationOutput
+		//nolint:forcetypeassert
+		delegationOutputData:= d.DelegateToValidator(wallet, d.Node("V1").AccountAddress(d.Testing))
+		assets.setupAssetsForSlot(delegationOutputData.ID.CreationSlot())
+		assets[delegationOutputData.ID.CreationSlot()].delegationOutputs[delegationOutputData.ID] = delegationOutputData.Output.(*iotago.DelegationOutput)
 
-		latestSlot = lo.Max[iotago.SlotIndex](latestSlot, blockSlot, valueBlockSlot, delegationOutputID.CreationSlot(), secondAttachment.ID().Slot())
+		latestSlot = lo.Max[iotago.SlotIndex](latestSlot, blockSlot, valueBlockSlot, delegationOutputData.ID.CreationSlot(), secondAttachment.ID().Slot())
 
 		fmt.Printf("Assets for slot %d\n: dataBlock: %s block: %s\ntx: %s\nbasic output: %s, faucet output: %s\n delegation output: %s\n",
 			valueBlockSlot, block.MustID().String(), valueBlock.MustID().String(), signedTx.MustID().String(),
-			basicOutputID.String(), faucetOutput.ID.String(), delegationOutputID.String())
+			basicOutputID.String(), faucetOutput.ID.String(), delegationOutputData.ID.String())
 	}
 
 	return assets, latestSlot

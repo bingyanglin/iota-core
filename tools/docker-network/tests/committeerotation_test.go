@@ -245,10 +245,11 @@ func Test_Delegation(t *testing.T) {
 	wallet, _ := d.CreateAccount()
 
 	// delegate all faucet funds to V2, V2 should replace V3
-	_, delegationOutput := d.DelegateToValidator(wallet, d.Node("V2").AccountAddress(t))
-	d.AssertCommittee(delegationOutput.StartEpoch+1, d.AccountsFromNodes(d.Nodes("V1", "V2", "V4")...))
+	//nolint:forcetypeassert
+	delegationOutputData := d.DelegateToValidator(wallet, d.Node("V2").AccountAddress(t))
+	d.AssertCommittee(delegationOutputData.Output.(*iotago.DelegationOutput).StartEpoch+1, d.AccountsFromNodes(d.Nodes("V1", "V2", "V4")...))
 
 	// delegate all faucet funds to V3, V3 should replace V1
-	_, delegationOutput = d.DelegateToValidator(wallet, d.Node("V3").AccountAddress(t))
-	d.AssertCommittee(delegationOutput.StartEpoch+1, d.AccountsFromNodes(d.Nodes("V2", "V3", "V4")...))
+	delegationOutputData = d.DelegateToValidator(wallet, d.Node("V3").AccountAddress(t))
+	d.AssertCommittee(delegationOutputData.Output.(*iotago.DelegationOutput).StartEpoch+1, d.AccountsFromNodes(d.Nodes("V2", "V3", "V4")...))
 }

@@ -304,7 +304,7 @@ func Test_StakeDelegateAndDelayedClaim(t *testing.T) {
 
 	// transition a delegation output to a delayed claiming state
 	block3Slot := ts.CurrentSlot()
-	tx3 := ts.DefaultWallet().DelayedClaimingTransition("TX3", "TX2:0", 0)
+	tx3 := ts.DefaultWallet().DelayedClaimingTransition("TX3", ts.DefaultWallet().OutputData("TX2:0"), 0)
 	block3 := lo.PanicOnErr(ts.IssueBasicBlockWithOptions("block3", ts.DefaultWallet(), tx3, mock.WithStrongParents(latestParents...)))
 
 	latestParents = ts.CommitUntilSlot(block3Slot, block3.ID())

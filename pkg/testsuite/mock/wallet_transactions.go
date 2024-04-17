@@ -175,15 +175,28 @@ func (w *Wallet) registrationSlot(slot iotago.SlotIndex) iotago.SlotIndex {
 }
 
 // DelayedClaimingTransition transitions DelegationOutput into delayed claiming state by setting DelegationID and EndEpoch.
-func (w *Wallet) DelayedClaimingTransition(transactionName string, inputName string, delegationEndEpoch iotago.EpochIndex) *iotago.SignedTransaction {
-	input := w.OutputData(inputName)
-	if input.Output.Type() != iotago.OutputDelegation {
-		panic(ierrors.Errorf("%s is not a delegation output, cannot transition to delayed claiming state", inputName))
-	}
-
+func (w *Wallet) DelayedClaimingTransition(transactionName string, input *OutputData, optDelegationEndEpoch ...iotago.EpochIndex) *iotago.SignedTransaction {
 	prevOutput, ok := input.Output.Clone().(*iotago.DelegationOutput)
 	if !ok {
-		panic(ierrors.Errorf("cloned output %s is not a delegation output, cannot transition to delayed claiming state", inputName))
+		panic(ierrors.New("cloned output is not a delegation output, cannot transition to delayed claiming state"))
+	}
+
+	var delegationEndEpoch iotago.EpochIndex
+	if len(optDelegationEndEpoch) == 0 {
+		api := w.Client.LatestAPI()
+		latestCommitmentSlot := w.GetNewBlockIssuanceResponse().LatestCommitment.Slot
+		futureBoundedSlotIndex := latestCommitmentSlot + api.ProtocolParameters().MinCommittableAge()
+		futureBoundedEpochIndex := api.TimeProvider().EpochFromSlot(futureBoundedSlotIndex)
+
+		registrationSlot := api.TimeProvider().EpochEnd(api.TimeProvider().EpochFromSlot(w.CurrentSlot())) - api.ProtocolParameters().EpochNearingThreshold()
+
+		if futureBoundedSlotIndex <= registrationSlot {
+			delegationEndEpoch = futureBoundedEpochIndex
+		} else {
+			delegationEndEpoch = futureBoundedEpochIndex + 1
+		}
+	} else {
+		delegationEndEpoch = optDelegationEndEpoch[0]
 	}
 
 	delegationBuilder := builder.NewDelegationOutputBuilderFromPrevious(prevOutput).EndEpoch(delegationEndEpoch)
@@ -927,11 +940,10 @@ func (w *Wallet) SendFundsFromAccount(transactionName string, accountOutputName 
 	return signedTransaction
 }
 
-func (w *Wallet) ClaimValidatorRewards(transactionName string, inputName string) *iotago.SignedTransaction {
-	input := w.OutputData(inputName)
+func (w *Wallet) ClaimValidatorRewards(transactionName string, input *OutputData) *iotago.SignedTransaction {
 	inputAccount, ok := input.Output.(*iotago.AccountOutput)
 	if !ok {
-		panic(fmt.Sprintf("output with alias %s is not *iotago.AccountOutput", inputName))
+		panic(fmt.Sprintf("output is not *iotago.AccountOutput"))
 	}
 
 	apiForSlot := w.Client.APIForSlot(w.CurrentSlot())
@@ -1009,9 +1021,7 @@ func (w *Wallet) AllotManaFromInputs(transactionName string, allotments iotago.A
 	return signedTransaction
 }
 
-func (w *Wallet) ClaimDelegatorRewards(transactionName string, inputName string) *iotago.SignedTransaction {
-	input := w.OutputData(inputName)
-
+func (w *Wallet) ClaimDelegatorRewards(transactionName string, input *OutputData) *iotago.SignedTransaction {
 	apiForSlot := w.Client.APIForSlot(w.CurrentSlot())
 	potentialMana := w.PotentialMana(apiForSlot, input)
 
@@ -1068,7 +1078,7 @@ func (w *Wallet) AllotManaToWallet(transactionName string, inputName string, rec
 	return signedTransaction
 }
 
-func (w *Wallet) CreateNFTFromInput(transactionName string, input *OutputData, opts ...options.Option[builder.NFTOutputBuilder]) *iotago.SignedTransaction {
+func (w *Wallet) CreateTaggedNFTFromInput(transactionName string, input *OutputData, opts ...options.Option[builder.NFTOutputBuilder]) *iotago.SignedTransaction {
 	nftOutputBuilder := builder.NewNFTOutputBuilder(w.Address(), input.Output.BaseTokenAmount())
 	options.Apply(nftOutputBuilder, opts)
 	nftOutput := nftOutputBuilder.MustBuild()
@@ -1080,6 +1090,20 @@ func (w *Wallet) CreateNFTFromInput(transactionName string, input *OutputData, o
 		WithOutputs(nftOutput),
 		WithAllotAllManaToAccount(w.CurrentSlot(), w.BlockIssuer.AccountData.ID),
 		WithTaggedDataPayload(&iotago.TaggedData{Tag: []byte("nft")}),
+	)
+}
+
+func (w *Wallet) CreateNFTFromInput(transactionName string, input *OutputData, opts ...options.Option[builder.NFTOutputBuilder]) *iotago.SignedTransaction {
+	nftOutputBuilder := builder.NewNFTOutputBuilder(w.Address(), input.Output.BaseTokenAmount())
+	options.Apply(nftOutputBuilder, opts)
+	nftOutput := nftOutputBuilder.MustBuild()
+
+	return w.createSignedTransactionWithOptions(
+		transactionName,
+		[]uint32{0},
+		WithInputs(input),
+		WithOutputs(nftOutput),
+		WithAllotAllManaToAccount(w.CurrentSlot(), w.BlockIssuer.AccountData.ID),
 	)
 }
 

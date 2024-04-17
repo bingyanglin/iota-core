@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/iotaledger/iota-core/pkg/testsuite/mock"
 	iotago "github.com/iotaledger/iota.go/v4"
 )
 
@@ -40,7 +41,7 @@ func Test_ValidatorRewards(t *testing.T) {
 	d.WaitUntilNetworkReady()
 
 	ctx := context.Background()
-	clt := d.wallet.DefaultClient()
+	clt := d.defaultWallet.Client
 	status := d.NodeStatus("V1")
 	currentEpoch := clt.CommittedAPI().TimeProvider().EpochFromSlot(status.LatestAcceptedBlockSlot)
 	slotsDuration := clt.CommittedAPI().ProtocolParameters().SlotDurationInSeconds()
@@ -51,20 +52,20 @@ func Test_ValidatorRewards(t *testing.T) {
 	claimingSlot := clt.CommittedAPI().TimeProvider().EpochStart(endEpoch + 1)
 
 	// create accounts and continue issuing candidacy payload for account in the background
-	account := d.CreateAccount(WithStakingFeature(100, 1, currentEpoch, endEpoch))
-	initialMana := account.Output.StoredMana()
-	issueCandidacyPayloadInBackground(d, account.ID, clt.CommittedAPI().TimeProvider().CurrentSlot(), claimingSlot,
+	goodWallet, goodAccountData := d.CreateAccount(WithStakingFeature(100, 1, currentEpoch, endEpoch))
+	initialMana := goodAccountData.Output.StoredMana()
+	issueCandidacyPayloadInBackground(d, goodWallet, clt.CommittedAPI().TimeProvider().CurrentSlot(), claimingSlot,
 		slotsDuration)
 
-	lazyAccount := d.CreateAccount(WithStakingFeature(100, 1, currentEpoch, endEpoch))
-	lazyInitialMana := lazyAccount.Output.StoredMana()
-	issueCandidacyPayloadInBackground(d, lazyAccount.ID, clt.CommittedAPI().TimeProvider().CurrentSlot(), claimingSlot,
+	lazyWallet, lazyAccountData := d.CreateAccount(WithStakingFeature(100, 1, currentEpoch, endEpoch))
+	lazyInitialMana := lazyAccountData.Output.StoredMana()
+	issueCandidacyPayloadInBackground(d, lazyWallet, clt.CommittedAPI().TimeProvider().CurrentSlot(), claimingSlot,
 		slotsDuration)
 
 	// make sure the account is in the committee, so it can issue validation blocks
-	accountAddrBech32 := account.Address.Bech32(clt.CommittedAPI().ProtocolParameters().Bech32HRP())
-	lazyAccountAddrBech32 := lazyAccount.Address.Bech32(clt.CommittedAPI().ProtocolParameters().Bech32HRP())
-	d.AssertCommittee(currentEpoch+2, append(d.AccountsFromNodes(d.Nodes("V1", "V3", "V2", "V4")...), accountAddrBech32, lazyAccountAddrBech32))
+	goodAccountAddrBech32 := goodAccountData.Address.Bech32(clt.CommittedAPI().ProtocolParameters().Bech32HRP())
+	lazyAccountAddrBech32 := lazyAccountData.Address.Bech32(clt.CommittedAPI().ProtocolParameters().Bech32HRP())
+	d.AssertCommittee(currentEpoch+2, append(d.AccountsFromNodes(d.Nodes("V1", "V3", "V2", "V4")...), goodAccountAddrBech32, lazyAccountAddrBech32))
 
 	// issue validation blocks to have performance
 	currentSlot := clt.CommittedAPI().TimeProvider().CurrentSlot()
@@ -73,29 +74,25 @@ func Test_ValidatorRewards(t *testing.T) {
 	fmt.Println("Wait for ", secToWait, "until expected slot: ", claimingSlot)
 
 	var wg sync.WaitGroup
-	issueValidationBlockInBackground(&wg, d, account.ID, currentSlot, claimingSlot, 3, slotsDuration)
-	issueValidationBlockInBackground(&wg, d, lazyAccount.ID, currentSlot, claimingSlot, 1, slotsDuration)
+	issueValidationBlockInBackground(&wg, d, goodAccountData.ID, currentSlot, claimingSlot, 3, slotsDuration)
+	issueValidationBlockInBackground(&wg, d, lazyAccountData.ID, currentSlot, claimingSlot, 1, slotsDuration)
 
 	wg.Wait()
 
 	// claim rewards that put to the account output
 	d.AwaitCommitment(claimingSlot)
-	account = d.ClaimRewardsForValidator(ctx, account)
-	lazyAccount = d.ClaimRewardsForValidator(ctx, lazyAccount)
+	d.ClaimRewardsForValidator(ctx, goodWallet)
+	d.ClaimRewardsForValidator(ctx, lazyWallet)
 
 	// check if the mana increased as expected
-	outputFromAPI, err := clt.OutputByID(ctx, account.OutputID)
-	require.NoError(t, err)
-	require.Greater(t, outputFromAPI.StoredMana(), initialMana)
-	require.Equal(t, account.Output.StoredMana(), outputFromAPI.StoredMana())
+	goodWalletAccountOutput := goodWallet.BlockIssuer.AccountData.Output
+	require.Greater(t, goodWalletAccountOutput.StoredMana(), initialMana)
 
-	lazyOutputFromAPI, err := clt.OutputByID(ctx, lazyAccount.OutputID)
-	require.NoError(t, err)
-	require.Greater(t, lazyOutputFromAPI.StoredMana(), lazyInitialMana)
-	require.Equal(t, lazyAccount.Output.StoredMana(), lazyOutputFromAPI.StoredMana())
+	lazyWalletAccountOutput := lazyWallet.BlockIssuer.AccountData.Output
+	require.Greater(t, lazyWalletAccountOutput.StoredMana(), lazyInitialMana)
 
 	// account that issued more validation blocks should have more mana
-	require.Greater(t, account.Output.StoredMana(), lazyAccount.Output.StoredMana())
+	require.Greater(t, goodWalletAccountOutput.StoredMana(), lazyWalletAccountOutput.StoredMana())
 }
 
 // Test_DelegatorRewards tests the rewards for a delegator.
@@ -123,13 +120,12 @@ func Test_DelegatorRewards(t *testing.T) {
 	d.WaitUntilNetworkReady()
 
 	ctx := context.Background()
-	clt := d.wallet.DefaultClient()
-
-	account := d.CreateAccount()
+	delegatorWallet, _ := d.CreateAccount()
+	clt := delegatorWallet.Client
 
 	// delegate funds to V2
-	delegationOutputID, delegationOutput := d.DelegateToValidator(account.ID, d.Node("V2").AccountAddress(t))
-	d.AwaitCommitment(delegationOutputID.CreationSlot())
+	delegationOutputData := d.DelegateToValidator(delegatorWallet, d.Node("V2").AccountAddress(t))
+	d.AwaitCommitment(delegationOutputData.ID.CreationSlot())
 
 	// check if V2 received the delegator stake
 	v2Resp, err := clt.Validator(ctx, d.Node("V2").AccountAddress(t))
@@ -137,20 +133,21 @@ func Test_DelegatorRewards(t *testing.T) {
 	require.Greater(t, v2Resp.PoolStake, v2Resp.ValidatorStake)
 
 	// wait until next epoch so the rewards can be claimed
-	expectedSlot := clt.CommittedAPI().TimeProvider().EpochStart(delegationOutput.StartEpoch + 2)
+	//nolint:forcetypeassert
+	expectedSlot := clt.CommittedAPI().TimeProvider().EpochStart(delegationOutputData.Output.(*iotago.DelegationOutput).StartEpoch + 2)
 	slotToWait := expectedSlot - clt.CommittedAPI().TimeProvider().CurrentSlot()
 	secToWait := time.Duration(slotToWait) * time.Duration(clt.CommittedAPI().ProtocolParameters().SlotDurationInSeconds()) * time.Second
 	fmt.Println("Wait for ", secToWait, "until expected slot: ", expectedSlot)
 	time.Sleep(secToWait)
 
 	// claim rewards that put to an basic output
-	rewardsOutputID := d.ClaimRewardsForDelegator(ctx, account, delegationOutputID)
+	rewardsOutputID := d.ClaimRewardsForDelegator(ctx, delegatorWallet, delegationOutputData)
 
 	// check if the mana increased as expected
 	outputFromAPI, err := clt.OutputByID(ctx, rewardsOutputID)
 	require.NoError(t, err)
 
-	rewardsOutput := d.wallet.Output(rewardsOutputID)
+	rewardsOutput := delegatorWallet.Output(rewardsOutputID)
 	require.Equal(t, rewardsOutput.Output.StoredMana(), outputFromAPI.StoredMana())
 }
 
@@ -179,14 +176,13 @@ func Test_DelayedClaimingRewards(t *testing.T) {
 	d.WaitUntilNetworkReady()
 
 	ctx := context.Background()
-	clt := d.wallet.DefaultClient()
-
-	account := d.CreateAccount()
+	delegatorWallet, _ := d.CreateAccount()
+	clt := delegatorWallet.Client
 
 	{
 		// delegate funds to V2
-		delegationOutputID, _ := d.DelegateToValidator(account.ID, d.Node("V2").AccountAddress(t))
-		d.AwaitCommitment(delegationOutputID.CreationSlot())
+		delegationOutputData := d.DelegateToValidator(delegatorWallet, d.Node("V2").AccountAddress(t))
+		d.AwaitCommitment(delegationOutputData.ID.CreationSlot())
 
 		// check if V2 received the delegator stake
 		v2Resp, err := clt.Validator(ctx, d.Node("V2").AccountAddress(t))
@@ -194,8 +190,11 @@ func Test_DelayedClaimingRewards(t *testing.T) {
 		require.Greater(t, v2Resp.PoolStake, v2Resp.ValidatorStake)
 
 		// delay claiming rewards
-		delegationOutputID1, delegationEndEpoch := d.DelayedClaimingTransition(ctx, account, delegationOutputID)
-		d.AwaitCommitment(delegationOutputID1.CreationSlot())
+		currentSlot := delegatorWallet.CurrentSlot()
+		apiForSlot := clt.APIForSlot(currentSlot)
+		latestCommitmentSlot := delegatorWallet.GetNewBlockIssuanceResponse().LatestCommitment.Slot
+		delegationEndEpoch := getDelegationEndEpoch(apiForSlot, currentSlot, latestCommitmentSlot)
+		d.AwaitCommitment(delegationOutputData.ID.CreationSlot())
 
 		// the delegated stake should be removed from the validator, so the pool stake should equal to the validator stake
 		v2Resp, err = clt.Validator(ctx, d.Node("V2").AccountAddress(t))
@@ -208,16 +207,16 @@ func Test_DelayedClaimingRewards(t *testing.T) {
 		secToWait := time.Duration(slotToWait) * time.Duration(clt.CommittedAPI().ProtocolParameters().SlotDurationInSeconds()) * time.Second
 		fmt.Println("Wait for ", secToWait, "until expected slot: ", expectedSlot)
 		time.Sleep(secToWait)
-		d.ClaimRewardsForDelegator(ctx, account, delegationOutputID1)
+		d.ClaimRewardsForDelegator(ctx, delegatorWallet, delegationOutputData)
 	}
 
 	{
 		// delegate funds to V2
-		delegationOutputID, _ := d.DelegateToValidator(account.ID, d.Node("V2").AccountAddress(t))
+		delegationOutputData := d.DelegateToValidator(delegatorWallet, d.Node("V2").AccountAddress(t))
 
 		// delay claiming rewards in the same slot of delegation
-		delegationOutputID1, _ := d.DelayedClaimingTransition(ctx, account, delegationOutputID)
-		d.AwaitCommitment(delegationOutputID1.CreationSlot())
+		delegationOutputData = d.DelayedClaimingTransition(ctx, delegatorWallet, delegationOutputData)
+		d.AwaitCommitment(delegationOutputData.ID.CreationSlot())
 
 		// the delegated stake should be 0, thus poolStake should be equal to validatorStake
 		v2Resp, err := clt.Validator(ctx, d.Node("V2").AccountAddress(t))
@@ -225,17 +224,17 @@ func Test_DelayedClaimingRewards(t *testing.T) {
 		require.Equal(t, v2Resp.PoolStake, v2Resp.ValidatorStake)
 
 		// wait until next epoch to destroy the delegation
-		d.ClaimRewardsForDelegator(ctx, account, delegationOutputID1)
+		d.ClaimRewardsForDelegator(ctx, delegatorWallet, delegationOutputData)
 	}
 }
 
-func issueCandidacyPayloadInBackground(d *DockerTestFramework, accountID iotago.AccountID, startSlot, endSlot iotago.SlotIndex, slotDuration uint8) {
+func issueCandidacyPayloadInBackground(d *DockerTestFramework, wallet *mock.Wallet, startSlot, endSlot iotago.SlotIndex, slotDuration uint8) {
 	go func() {
-		fmt.Println("Issuing candidacy payloads for account", accountID, "in the background...")
-		defer fmt.Println("Issuing candidacy payloads for account", accountID, "in the background......done")
+		fmt.Println("Issuing candidacy payloads for account", wallet.BlockIssuer.AccountData.ID, "in the background...")
+		defer fmt.Println("Issuing candidacy payloads for account", wallet.BlockIssuer.AccountData.ID, "in the background......done")
 
 		for i := startSlot; i < endSlot; i++ {
-			d.IssueCandidacyPayloadFromAccount(accountID)
+			d.IssueCandidacyPayloadFromAccount(wallet)
 			time.Sleep(time.Duration(slotDuration) * time.Second)
 		}
 	}()

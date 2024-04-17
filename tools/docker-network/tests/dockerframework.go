@@ -519,7 +519,7 @@ func (d *DockerTestFramework) CreateFoundryBlockFromInput(wallet *mock.Wallet, i
 
 // CreateNFTBlockFromInput consumes the given basic output, then build a block of a transaction that includes a NFT output with the given NFT output options.
 func (d *DockerTestFramework) CreateNFTBlockFromInput(wallet *mock.Wallet, input *mock.OutputData, opts ...options.Option[builder.NFTOutputBuilder]) (iotago.NFTID, iotago.OutputID, *iotago.Block) {
-	signedTx := wallet.CreateNFTFromInput("", input, opts...)
+	signedTx := wallet.CreateTaggedNFTFromInput("", input, opts...)
 	outputID := iotago.OutputIDFromTransactionIDAndIndex(signedTx.Transaction.MustID(), 0)
 
 	return iotago.NFTIDFromOutputID(outputID),
