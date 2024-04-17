@@ -2,8 +2,6 @@ package tests
 
 import (
 	"fmt"
-	_ "net/http"
-	_ "net/http/pprof"
 	"testing"
 	"time"
 
