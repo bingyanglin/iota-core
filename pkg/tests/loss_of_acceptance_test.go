@@ -18,6 +18,93 @@ import (
 
 func TestLossOfAcceptanceFromGenesis(t *testing.T) {
 	ts := testsuite.NewTestSuite(t,
+		testsuite.WithWaitFor(15*time.Second),
+		testsuite.WithProtocolParametersOptions(
+			iotago.WithTimeProviderOptions(
+				0,
+				testsuite.GenesisTimeWithOffsetBySlots(100, testsuite.DefaultSlotDurationInSeconds),
+				testsuite.DefaultSlotDurationInSeconds,
+				3,
+			),
+			iotago.WithLivenessOptions(
+				10,
+				10,
+				2,
+				4,
+				5,
+			),
+		),
+		testsuite.WithWaitFor(15*time.Second),
+	)
+	defer ts.Shutdown()
+
+	node0 := ts.AddValidatorNode("node0")
+	ts.AddDefaultWallet(node0)
+	ts.AddValidatorNode("node1")
+	ts.AddNode("node2")
+
+	ts.Run(true, nil)
+
+	// Create snapshot to use later.
+	snapshotPath := ts.Directory.Path(fmt.Sprintf("%d_snapshot", time.Now().Unix()))
+	require.NoError(t, node0.Protocol.Engines.Main.Get().WriteSnapshot(snapshotPath))
+
+	// Revive chain on node0.
+	{
+		ts.SetCurrentSlot(50)
+		block0 := lo.PanicOnErr(ts.IssueValidationBlockWithHeaderOptions("block0", node0))
+		require.EqualValues(t, 48, ts.Block("block0").SlotCommitmentID().Slot())
+		// Reviving the chain should select one parent from the last committed slot.
+		require.Len(t, block0.Parents(), 1)
+		require.Equal(t, block0.Parents()[0].Alias(), "Genesis")
+		ts.AssertBlocksExist(ts.Blocks("block0"), true, ts.ClientsForNodes(node0)...)
+	}
+
+	// Need to issue to slot 52 so that all other nodes can warp sync up to slot 49 and then commit slot 50 themselves.
+	{
+		ts.IssueBlocksAtSlots("", []iotago.SlotIndex{51, 52}, 2, "block0", mock.Nodes(node0), true, false)
+
+		ts.AssertLatestCommitmentSlotIndex(50, ts.Nodes()...)
+		ts.AssertEqualStoredCommitmentAtIndex(50, ts.Nodes()...)
+		ts.AssertBlocksExist(ts.Blocks("block0"), true, ts.ClientsForNodes()...)
+	}
+
+	// Continue issuing on all nodes for a few slots.
+	{
+		ts.IssueBlocksAtSlots("", []iotago.SlotIndex{53, 54, 55, 56, 57}, 3, "52.1", ts.Nodes(), true, false)
+
+		ts.AssertBlocksInCacheAccepted(ts.BlocksWithPrefix("57.0"), true, ts.Nodes()...)
+		ts.AssertLatestCommitmentSlotIndex(55, ts.Nodes()...)
+		ts.AssertEqualStoredCommitmentAtIndex(55, ts.Nodes()...)
+	}
+
+	// Start node3 from genesis snapshot.
+	{
+		node3 := ts.AddNode("node3")
+		node3.Initialize(true,
+			protocol.WithSnapshotPath(snapshotPath),
+			protocol.WithBaseDirectory(ts.Directory.PathWithCreate(node3.Name)),
+		)
+		ts.Wait()
+	}
+
+	// Continue issuing on all nodes for a few slots.
+	{
+		ts.IssueBlocksAtSlots("", []iotago.SlotIndex{58, 59}, 3, "57.2", ts.Nodes("node0", "node1", "node2"), true, false)
+
+		ts.AssertBlocksInCacheAccepted(ts.BlocksWithPrefix("59.0"), true, ts.Nodes()...)
+		ts.AssertLatestCommitmentSlotIndex(57, ts.Nodes()...)
+		ts.AssertEqualStoredCommitmentAtIndex(57, ts.Nodes()...)
+	}
+
+	// Check that commitments from 1-49 are empty.
+	for slot := iotago.SlotIndex(1); slot <= 49; slot++ {
+		ts.AssertStorageCommitmentBlocks(slot, nil, ts.Nodes()...)
+	}
+}
+
+func TestEngineSwitchingUponStartupWithLossOfAcceptance(t *testing.T) {
+	ts := testsuite.NewTestSuite(t,
 		testsuite.WithProtocolParametersOptions(
 			iotago.WithTimeProviderOptions(
 				0,
