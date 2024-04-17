@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/iotaledger/hive.go/lo"
-	"github.com/iotaledger/hive.go/log"
 	"github.com/iotaledger/iota-core/pkg/core/account"
 	"github.com/iotaledger/iota-core/pkg/protocol"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/blocks"
@@ -57,7 +56,7 @@ func TestLossOfAcceptanceFromGenesis(t *testing.T) {
 
 	ts.Run(true, nil)
 
-	node0.Protocol.SetLogLevel(log.LevelTrace)
+	//node0.Protocol.SetLogLevel(log.LevelTrace)
 	// node1.Protocol.SetLogLevel(log.LevelTrace)
 	// node2.Protocol.SetLogLevel(log.LevelFatal)
 
