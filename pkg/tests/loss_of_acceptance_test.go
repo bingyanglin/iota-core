@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/iotaledger/hive.go/lo"
+	"github.com/iotaledger/iota-core/pkg/core/account"
 	"github.com/iotaledger/iota-core/pkg/protocol"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/blocks"
 	"github.com/iotaledger/iota-core/pkg/testsuite"
@@ -99,6 +100,127 @@ func TestLossOfAcceptanceFromGenesis(t *testing.T) {
 	// Check that commitments from 1-49 are empty.
 	for slot := iotago.SlotIndex(1); slot <= 49; slot++ {
 		ts.AssertStorageCommitmentBlocks(slot, nil, ts.Nodes()...)
+	}
+}
+
+func TestEngineSwitchingUponStartupWithLossOfAcceptance(t *testing.T) {
+	ts := testsuite.NewTestSuite(t,
+		testsuite.WithProtocolParametersOptions(
+			iotago.WithTimeProviderOptions(
+				0,
+				testsuite.GenesisTimeWithOffsetBySlots(100, testsuite.DefaultSlotDurationInSeconds),
+				testsuite.DefaultSlotDurationInSeconds,
+				3,
+			),
+			iotago.WithLivenessOptions(
+				10,
+				10,
+				2,
+				4,
+				5,
+			),
+		),
+		testsuite.WithWaitFor(15*time.Second),
+	)
+	defer ts.Shutdown()
+
+	node0 := ts.AddValidatorNode("node0")
+	ts.AddDefaultWallet(node0)
+	node1 := ts.AddValidatorNode("node1")
+
+	nodesP1 := []*mock.Node{node0}
+	nodesP2 := []*mock.Node{node1}
+
+	ts.Run(true, nil)
+
+	// Create snapshot to use later.
+	snapshotPath := ts.Directory.Path(fmt.Sprintf("%d_snapshot", time.Now().Unix()))
+	require.NoError(t, node0.Protocol.Engines.Main.Get().WriteSnapshot(snapshotPath))
+
+	seatIndexes := []account.SeatIndex{
+		lo.Return1(lo.Return1(node0.Protocol.Engines.Main.Get().SybilProtection.SeatManager().CommitteeInSlot(1)).GetSeat(node0.Validator.AccountData.ID)),
+		lo.Return1(lo.Return1(node1.Protocol.Engines.Main.Get().SybilProtection.SeatManager().CommitteeInSlot(1)).GetSeat(node1.Validator.AccountData.ID)),
+	}
+
+	// Revive chain on node0.
+	{
+		ts.SetCurrentSlot(50)
+		block0 := lo.PanicOnErr(ts.IssueValidationBlockWithHeaderOptions("block0", node0))
+		require.EqualValues(t, 48, ts.Block("block0").SlotCommitmentID().Slot())
+		// Reviving the chain should select one parent from the last committed slot.
+		require.Len(t, block0.Parents(), 1)
+		require.Equal(t, block0.Parents()[0].Alias(), "Genesis")
+		ts.AssertBlocksExist(ts.Blocks("block0"), true, ts.ClientsForNodes(node0)...)
+	}
+
+	// Need to issue to slot 52 so that all other nodes can warp sync up to slot 49 and then commit slot 50 themselves.
+	{
+		ts.IssueBlocksAtSlots("", []iotago.SlotIndex{51, 52}, 2, "block0", mock.Nodes(node0), true, false)
+
+		ts.AssertLatestCommitmentSlotIndex(50, ts.Nodes()...)
+		ts.AssertEqualStoredCommitmentAtIndex(50, ts.Nodes()...)
+		ts.AssertBlocksExist(ts.Blocks("block0"), true, ts.ClientsForNodes()...)
+	}
+	ts.AssertSybilProtectionOnlineCommittee(seatIndexes[0:1], ts.Nodes()...)
+
+	ts.SplitIntoPartitions(map[string][]*mock.Node{
+		"P1": nodesP1,
+		"P2": nodesP2,
+	})
+
+	ts.AssertSybilProtectionOnlineCommittee(seatIndexes[0:1], node0)
+	ts.AssertSybilProtectionOnlineCommittee(seatIndexes[0:1], node1)
+
+	// Issue in P1
+	{
+		ts.IssueBlocksAtSlots("P1:", []iotago.SlotIndex{53, 54, 55, 56, 57, 58, 59, 60, 61}, 3, "52.1", nodesP1, true, true)
+
+		ts.AssertBlocksInCacheAccepted(ts.BlocksWithPrefix("61.0"), true, nodesP1...)
+		ts.AssertLatestCommitmentSlotIndex(59, nodesP1...)
+		ts.AssertEqualStoredCommitmentAtIndex(59, nodesP1...)
+
+		ts.AssertBlocksExist(ts.BlocksWithPrefix("P1"), true, ts.ClientsForNodes(nodesP1...)...)
+		ts.AssertBlocksExist(ts.BlocksWithPrefix("P1"), false, ts.ClientsForNodes(nodesP2...)...)
+	}
+	ts.AssertSybilProtectionOnlineCommittee(seatIndexes[0:1], nodesP1...)
+	ts.AssertSybilProtectionOnlineCommittee(seatIndexes[0:1], nodesP2...)
+
+	// Issue in P2
+	{
+		ts.IssueBlocksAtSlots("P2:", []iotago.SlotIndex{53, 54, 55, 56, 57, 58, 59, 60, 61}, 3, "52.1", nodesP2, false, false)
+
+		ts.AssertBlocksInCacheAccepted(ts.BlocksWithPrefix("61.0"), true, nodesP2...)
+		ts.AssertLatestCommitmentSlotIndex(59, nodesP2...)
+		ts.AssertEqualStoredCommitmentAtIndex(59, nodesP2...)
+
+		ts.AssertBlocksExist(ts.BlocksWithPrefix("P2"), false, ts.ClientsForNodes(nodesP1...)...)
+		ts.AssertBlocksExist(ts.BlocksWithPrefix("P2"), true, ts.ClientsForNodes(nodesP2...)...)
+	}
+	ts.AssertSybilProtectionOnlineCommittee(seatIndexes[0:1], nodesP1...)
+	ts.AssertSybilProtectionOnlineCommittee(seatIndexes[1:2], nodesP2...)
+
+	// Start node3 from genesis snapshot.
+	node3 := ts.AddNode("node3")
+	{
+		node3.Initialize(true,
+			protocol.WithSnapshotPath(snapshotPath),
+			protocol.WithBaseDirectory(ts.Directory.PathWithCreate(node3.Name)),
+		)
+
+		ts.Wait()
+	}
+	ts.MergePartitionsToMain()
+	fmt.Println("\n=========================\nMerged network partitions\n=========================")
+
+	// Continue issuing on all nodes on top of their chain, respectively.
+	{
+		ts.IssueBlocksAtSlots("P2:", []iotago.SlotIndex{61}, 1, "P2:61.2", nodesP2, false, false)
+		ts.IssueBlocksAtSlots("P1:", []iotago.SlotIndex{61}, 1, "P1:61.2", nodesP1, false, false)
+
+		ts.Wait()
+
+		ts.AssertLatestCommitmentSlotIndex(59, ts.Nodes()...)
+		ts.AssertEqualStoredCommitmentAtIndex(59, ts.Nodes()...)
 	}
 }
 

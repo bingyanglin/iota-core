@@ -67,7 +67,7 @@ func (b *BucketManager) Get(epoch iotago.EpochIndex, realm kvstore.Realm) (kvsto
 		return nil, ierrors.WithMessagef(database.ErrEpochPruned, "epoch %d", epoch)
 	}
 
-	kv := b.getDBInstance(epoch).KVStore()
+	kv := newBucketedKVStore(b, b.getDBInstance(epoch).KVStore())
 
 	return lo.PanicOnErr(kv.WithExtendedRealm(realm)), nil
 }
