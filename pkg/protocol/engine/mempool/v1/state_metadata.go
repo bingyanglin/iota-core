@@ -31,8 +31,7 @@ type StateMetadata struct {
 
 func NewStateMetadata(state mempool.State, optSource ...*TransactionMetadata) *StateMetadata {
 	return (&StateMetadata{
-		state:  state,
-		source: lo.First(optSource),
+		state: state,
 
 		spent:              promise.NewEvent(),
 		doubleSpent:        promise.NewEvent(),
@@ -51,11 +50,15 @@ func (s *StateMetadata) setup(optSource ...*TransactionMetadata) *StateMetadata 
 	if len(optSource) == 0 {
 		return s
 	}
-	source := optSource[0]
 
-	s.spenderIDs.InheritFrom(source.spenderIDs)
+	s.source = optSource[0]
+	s.source.evicted.OnTrigger(func() {
+		s.source = nil
+	})
 
-	source.earliestIncludedValidAttachment.OnUpdate(func(_, newValue iotago.BlockID) {
+	s.spenderIDs.InheritFrom(s.source.spenderIDs)
+
+	s.source.earliestIncludedValidAttachment.OnUpdate(func(_, newValue iotago.BlockID) {
 		s.inclusionSlot.Compute(func(currentValue *iotago.SlotIndex) *iotago.SlotIndex {
 			if newSlot := newValue.Slot(); currentValue == nil || newSlot < *currentValue {
 				return &newSlot
@@ -65,10 +68,10 @@ func (s *StateMetadata) setup(optSource ...*TransactionMetadata) *StateMetadata 
 		})
 	})
 
-	source.OnAccepted(func() { s.accepted.Set(true) })
-	source.OnRejected(func() { s.rejected.Trigger() })
-	source.OnCommittedSlotUpdated(lo.Void(s.committedSlot.Set))
-	source.OnOrphanedSlotUpdated(lo.Void(s.orphanedSlot.Set))
+	s.source.OnAccepted(func() { s.accepted.Set(true) })
+	s.source.OnRejected(func() { s.rejected.Trigger() })
+	s.source.OnCommittedSlotUpdated(lo.Void(s.committedSlot.Set))
+	s.source.OnOrphanedSlotUpdated(lo.Void(s.orphanedSlot.Set))
 
 	return s
 }
