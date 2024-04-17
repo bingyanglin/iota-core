@@ -113,15 +113,15 @@ func TestLossOfAcceptanceFromGenesis(t *testing.T) {
 	ts.AssertSybilProtectionOnlineCommittee(seatIndexes[1:2], nodesP2...)
 
 	// Start node3 from genesis snapshot.
-	// node3 := ts.AddNode("node3")
-	// {
-	// 	node3.Initialize(true,
-	// 		protocol.WithSnapshotPath(snapshotPath),
-	// 		protocol.WithBaseDirectory(ts.Directory.PathWithCreate(node3.Name)),
-	// 	)
-	// 	node3.Protocol.SetLogLevel(log.LevelTrace)
-	// 	ts.Wait()
-	// }
+	node3 := ts.AddNode("node3")
+	{
+		node3.Initialize(true,
+			protocol.WithSnapshotPath(snapshotPath),
+			protocol.WithBaseDirectory(ts.Directory.PathWithCreate(node3.Name)),
+		)
+
+		ts.Wait()
+	}
 	ts.MergePartitionsToMain()
 	fmt.Println("\n=========================\nMerged network partitions\n=========================")
 
