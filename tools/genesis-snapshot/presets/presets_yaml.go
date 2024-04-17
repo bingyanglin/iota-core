@@ -36,7 +36,7 @@ type BasicOutputYaml struct {
 
 type ConfigYaml struct {
 	NetworkName string `yaml:"networkName"`
-	Bech32HRP   string `yaml:"bech32HRP"`
+	Bech32HRP   string `yaml:"bech32Hrp"`
 
 	FilePath string `yaml:"filepath"`
 
