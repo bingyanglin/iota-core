@@ -2,7 +2,6 @@ package tests
 
 import (
 	"fmt"
-	"net/http"
 	_ "net/http"
 	_ "net/http/pprof"
 	"testing"
@@ -20,12 +19,6 @@ import (
 )
 
 func TestLossOfAcceptanceFromGenesis(t *testing.T) {
-	// debug.SetEnabled(true)
-
-	go func() {
-		fmt.Println(http.ListenAndServe("localhost:6061", nil))
-	}()
-
 	ts := testsuite.NewTestSuite(t,
 		testsuite.WithProtocolParametersOptions(
 			iotago.WithTimeProviderOptions(
@@ -44,21 +37,16 @@ func TestLossOfAcceptanceFromGenesis(t *testing.T) {
 		),
 		testsuite.WithWaitFor(15*time.Second),
 	)
-	// defer ts.Shutdown()
+	defer ts.Shutdown()
 
 	node0 := ts.AddValidatorNode("node0")
 	ts.AddDefaultWallet(node0)
 	node1 := ts.AddValidatorNode("node1")
-	// node2 := ts.AddNode("node2")
 
 	nodesP1 := []*mock.Node{node0}
 	nodesP2 := []*mock.Node{node1}
 
 	ts.Run(true, nil)
-
-	//node0.Protocol.SetLogLevel(log.LevelTrace)
-	// node1.Protocol.SetLogLevel(log.LevelTrace)
-	// node2.Protocol.SetLogLevel(log.LevelFatal)
 
 	// Create snapshot to use later.
 	snapshotPath := ts.Directory.Path(fmt.Sprintf("%d_snapshot", time.Now().Unix()))
