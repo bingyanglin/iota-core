@@ -57,6 +57,9 @@ type Chain struct {
 	// IsEvicted contains a flag that indicates whether this chain was evicted.
 	IsEvicted reactive.Event
 
+	// IsSolid contains a flag that indicates whether this chain is solid (has a continuous connection to the root).
+	IsSolid reactive.Event
+
 	// shouldEvict contains a flag that indicates whether this chain should be evicted.
 	shouldEvict reactive.Event
 
@@ -86,6 +89,7 @@ func newChain(chains *Chains) *Chain {
 		StartEngine:              reactive.NewVariable[bool](),
 		Engine:                   reactive.NewVariable[*engine.Engine](),
 		IsEvicted:                reactive.NewEvent(),
+		IsSolid:                  reactive.NewEvent(),
 		shouldEvict:              reactive.NewEvent(),
 
 		chains:      chains,
@@ -201,6 +205,7 @@ func (c *Chain) initLogger() (shutdown func()) {
 		c.LatestSyncedSlot.LogUpdates(c, log.LevelTrace, "LatestSyncedSlot"),
 		c.OutOfSyncThreshold.LogUpdates(c, log.LevelTrace, "OutOfSyncThreshold"),
 		c.ForkingPoint.LogUpdates(c, log.LevelTrace, "ForkingPoint", (*Commitment).LogName),
+		c.ParentChain.LogUpdates(c, log.LevelTrace, "ParentChain", (*Chain).LogName),
 		c.LatestCommitment.LogUpdates(c, log.LevelTrace, "LatestCommitment", (*Commitment).LogName),
 		c.LatestAttestedCommitment.LogUpdates(c, log.LevelTrace, "LatestAttestedCommitment", (*Commitment).LogName),
 		c.LatestProducedCommitment.LogUpdates(c, log.LevelDebug, "LatestProducedCommitment", (*Commitment).LogName),
@@ -208,6 +213,7 @@ func (c *Chain) initLogger() (shutdown func()) {
 		c.StartEngine.LogUpdates(c, log.LevelDebug, "StartEngine"),
 		c.Engine.LogUpdates(c, log.LevelTrace, "Engine", (*engine.Engine).LogName),
 		c.IsEvicted.LogUpdates(c, log.LevelTrace, "IsEvicted"),
+		c.IsSolid.LogUpdates(c, log.LevelTrace, "IsSolid"),
 		c.shouldEvict.LogUpdates(c, log.LevelTrace, "shouldEvict"),
 
 		c.Logger.Shutdown,
@@ -233,6 +239,8 @@ func (c *Chain) initDerivedProperties() (shutdown func()) {
 							c.deriveShouldEvict(forkingPoint, parentChain),
 						)
 					}),
+
+					c.IsSolid.InheritFrom(forkingPoint.IsSolid),
 				)
 			}),
 		),
