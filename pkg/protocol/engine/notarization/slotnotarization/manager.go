@@ -1,6 +1,7 @@
 package slotnotarization
 
 import (
+	"sync/atomic"
 	"time"
 
 	"github.com/iotaledger/hive.go/ierrors"
@@ -44,6 +45,9 @@ type Manager struct {
 	apiProvider      iotago.APIProvider
 
 	commitmentMutex syncutils.Mutex
+
+	// ForceCommitMode contains a flag that indicates whether the manager is in force commit mode.
+	ForceCommitMode atomic.Bool
 
 	module.Module
 }
@@ -109,13 +113,15 @@ func (m *Manager) Shutdown() {
 
 // tryCommitUntil tries to create slot commitments until the new provided acceptance time.
 func (m *Manager) tryCommitUntil(commitUntilSlot iotago.SlotIndex) {
-	if slot := commitUntilSlot; slot > m.storage.Settings().LatestCommitment().Slot() {
-		m.tryCommitSlotUntil(slot)
+	if !m.ForceCommitMode.Load() {
+		if slot := commitUntilSlot; slot > m.storage.Settings().LatestCommitment().Slot() {
+			m.tryCommitSlotUntil(slot)
+		}
 	}
 }
 
 func (m *Manager) ForceCommit(slot iotago.SlotIndex) (*model.Commitment, error) {
-	m.LogInfof("Force commit slot %d", slot)
+	m.LogInfo("force commit", "slot", slot)
 
 	if m.ShutdownEvent().WasTriggered() {
 		return nil, ierrors.New("notarization manager was stopped")
@@ -135,10 +141,16 @@ func (m *Manager) ForceCommit(slot iotago.SlotIndex) (*model.Commitment, error) 
 		return nil, ierrors.Wrapf(err, "failed to create commitment for slot %d", slot)
 	}
 
+	m.LogInfo("forced commitment", "commitmentID", commitment.ID())
+
 	return commitment, nil
 }
 
 func (m *Manager) ForceCommitUntil(commitUntilSlot iotago.SlotIndex) error {
+	if m.ForceCommitMode.Swap(true) {
+		return ierrors.New("force commitment already in progress")
+	}
+
 	m.LogInfo("force committing until", "slot", commitUntilSlot)
 
 	for i := m.storage.Settings().LatestCommitment().Slot() + 1; i <= commitUntilSlot; i++ {
@@ -146,6 +158,10 @@ func (m *Manager) ForceCommitUntil(commitUntilSlot iotago.SlotIndex) error {
 			return ierrors.Wrapf(err, "failed to force commit slot %d", i)
 		}
 	}
+
+	m.LogInfo("successfully forced commitment until", "slot", commitUntilSlot)
+
+	m.ForceCommitMode.Store(false)
 
 	return nil
 }
@@ -184,6 +200,7 @@ func (m *Manager) tryCommitSlotUntil(acceptedBlockIndex iotago.SlotIndex) {
 
 		if _, err := m.createCommitment(i); err != nil {
 			m.errorHandler(ierrors.Wrapf(err, "failed to create commitment for slot %d", i))
+
 			return
 		}
 	}

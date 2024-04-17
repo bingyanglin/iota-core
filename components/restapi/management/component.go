@@ -35,6 +35,7 @@ type dependencies struct {
 	Protocol             *protocol.Protocol
 	PeeringConfigManager *p2p.ConfigManager
 	NetworkManager       network.Manager
+	SnapshotFilePath     string `name:"snapshotFilePath"`
 }
 
 func configure() error {
@@ -79,14 +80,14 @@ func configure() error {
 		return responseByHeader(c, resp, http.StatusOK)
 	})
 
-	// routeGroup.POST(api.ManagementEndpointSnapshotsCreate, func(c echo.Context) error {
-	//	resp, err := createSnapshots(c)
-	//	if err != nil {
-	//		return err
-	//	}
-	//
-	//	return responseByHeader(c, resp, http.StatusOK)
-	// })
+	routeGroup.POST(api.ManagementEndpointSnapshotsCreate, func(c echo.Context) error {
+		resp, err := createSnapshots(c)
+		if err != nil {
+			return err
+		}
+
+		return responseByHeader(c, resp, http.StatusOK)
+	})
 
 	return nil
 }

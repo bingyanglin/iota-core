@@ -378,12 +378,18 @@ func (c *Chains) deriveLatestSeenSlot(protocol *Protocol) func() {
 		return lo.BatchReverse(
 			c.WithInitializedEngines(func(_ *Chain, engine *engine.Engine) (shutdown func()) {
 				return engine.LatestCommitment.OnUpdate(func(_ *model.Commitment, latestCommitment *model.Commitment) {
-					c.LatestSeenSlot.Set(latestCommitment.Slot())
+					// Check the value to avoid having to acquire write locks inside of the Set method.
+					if c.LatestSeenSlot.Get() < latestCommitment.Slot() {
+						c.LatestSeenSlot.Set(latestCommitment.Slot())
+					}
 				})
 			}),
 
 			protocol.Network.OnBlockReceived(func(block *model.Block, _ peer.ID) {
-				c.LatestSeenSlot.Set(block.ProtocolBlock().Header.SlotCommitmentID.Slot())
+				// Check the value to avoid having to acquire write locks inside of the Set method.
+				if c.LatestSeenSlot.Get() < block.ProtocolBlock().Header.SlotCommitmentID.Slot() {
+					c.LatestSeenSlot.Set(block.ProtocolBlock().Header.SlotCommitmentID.Slot())
+				}
 			}),
 		)
 	})
