@@ -108,7 +108,6 @@ func (e *EpochKVStore) Prune(epoch iotago.EpochIndex, defaultPruningDelay iotago
 
 func (e *EpochKVStore) RollbackEpochs(epoch iotago.EpochIndex) (lastPrunedEpoch iotago.EpochIndex, err error) {
 	lastAccessedEpoch, err := e.LastAccessedEpoch()
-
 	if err != nil {
 		return lastAccessedEpoch, ierrors.Wrap(err, "failed to get last accessed epoch")
 	}

@@ -274,9 +274,7 @@ func (e *Engines) injectEngineInstances() (shutdown func()) {
 				} else {
 					e.protocol.Network.OnShutdown(func() { newEngine.ShutdownEvent().Trigger() })
 
-					e.LogInfo("injecting engine instance before", "chain", chain.LogName())
 					chain.Engine.Set(newEngine)
-					e.LogInfo("injecting engine instance after", "chain", chain.LogName())
 				}
 			})
 		})
