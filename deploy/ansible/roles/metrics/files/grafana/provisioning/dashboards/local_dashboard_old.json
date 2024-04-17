@@ -3849,68 +3849,6 @@
         "type": "prometheus",
         "uid": "PBFA97CFB590B2093"
       },
-      "description": "",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
-              }
-            ]
-          },
-          "unit": "none"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 15,
-        "x": 0,
-        "y": 115
-      },
-      "id": 146,
-      "options": {
-        "displayMode": "lcd",
-        "minVizHeight": 10,
-        "minVizWidth": 0,
-        "orientation": "horizontal",
-        "reduceOptions": {
-          "calcs": [
-            "last"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showUnfilled": true,
-        "text": {},
-        "valueMode": "color"
-      },
-      "pluginVersion": "9.5.6",
-      "targets": [
-        {
-          "exemplar": true,
-          "expr": "topk(15, sum by (node_id) (scheduler_queue_size_per_node_work{instance=~\"$instance\"}/scheduler_mana_per_node{instance=~\"$instance\"}))",
-          "instant": true,
-          "interval": "",
-          "legendFormat": "Node: {{node_id}}",
-          "queryType": "randomWalk",
-          "refId": "A"
-        }
-      ],
-      "title": "Mana-scaled queue size",
-      "type": "bargauge"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
-      },
       "description": "Rate at which scheduler processes blocks from the buffer",
       "fieldConfig": {
         "defaults": {

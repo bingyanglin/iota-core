@@ -48,8 +48,15 @@ func newWarpSync(protocol *Protocol) *WarpSync {
 		protocol.Chains.WithInitializedEngines(func(chain *Chain, engine *engine.Engine) (shutdown func()) {
 			return chain.WarpSyncMode.OnUpdate(func(_ bool, warpSyncModeEnabled bool) {
 				if warpSyncModeEnabled {
-					engine.Workers.WaitChildren()
-					engine.Reset()
+					// We need to wait for all workers of the engine to finish and reset in a separate worker,
+					// since otherwise we're locking downstream (c.LatestSyncedSlot, c.chains.LatestSeenSlot, c.OutOfSyncThreshold of the chain).
+					// Which in turn can lead to a deadlock where the engine can't update the LatestSyncedSlot.
+					// By running it in the warpsync's single worker we also make sure that the engine is reset before
+					// actually warp syncing/processing new slots.
+					c.workerPool.Submit(func() {
+						engine.Workers.WaitChildren()
+						engine.Reset()
+					})
 				}
 			})
 		})

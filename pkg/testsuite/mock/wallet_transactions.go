@@ -159,7 +159,7 @@ func (w *Wallet) DelegationEndFromSlot(slot, latestCommitmentSlot iotago.SlotInd
 
 	registrationSlot := w.registrationSlot(slot)
 
-	if futureBoundedEpochIndex <= iotago.EpochIndex(registrationSlot) {
+	if futureBoundedSlotIndex <= registrationSlot {
 		return futureBoundedEpochIndex
 	}
 

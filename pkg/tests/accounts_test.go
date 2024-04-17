@@ -465,7 +465,10 @@ func Test_NegativeBIC_BlockIssuerLocked(t *testing.T) {
 				iotago.SlotIndex(0),
 				testsuite.GenesisTimeWithOffsetBySlots(iotago.SlotIndex(200), testsuite.DefaultSlotDurationInSeconds),
 				testsuite.DefaultSlotDurationInSeconds,
-				testsuite.DefaultSlotsPerEpochExponent,
+				3,
+			),
+			iotago.WithLivenessOptions(
+				10, 10, 2, 4, 5,
 			),
 		),
 	)
@@ -589,6 +592,7 @@ func Test_NegativeBIC_BlockIssuerLocked(t *testing.T) {
 	// Allot some mana to the locked account to unlock it.
 	// The locked wallet 2 is preparing and signs the transaction, but it's issued by wallet 1 whose account is not locked.
 	{
+		latestParents = ts.CommitUntilSlot(block3Slot+ts.API.TimeProvider().EpochDurationSlots(), ts.BlockID("block2.1"))
 		allottedBIC := testPayloadCost
 		tx1 := wallet2.AllotManaFromInputs("TX1",
 			iotago.Allotments{&iotago.Allotment{
@@ -609,7 +613,7 @@ func Test_NegativeBIC_BlockIssuerLocked(t *testing.T) {
 
 		ts.AssertAccountData(&accounts.AccountData{
 			ID:              wallet1.BlockIssuer.AccountData.ID,
-			Credits:         accounts.NewBlockIssuanceCredits(wallet1BIC, block3Slot),
+			Credits:         accounts.NewBlockIssuanceCredits(wallet1BIC, block31.ID().Slot()),
 			OutputID:        wallet1OutputID,
 			ExpirySlot:      iotago.MaxSlotIndex,
 			BlockIssuerKeys: wallet1.BlockIssuer.BlockIssuerKeys(),
@@ -617,7 +621,7 @@ func Test_NegativeBIC_BlockIssuerLocked(t *testing.T) {
 
 		ts.AssertAccountData(&accounts.AccountData{
 			ID:              wallet2.BlockIssuer.AccountData.ID,
-			Credits:         accounts.NewBlockIssuanceCredits(wallet2BIC, block3Slot),
+			Credits:         accounts.NewBlockIssuanceCredits(wallet2BIC, block31.ID().Slot()),
 			ExpirySlot:      iotago.MaxSlotIndex,
 			OutputID:        wallet2OutputID,
 			BlockIssuerKeys: wallet2.BlockIssuer.BlockIssuerKeys(),
@@ -640,7 +644,7 @@ func Test_NegativeBIC_BlockIssuerLocked(t *testing.T) {
 
 		ts.AssertAccountData(&accounts.AccountData{
 			ID:              wallet1.BlockIssuer.AccountData.ID,
-			Credits:         accounts.NewBlockIssuanceCredits(wallet1BIC, block3Slot),
+			Credits:         accounts.NewBlockIssuanceCredits(wallet1BIC, ts.BlockID("block3.1").Slot()),
 			OutputID:        wallet1OutputID,
 			ExpirySlot:      iotago.MaxSlotIndex,
 			BlockIssuerKeys: wallet1.BlockIssuer.BlockIssuerKeys(),
