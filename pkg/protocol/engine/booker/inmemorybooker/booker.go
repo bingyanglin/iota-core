@@ -135,12 +135,12 @@ func (b *Booker) Queue(block *blocks.Block) error {
 func (b *Booker) Reset() { /* nothing to reset but comply with interface */ }
 
 func (b *Booker) setupBlock(block *blocks.Block, signedTransactionMetadata mempool.SignedTransactionMetadata) {
-	//var _, directlyReferencedPayloadDependencies ds.Set[mempool.StateMetadata]
+	var _, directlyReferencedPayloadDependencies ds.Set[mempool.StateMetadata]
 
-	//if signedTransactionMetadata != nil && signedTransactionMetadata.SignaturesInvalid() == nil && !signedTransactionMetadata.TransactionMetadata().IsInvalid() {
-	//	_ = signedTransactionMetadata.TransactionMetadata().Inputs()
-	//	directlyReferencedPayloadDependencies = ds.NewSet[mempool.StateMetadata]()
-	//}
+	if signedTransactionMetadata != nil && signedTransactionMetadata.SignaturesInvalid() == nil && !signedTransactionMetadata.TransactionMetadata().IsInvalid() {
+		_ = signedTransactionMetadata.TransactionMetadata().Inputs()
+		directlyReferencedPayloadDependencies = ds.NewSet[mempool.StateMetadata]()
+	}
 
 	var unbookedParentsCount atomic.Int32
 	unbookedParentsCount.Store(int32(len(block.Parents())))
@@ -154,13 +154,13 @@ func (b *Booker) setupBlock(block *blocks.Block, signedTransactionMetadata mempo
 		}
 
 		parentBlock.Booked().OnUpdateOnce(func(_ bool, _ bool) {
-			//if directlyReferencedPayloadDependencies != nil {
-			//	if signedTx, hasTx := parentBlock.SignedTransaction(); hasTx {
-			//		if parentTransactionMetadata, exists := b.ledger.TransactionMetadata(signedTx.Transaction.MustID()); exists {
-			//			directlyReferencedPayloadDependencies.AddAll(parentTransactionMetadata.Outputs())
-			//		}
-			//	}
-			//}
+			if directlyReferencedPayloadDependencies != nil {
+				if signedTx, hasTx := parentBlock.SignedTransaction(); hasTx {
+					if parentTransactionMetadata, exists := b.ledger.TransactionMetadata(signedTx.Transaction.MustID()); exists {
+						directlyReferencedPayloadDependencies.AddAll(parentTransactionMetadata.Outputs())
+					}
+				}
+			}
 
 			if unbookedParentsCount.Add(-1) == 0 {
 				block.ParentsBooked.Trigger()
