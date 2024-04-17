@@ -73,8 +73,8 @@ func Test_ValidatorRewards(t *testing.T) {
 	fmt.Println("Wait for ", secToWait, "until expected slot: ", claimingSlot)
 
 	var wg sync.WaitGroup
-	issueValidationBlockInBackground(&wg, d, account.ID, currentSlot, claimingSlot, 3, slotsDuration)
-	issueValidationBlockInBackground(&wg, d, lazyAccount.ID, currentSlot, claimingSlot, 1, slotsDuration)
+	issueValidationBlockInBackground(&wg, d, account.ID, currentSlot, claimingSlot, 5)
+	issueValidationBlockInBackground(&wg, d, lazyAccount.ID, currentSlot, claimingSlot, 1)
 
 	wg.Wait()
 
@@ -241,19 +241,28 @@ func issueCandidacyPayloadInBackground(d *DockerTestFramework, accountID iotago.
 	}()
 }
 
-func issueValidationBlockInBackground(wg *sync.WaitGroup, d *DockerTestFramework, accountID iotago.AccountID, startSlot, endSlot iotago.SlotIndex, blocksPerSlot int, slotDuration uint8) {
+func issueValidationBlockInBackground(wg *sync.WaitGroup, d *DockerTestFramework, accountID iotago.AccountID, startSlot, endSlot iotago.SlotIndex, blocksPerSlot int) {
 	wg.Add(1)
 
 	go func() {
 		defer wg.Done()
 		fmt.Println("Issuing validation block for account", accountID, "in the background...")
 		defer fmt.Println("Issuing validation block for account", accountID, "in the background......done")
+		clt := d.wallet.DefaultClient()
 
 		for i := startSlot; i < endSlot; i++ {
+			// wait until the slot is reached
+			for {
+				if clt.CommittedAPI().TimeProvider().CurrentSlot() == i {
+					break
+				}
+				time.Sleep(2 * time.Second)
+			}
+
 			for range blocksPerSlot {
 				d.SubmitValidationBlock(accountID)
+				time.Sleep(1 * time.Second)
 			}
-			time.Sleep(time.Duration(slotDuration) * time.Second)
 		}
 	}()
 }
