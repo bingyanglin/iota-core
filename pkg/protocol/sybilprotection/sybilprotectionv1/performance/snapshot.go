@@ -3,6 +3,7 @@ package performance
 import (
 	"io"
 
+	"github.com/iotaledger/hive.go/core/safemath"
 	"github.com/iotaledger/hive.go/ierrors"
 	"github.com/iotaledger/hive.go/lo"
 	"github.com/iotaledger/hive.go/serializer/v2"
@@ -47,12 +48,15 @@ func (t *Tracker) Export(writer io.WriteSeeker, targetSlotIndex iotago.SlotIndex
 	timeProvider := t.apiProvider.APIForSlot(targetSlotIndex).TimeProvider()
 	targetEpoch := timeProvider.EpochFromSlot(targetSlotIndex)
 
-	// if the target index is the last slot of the epoch, the epoch was committed
-	if timeProvider.EpochEnd(targetEpoch) != targetSlotIndex {
-		targetEpoch--
+	// if the target index is the last slot of the epoch, the epoch was committed - unless it's epoch 0 to avoid underflow.
+	if timeProvider.EpochEnd(targetEpoch) != targetSlotIndex && targetEpoch > 0 {
+		targetEpoch = lo.PanicOnErr(safemath.SafeSub(targetEpoch, 1))
 	}
 
-	if err := t.exportPerformanceFactor(writer, timeProvider.EpochStart(targetEpoch+1), targetSlotIndex); err != nil {
+	// If targetEpoch==0 then export performance factors from slot 0 to the targetSlotIndex.
+	// PoolRewards and PoolStats are empty if epoch 0 was not committed yet, so it's not a problem.
+	// But PerformanceFactors are exported for the ongoing epoch, so for epoch 0 we must make an exception and not add 1 to the targetEpoch.
+	if err := t.exportPerformanceFactor(writer, timeProvider.EpochStart(targetEpoch+lo.Cond(targetEpoch == 0, iotago.EpochIndex(0), iotago.EpochIndex(1))), targetSlotIndex); err != nil {
 		return ierrors.Wrap(err, "unable to export performance factor")
 	}
 
@@ -277,8 +281,9 @@ func (t *Tracker) exportPoolRewards(writer io.WriteSeeker, targetEpoch iotago.Ep
 
 	if err := stream.WriteCollection(writer, serializer.SeriLengthPrefixTypeAsUint32, func() (int, error) {
 		var epochCount int
-
-		for epoch := targetEpoch; epoch > iotago.EpochIndex(lo.Max(0, int(targetEpoch)-daysInYear)); epoch-- {
+		// Here underflow will not happen because we will stop iterating for epoch 0, because 0 is not greater than zero.
+		// Use safemath here anyway to avoid hard to trace problems stemming from an accidental underflow.
+		for epoch := targetEpoch; epoch > iotago.EpochIndex(lo.Max(0, int(targetEpoch)-daysInYear)); epoch = lo.PanicOnErr(safemath.SafeSub(epoch, 1)) {
 			rewardsMap, err := t.rewardsMap(epoch)
 			if err != nil {
 				return 0, ierrors.Wrapf(err, "unable to get rewards tree for epoch %d", epoch)
