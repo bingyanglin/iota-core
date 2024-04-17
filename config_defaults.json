@@ -122,6 +122,9 @@
   "retainer": {
     "debugStoreErrorMessages": false
   },
+  "node": {
+    "alias": "IOTA-Core node"
+  },
   "prometheus": {
     "enabled": true,
     "bindAddress": "0.0.0.0:9311",

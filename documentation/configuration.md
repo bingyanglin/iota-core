@@ -407,7 +407,23 @@ Example:
   }
 ```
 
-## <a id="prometheus"></a> 11. Prometheus
+## <a id="node"></a> 11. Node
+
+| Name  | Description                     | Type   | Default value    |
+| ----- | ------------------------------- | ------ | ---------------- |
+| alias | Set an alias to identify a node | string | "IOTA-Core node" |
+
+Example:
+
+```json
+  {
+    "node": {
+      "alias": "IOTA-Core node"
+    }
+  }
+```
+
+## <a id="prometheus"></a> 12. Prometheus
 
 | Name            | Description                                          | Type    | Default value  |
 | --------------- | ---------------------------------------------------- | ------- | -------------- |
@@ -431,7 +447,7 @@ Example:
   }
 ```
 
-## <a id="inx"></a> 12. INX
+## <a id="inx"></a> 13. INX
 
 | Name        | Description                                            | Type    | Default value    |
 | ----------- | ------------------------------------------------------ | ------- | ---------------- |
