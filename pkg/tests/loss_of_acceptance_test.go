@@ -134,13 +134,8 @@ func TestLossOfAcceptanceFromGenesis(t *testing.T) {
 
 		ts.Wait()
 
-		fmt.Println(">>>>>>> Checking stuff...")
-		// ts.AssertBlocksInCacheAccepted(ts.BlocksWithPrefix("59.0"), true, ts.Nodes()...)
 		ts.AssertLatestCommitmentSlotIndex(59, ts.Nodes()...)
-		fmt.Println(">>>>>>> Latest commitment slot index:", 59)
-		// pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
 		ts.AssertEqualStoredCommitmentAtIndex(59, ts.Nodes()...)
-		fmt.Println(">>>>>>> Stored commitment at index 59 is equal for all nodes.")
 	}
 }
 
