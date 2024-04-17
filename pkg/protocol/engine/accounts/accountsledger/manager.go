@@ -314,7 +314,7 @@ func (m *Manager) Rollback(targetSlot iotago.SlotIndex) error {
 		}
 	}
 
-	return nil
+	return m.accountsTree.Commit()
 }
 
 // AddAccount adds a new account to the Account tree, allotting to it the balance on the given output.

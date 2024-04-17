@@ -60,6 +60,10 @@ type Commitment struct {
 	// IsRoot contains a flag indicating if this Commitment is the root of the Chain.
 	IsRoot reactive.Event
 
+	// IsSolid contains a flag indicating if this Commitment is solid (has all the commitments in its past cone until
+	// the RootCommitment).
+	IsSolid reactive.Event
+
 	// IsAttested contains a flag indicating if we have received attestations for this Commitment.
 	IsAttested reactive.Event
 
@@ -108,6 +112,7 @@ func newCommitment(commitments *Commitments, model *model.Commitment) *Commitmen
 		CumulativeAttestedWeight:        reactive.NewVariable[uint64](),
 		CumulativeVerifiedWeight:        reactive.NewVariable[uint64](),
 		IsRoot:                          reactive.NewEvent(),
+		IsSolid:                         reactive.NewEvent(),
 		IsAttested:                      reactive.NewEvent(),
 		IsSynced:                        reactive.NewEvent(),
 		IsCommittable:                   reactive.NewEvent(),
@@ -219,6 +224,7 @@ func (c *Commitment) initLogger() (shutdown func()) {
 		c.CumulativeAttestedWeight.LogUpdates(c, log.LevelTrace, "CumulativeAttestedWeight"),
 		c.CumulativeVerifiedWeight.LogUpdates(c, log.LevelTrace, "CumulativeVerifiedWeight"),
 		c.IsRoot.LogUpdates(c, log.LevelTrace, "IsRoot"),
+		c.IsSolid.LogUpdates(c, log.LevelTrace, "IsSolid"),
 		c.IsAttested.LogUpdates(c, log.LevelTrace, "IsAttested"),
 		c.IsSynced.LogUpdates(c, log.LevelTrace, "IsSynced"),
 		c.IsCommittable.LogUpdates(c, log.LevelTrace, "IsCommittable"),
@@ -235,6 +241,7 @@ func (c *Commitment) initDerivedProperties() (shutdown func()) {
 	return lo.BatchReverse(
 		// mark commitments that are marked as root as verified
 		c.IsVerified.InheritFrom(c.IsRoot),
+		c.IsSolid.InheritFrom(c.IsRoot),
 
 		// mark commitments that are marked as verified as attested and synced
 		c.IsAttested.InheritFrom(c.IsVerified),
@@ -266,6 +273,8 @@ func (c *Commitment) initDerivedProperties() (shutdown func()) {
 						}),
 					)
 				}),
+
+				c.IsSolid.InheritFrom(parent.IsSolid),
 			)
 		}),
 
