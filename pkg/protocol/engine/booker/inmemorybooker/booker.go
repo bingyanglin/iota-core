@@ -214,6 +214,9 @@ func (b *Booker) book(block *blocks.Block) error {
 	}
 
 	block.SetSpenderIDs(spendersToInherit)
+
+	b.LogTrace("spenders to inherit", "spenders count", spendersToInherit.Size())
+
 	block.SetBooked()
 	b.events.BlockBooked.Trigger(block)
 
