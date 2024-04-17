@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/iotaledger/iota-core/pkg/storage/database"
 	iotago "github.com/iotaledger/iota.go/v4"
 	"github.com/iotaledger/iota.go/v4/api"
 )
@@ -213,7 +214,7 @@ func Test_ManagementAPI_Pruning(t *testing.T) {
 		info, err := nodeClientV1.Info(getContextWithTimeout(5 * time.Second))
 		require.NoError(t, err)
 
-		currentEpoch := nodeClientV1.CommittedAPI().TimeProvider().EpochFromSlot(info.Status.LatestCommitmentID.Slot())
+		currentEpoch := nodeClientV1.CommittedAPI().TimeProvider().EpochFromSlot(info.Status.LatestFinalizedSlot)
 
 		// await the start slot of the next epoch
 		d.AwaitCommitment(nodeClientV1.CommittedAPI().TimeProvider().EpochStart(currentEpoch + 1))
@@ -258,9 +259,9 @@ func Test_ManagementAPI_Pruning(t *testing.T) {
 				awaitNextEpoch()
 
 				// prune database by size
-				pruneDatabaseResponse, err := managementClient.PruneDatabaseBySize(getContextWithTimeout(5*time.Second), "1M")
-				require.NoError(t, err)
-				require.NotNil(t, pruneDatabaseResponse)
+				pruneDatabaseResponse, err := managementClient.PruneDatabaseBySize(getContextWithTimeout(5*time.Second), "5G")
+				require.ErrorIs(t, err, database.ErrNoPruningNeeded)
+				require.Nil(t, pruneDatabaseResponse)
 			},
 		},
 	}
