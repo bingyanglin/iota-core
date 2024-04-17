@@ -943,7 +943,7 @@ func (w *Wallet) SendFundsFromAccount(transactionName string, accountOutputName 
 func (w *Wallet) ClaimValidatorRewards(transactionName string, input *OutputData) *iotago.SignedTransaction {
 	inputAccount, ok := input.Output.(*iotago.AccountOutput)
 	if !ok {
-		panic(fmt.Sprintf("output is not *iotago.AccountOutput"))
+		panic("output is not *iotago.AccountOutput")
 	}
 
 	apiForSlot := w.Client.APIForSlot(w.CurrentSlot())

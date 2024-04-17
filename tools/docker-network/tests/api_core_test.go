@@ -58,7 +58,7 @@ func Test_ValidatorsAPI(t *testing.T) {
 		go func() {
 			defer wg.Done()
 
-			wallet, accountData := d.CreateAccount(WithStakingFeature(100, 1, 0))
+			wallet, accountData := d.CreateAccount(WithStakingFeature(100, 1, currentEpoch))
 			expectedValidators = append(expectedValidators, accountData.Address.Bech32(hrp))
 			// issue candidacy payload in the next epoch (currentEpoch + 1), in order to issue it before epochNearingThreshold
 			d.AwaitCommitment(clt.CommittedAPI().TimeProvider().EpochEnd(currentEpoch))
