@@ -97,13 +97,12 @@ func (b *Booker) Init(ledger ledger.Ledger, loadBlockFromStorage func(iotago.Blo
 func (b *Booker) Queue(block *blocks.Block) error {
 	signedTransactionMetadata, containsTransaction := b.ledger.AttachTransaction(block)
 	if !containsTransaction {
-		b.setupBlock(block)
+		b.setupBlock(block, nil)
 
 		return nil
 	} else if signedTransactionMetadata == nil {
 		return ierrors.Errorf("transaction in block %s was not attached", block.ID())
 	}
-	block.SignedTransactionMetadata.Set(signedTransactionMetadata)
 
 	// Based on the assumption that we always fork and the UTXO and Tangle past cones are always fully known.
 	signedTransactionMetadata.OnSignaturesValid(func() {
@@ -117,16 +116,16 @@ func (b *Booker) Queue(block *blocks.Block) error {
 
 		transactionMetadata.OnBooked(func() {
 			block.SetPayloadSpenderIDs(transactionMetadata.SpenderIDs())
-			b.setupBlock(block)
+			b.setupBlock(block, signedTransactionMetadata)
 		})
 
 		transactionMetadata.OnInvalid(func(_ error) {
-			b.setupBlock(block)
+			b.setupBlock(block, signedTransactionMetadata)
 		})
 	})
 
 	signedTransactionMetadata.OnSignaturesInvalid(func(_ error) {
-		b.setupBlock(block)
+		b.setupBlock(block, signedTransactionMetadata)
 	})
 
 	return nil
@@ -135,9 +134,10 @@ func (b *Booker) Queue(block *blocks.Block) error {
 // Reset resets the component to a clean state as if it was created at the last commitment.
 func (b *Booker) Reset() { /* nothing to reset but comply with interface */ }
 
-func (b *Booker) setupBlock(block *blocks.Block) {
+func (b *Booker) setupBlock(block *blocks.Block, signedTransactionMetadata mempool.SignedTransactionMetadata) {
 	var payloadDependencies, directlyReferencedPayloadDependencies ds.Set[mempool.StateMetadata]
-	if signedTransactionMetadata := block.SignedTransactionMetadata.Get(); signedTransactionMetadata != nil && signedTransactionMetadata.SignaturesInvalid() == nil && !signedTransactionMetadata.TransactionMetadata().IsInvalid() {
+
+	if signedTransactionMetadata != nil && signedTransactionMetadata.SignaturesInvalid() == nil && !signedTransactionMetadata.TransactionMetadata().IsInvalid() {
 		payloadDependencies = signedTransactionMetadata.TransactionMetadata().Inputs()
 		directlyReferencedPayloadDependencies = ds.NewSet[mempool.StateMetadata]()
 	}
@@ -155,8 +155,10 @@ func (b *Booker) setupBlock(block *blocks.Block) {
 
 		parentBlock.Booked().OnUpdateOnce(func(_ bool, _ bool) {
 			if directlyReferencedPayloadDependencies != nil {
-				if parentTransactionMetadata := parentBlock.SignedTransactionMetadata.Get(); parentTransactionMetadata != nil {
-					directlyReferencedPayloadDependencies.AddAll(parentTransactionMetadata.TransactionMetadata().Outputs())
+				if signedTx, hasTx := parentBlock.SignedTransaction(); hasTx {
+					if parentTransactionMetadata, exists := b.ledger.TransactionMetadata(signedTx.Transaction.MustID()); exists {
+						directlyReferencedPayloadDependencies.AddAll(parentTransactionMetadata.Outputs())
+					}
 				}
 			}
 
