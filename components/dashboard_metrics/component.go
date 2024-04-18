@@ -92,8 +92,8 @@ func configure() error {
 func run() error {
 	Component.Logger.LogInfof("Starting %s ...", Component.Name)
 
-	// create a background worker that "measures" the BPS value every second
-	if err := Component.Daemon().BackgroundWorker("Metrics BPS Updater", func(ctx context.Context) {
+	// create a background worker that "measures" the gossip metrics every second
+	if err := Component.Daemon().BackgroundWorker("GossipMetrics Updater", func(ctx context.Context) {
 		timeutil.NewTicker(measureGossipMetrics, 1*time.Second, ctx).WaitForGracefulShutdown()
 	}, daemon.PriorityDashboardMetrics); err != nil {
 		Component.LogPanicf("failed to start worker: %s", err)
