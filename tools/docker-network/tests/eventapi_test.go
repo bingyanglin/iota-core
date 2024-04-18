@@ -387,7 +387,6 @@ func test_NFTTransactionBlocks(t *testing.T, e *EventAPIDockerTestFramework) {
 		// issue blocks
 		go func() {
 			for _, blk := range expectedBlocks {
-				fmt.Println("submitting a block ", blk.MustID().ToHex())
 				e.dockerFramework.SubmitBlock(context.Background(), blk)
 			}
 		}()

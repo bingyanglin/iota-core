@@ -17,6 +17,7 @@ import (
 	iotago "github.com/iotaledger/iota.go/v4"
 	"github.com/iotaledger/iota.go/v4/api"
 	"github.com/iotaledger/iota.go/v4/nodeclient"
+	"github.com/iotaledger/iota.go/v4/tpkg"
 )
 
 type EventAPIDockerTestFramework struct {
@@ -63,8 +64,7 @@ func (e *EventAPIDockerTestFramework) SubmitDataBlockStream(wallet *mock.Wallet,
 		select {
 		case <-ticker.C:
 			for i := 0; i < 10; i++ {
-				blk := e.dockerFramework.CreateTaggedDataBlock(wallet, []byte("tag"))
-				e.dockerFramework.SubmitBlock(context.Background(), blk)
+				e.dockerFramework.defaultWallet.CreateAndSubmitBasicBlock(context.TODO(), "", mock.WithPayload(tpkg.RandTaggedData([]byte("tag"))))
 			}
 		case <-timer.C:
 			return

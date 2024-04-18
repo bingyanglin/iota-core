@@ -258,6 +258,9 @@ func (i *BlockIssuer) CreateBasicBlock(ctx context.Context, alias string, opts .
 
 	modelBlock.ID().RegisterAlias(alias)
 
+	// mark the response as used so that the next time we query the node for the latest block issuance.
+	i.blockIssuanceResponseUsed = true
+
 	return blocks.NewBlock(modelBlock), err
 }
 
@@ -355,9 +358,6 @@ func (i *BlockIssuer) validateReferences(ctx context.Context, issuingTime time.T
 func (i *BlockIssuer) SubmitBlock(ctx context.Context, block *model.Block) error {
 	i.mutex.Lock()
 	defer i.mutex.Unlock()
-
-	// mark the response as used so that the next time we query the node for the latest block issuance.
-	i.blockIssuanceResponseUsed = true
 
 	return lo.Return2(i.Client.SubmitBlock(ctx, block.ProtocolBlock()))
 }
