@@ -260,7 +260,8 @@ func Test_ManagementAPI_Pruning(t *testing.T) {
 
 				// prune database by size
 				pruneDatabaseResponse, err := managementClient.PruneDatabaseBySize(getContextWithTimeout(5*time.Second), "5G")
-				require.ErrorIs(t, err, database.ErrNoPruningNeeded)
+				// Match the error string since the error chain is lost during the HTTP request.
+				require.Contains(t, err.Error(), database.ErrNoPruningNeeded.Error())
 				require.Nil(t, pruneDatabaseResponse)
 			},
 		},
