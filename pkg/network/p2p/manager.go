@@ -309,6 +309,13 @@ func (m *Manager) handleStream(stream p2pnetwork.Stream) {
 		return
 	}
 
+	if m.ctx == nil {
+		m.logger.LogDebugf("aborting handling stream, context is nil")
+		m.closeStream(stream)
+
+		return
+	}
+
 	if m.ctx.Err() != nil {
 		m.logger.LogDebugf("aborting handling stream, context is done")
 		m.closeStream(stream)
