@@ -44,19 +44,6 @@ type TipSelection struct {
 	// acceptanceTime holds the current acceptance time.
 	acceptanceTime reactive.Variable[time.Time]
 
-	// optMaxStrongParents contains the maximum number of strong parents that are allowed.
-	optMaxStrongParents int
-
-	// optMaxLikedInsteadReferences contains the maximum number of liked instead references that are allowed.
-	optMaxLikedInsteadReferences int
-
-	// optMaxLikedInsteadReferencesPerParent contains the maximum number of liked instead references that are allowed
-	// per parent.
-	optMaxLikedInsteadReferencesPerParent int
-
-	// optMaxWeakReferences contains the maximum number of weak references that are allowed.
-	optMaxWeakReferences int
-
 	// livenessThresholdQueueMutex is used to synchronize access to the liveness threshold queue.
 	livenessThresholdQueueMutex syncutils.RWMutex
 
@@ -70,13 +57,9 @@ type TipSelection struct {
 // New is the constructor for the TipSelection.
 func New(subModule module.Module, opts ...options.Option[TipSelection]) *TipSelection {
 	return options.Apply(&TipSelection{
-		Module:                                subModule,
-		livenessThresholdQueue:                timed.NewPriorityQueue[tipmanager.TipMetadata](true),
-		acceptanceTime:                        reactive.NewVariable[time.Time](monotonicallyIncreasing),
-		optMaxStrongParents:                   8,
-		optMaxLikedInsteadReferences:          8,
-		optMaxLikedInsteadReferencesPerParent: 4,
-		optMaxWeakReferences:                  8,
+		Module:                 subModule,
+		livenessThresholdQueue: timed.NewPriorityQueue[tipmanager.TipMetadata](true),
+		acceptanceTime:         reactive.NewVariable[time.Time](monotonicallyIncreasing),
 	}, opts, func(t *TipSelection) {
 		t.ShutdownEvent().OnTrigger(func() {
 			t.StoppedEvent().Trigger()
@@ -108,18 +91,20 @@ func (t *TipSelection) Construct(tipManager tipmanager.TipManager, spendDAG spen
 }
 
 // SelectTips selects the tips that should be used as references for a new block.
-func (t *TipSelection) SelectTips(amount int) (references model.ParentReferences) {
+func (t *TipSelection) SelectTips(maxStrongParents int, maxLikedInsteadParents int, maxWeakParents int) (references model.ParentReferences) {
 	references = make(model.ParentReferences)
 	strongParents := ds.NewSet[iotago.BlockID]()
 	shallowLikesParents := ds.NewSet[iotago.BlockID]()
+	maxLikedInsteadReferencesPerParent := maxLikedInsteadParents / 2
+
 	_ = t.spendDAG.ReadConsistent(func(_ spenddag.ReadLockedSpendDAG[iotago.TransactionID, mempool.StateID, ledger.BlockVoteRank]) error {
 		previousLikedInsteadConflicts := ds.NewSet[iotago.TransactionID]()
 
 		if t.collectReferences(func(tip tipmanager.TipMetadata) {
-			addedLikedInsteadReferences, updatedLikedInsteadConflicts, err := t.likedInsteadReferences(previousLikedInsteadConflicts, tip)
+			addedLikedInsteadReferences, updatedLikedInsteadConflicts, err := t.likedInsteadReferences(maxLikedInsteadReferencesPerParent, previousLikedInsteadConflicts, tip)
 			if err != nil {
 				tip.TipPool().Set(tipmanager.WeakTipPool)
-			} else if len(addedLikedInsteadReferences) <= t.optMaxLikedInsteadReferences-len(references[iotago.ShallowLikeParentType]) {
+			} else if len(addedLikedInsteadReferences) <= maxLikedInsteadParents-len(references[iotago.ShallowLikeParentType]) {
 				references[iotago.StrongParentType] = append(references[iotago.StrongParentType], tip.ID())
 				references[iotago.ShallowLikeParentType] = append(references[iotago.ShallowLikeParentType], addedLikedInsteadReferences...)
 
@@ -127,6 +112,8 @@ func (t *TipSelection) SelectTips(amount int) (references model.ParentReferences
 				strongParents.Add(tip.ID())
 
 				previousLikedInsteadConflicts = updatedLikedInsteadConflicts
+			} else {
+				t.LogTrace("could not add liked instead references to tip", "tip", tip.ID(), "addedLikedInsteadReferences", addedLikedInsteadReferences)
 			}
 		}, func() int {
 			return len(references[iotago.StrongParentType])
@@ -134,9 +121,11 @@ func (t *TipSelection) SelectTips(amount int) (references model.ParentReferences
 			// We select one validation tip as a strong parent. This is a security step to ensure that the tangle maintains
 			// acceptance by stitching together validation blocks.
 			types.NewTuple[func(optAmount ...int) []tipmanager.TipMetadata, int](t.tipManager.ValidationTips, 2),
-			types.NewTuple[func(optAmount ...int) []tipmanager.TipMetadata, int](t.tipManager.StrongTips, amount-2),
+			types.NewTuple[func(optAmount ...int) []tipmanager.TipMetadata, int](t.tipManager.StrongTips, maxStrongParents-2),
 		); len(references[iotago.StrongParentType]) == 0 {
-			references[iotago.StrongParentType] = iotago.BlockIDs{t.rootBlock()}
+			rootBlock := t.rootBlock()
+			t.LogDebug("no strong parents found, using root block as strong parent", "rootBlock", rootBlock)
+			references[iotago.StrongParentType] = iotago.BlockIDs{rootBlock}
 		}
 
 		t.collectReferences(func(tip tipmanager.TipMetadata) {
@@ -147,7 +136,7 @@ func (t *TipSelection) SelectTips(amount int) (references model.ParentReferences
 			}
 		}, func() int {
 			return len(references[iotago.WeakParentType])
-		}, types.NewTuple[func(optAmount ...int) []tipmanager.TipMetadata, int](t.tipManager.WeakTips, t.optMaxWeakReferences))
+		}, types.NewTuple[func(optAmount ...int) []tipmanager.TipMetadata, int](t.tipManager.WeakTips, maxWeakParents))
 
 		return nil
 	})
@@ -189,7 +178,7 @@ func (t *TipSelection) classifyTip(tipMetadata tipmanager.TipMetadata) {
 }
 
 // likedInsteadReferences returns the liked instead references that are required to be able to reference the given tip.
-func (t *TipSelection) likedInsteadReferences(likedConflicts ds.Set[iotago.TransactionID], tipMetadata tipmanager.TipMetadata) (references []iotago.BlockID, updatedLikedConflicts ds.Set[iotago.TransactionID], err error) {
+func (t *TipSelection) likedInsteadReferences(maxLikedInsteadReferencesPerParent int, likedConflicts ds.Set[iotago.TransactionID], tipMetadata tipmanager.TipMetadata) (references []iotago.BlockID, updatedLikedConflicts ds.Set[iotago.TransactionID], err error) {
 	necessaryReferences := make(map[iotago.TransactionID]iotago.BlockID)
 	if err = t.spendDAG.LikedInstead(tipMetadata.Block().SpenderIDs()).ForEach(func(likedSpenderID iotago.TransactionID) error {
 		transactionMetadata, exists := t.transactionMetadata(likedSpenderID)
@@ -211,7 +200,7 @@ func (t *TipSelection) likedInsteadReferences(likedConflicts ds.Set[iotago.Trans
 		}
 	}
 
-	if len(references) > t.optMaxLikedInsteadReferencesPerParent {
+	if len(references) > maxLikedInsteadReferencesPerParent {
 		return nil, nil, ierrors.Errorf("too many liked instead references (%d) for block %s", len(references), tipMetadata.ID())
 	}
 
@@ -307,28 +296,6 @@ func (t *TipSelection) resetAcceptanceTime() {
 	t.acceptanceTime.OnUpdate(func(_ time.Time, acceptanceTime time.Time) {
 		t.triggerLivenessThreshold(acceptanceTime)
 	})
-}
-
-// WithMaxStrongParents is an option for the TipSelection that allows to configure the maximum number of strong parents.
-func WithMaxStrongParents(maxStrongParents int) options.Option[TipSelection] {
-	return func(tipManager *TipSelection) {
-		tipManager.optMaxStrongParents = maxStrongParents
-	}
-}
-
-// WithMaxLikedInsteadReferences is an option for the TipSelection that allows to configure the maximum number of liked
-// instead references.
-func WithMaxLikedInsteadReferences(maxLikedInsteadReferences int) options.Option[TipSelection] {
-	return func(tipManager *TipSelection) {
-		tipManager.optMaxLikedInsteadReferences = maxLikedInsteadReferences
-	}
-}
-
-// WithMaxWeakReferences is an option for the TipSelection that allows to configure the maximum number of weak references.
-func WithMaxWeakReferences(maxWeakReferences int) options.Option[TipSelection] {
-	return func(tipManager *TipSelection) {
-		tipManager.optMaxWeakReferences = maxWeakReferences
-	}
 }
 
 // monotonicallyIncreasing returns the maximum of the two given times which is used as a transformation function to make

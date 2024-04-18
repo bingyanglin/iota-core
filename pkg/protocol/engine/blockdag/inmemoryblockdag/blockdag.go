@@ -211,9 +211,9 @@ func (b *BlockDAG) shouldAppend(modelBlock *model.Block) (shouldAppend bool, err
 // canAppendToParents determines if the Block references parents in a non-pruned slot. If a Block is found to violate
 // this condition but exists as a missing entry, we mark it as invalid.
 func (b *BlockDAG) canAppendToParents(modelBlock *model.Block) (parentsValid bool, err error) {
-	for _, parentID := range modelBlock.ProtocolBlock().Parents() {
-		if isBelowRange, isInRange := b.evictionState.BelowOrInActiveRootBlockRange(parentID); isBelowRange || isInRange && !b.evictionState.IsActiveRootBlock(parentID) {
-			return false, ierrors.Errorf("parent %s of block %s is too old", parentID, modelBlock.ID())
+	for _, parent := range modelBlock.ProtocolBlock().ParentsWithType() {
+		if isBelowRange, isInRange := b.evictionState.BelowOrInActiveRootBlockRange(parent.ID); isBelowRange || isInRange && !b.evictionState.IsActiveRootBlock(parent.ID) {
+			return false, ierrors.Errorf("parent %s with type %s of block %s is too old", parent.ID, parent.Type, modelBlock.ID())
 		}
 	}
 

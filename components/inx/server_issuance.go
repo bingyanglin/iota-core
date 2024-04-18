@@ -11,7 +11,7 @@ import (
 )
 
 func (s *Server) RequestTips(_ context.Context, req *inx.TipsRequest) (*inx.TipsResponse, error) {
-	references := deps.Protocol.Engines.Main.Get().TipSelection.SelectTips(int(req.GetCount()))
+	references := deps.Protocol.Engines.Main.Get().TipSelection.SelectTips(int(req.GetCount()), int(req.GetCount()), int(req.GetCount()))
 
 	return &inx.TipsResponse{
 		StrongTips:      inx.NewBlockIds(references[iotago.StrongParentType]),
