@@ -29,6 +29,12 @@ type ValidationBlockParams struct {
 	ProtocolParametersHash  *iotago.Identifier
 }
 
+func NewValidationBlockParams() *ValidationBlockParams {
+	return &ValidationBlockParams{
+		BlockHeader: &BlockHeaderParams{},
+	}
+}
+
 func WithParentsCount(parentsCount int) func(builder *BlockHeaderParams) {
 	return func(builder *BlockHeaderParams) {
 		builder.ParentsCount = parentsCount

@@ -74,8 +74,8 @@ func Test_ValidatorRewards(t *testing.T) {
 	fmt.Println("Wait for ", secToWait, "until expected slot: ", claimingSlot)
 
 	var wg sync.WaitGroup
-	issueValidationBlockInBackground(&wg, d, goodAccountData.ID, currentSlot, claimingSlot, 5)
-	issueValidationBlockInBackground(&wg, d, lazyAccountData.ID, currentSlot, claimingSlot, 1)
+	issueValidationBlockInBackground(&wg, goodWallet, currentSlot, claimingSlot, 5)
+	issueValidationBlockInBackground(&wg, lazyWallet, currentSlot, claimingSlot, 1)
 
 	wg.Wait()
 
@@ -240,26 +240,25 @@ func issueCandidacyPayloadInBackground(d *DockerTestFramework, wallet *mock.Wall
 	}()
 }
 
-func issueValidationBlockInBackground(wg *sync.WaitGroup, d *DockerTestFramework, accountID iotago.AccountID, startSlot, endSlot iotago.SlotIndex, blocksPerSlot int) {
+func issueValidationBlockInBackground(wg *sync.WaitGroup, wallet *mock.Wallet, startSlot, endSlot iotago.SlotIndex, blocksPerSlot int) {
 	wg.Add(1)
 
 	go func() {
 		defer wg.Done()
-		fmt.Println("Issuing validation block for account", accountID, "in the background...")
-		defer fmt.Println("Issuing validation block for account", accountID, "in the background......done")
-		clt := d.defaultWallet.Client
+		fmt.Println("Issuing validation block for account", wallet.Name, "in the background...")
+		defer fmt.Println("Issuing validation block for account", wallet.Name, "in the background......done")
 
 		for i := startSlot; i < endSlot; i++ {
 			// wait until the slot is reached
 			for {
-				if clt.CommittedAPI().TimeProvider().CurrentSlot() == i {
+				if wallet.CurrentSlot() == i {
 					break
 				}
 				time.Sleep(2 * time.Second)
 			}
 
 			for range blocksPerSlot {
-				d.SubmitValidationBlock(accountID)
+				wallet.CreateAndSubmitValidationBlock(context.Background(), "", nil)
 				time.Sleep(1 * time.Second)
 			}
 		}

@@ -89,8 +89,10 @@ func (i *BlockIssuer) Address() iotago.Address {
 	return iotago.Ed25519AddressFromPubKey(pub)
 }
 
+// CreateValidationBlock creates a new validation block with the options provided. If a node is specified, it will try to
+// revive the chain if the block is too far behind the latest commitment.
 func (i *BlockIssuer) CreateValidationBlock(ctx context.Context, alias string, node *Node, opts ...options.Option[ValidationBlockParams]) (*blocks.Block, error) {
-	blockParams := options.Apply(&ValidationBlockParams{}, opts)
+	blockParams := options.Apply(NewValidationBlockParams(), opts)
 
 	if blockParams.BlockHeader.IssuingTime == nil {
 		issuingTime := time.Now().UTC()
@@ -104,7 +106,7 @@ func (i *BlockIssuer) CreateValidationBlock(ctx context.Context, alias string, n
 	if blockParams.BlockHeader.SlotCommitment == nil {
 		commitment := blockIssuanceInfo.LatestCommitment
 		blockSlot := apiForBlock.TimeProvider().SlotFromTime(*blockParams.BlockHeader.IssuingTime)
-		if blockSlot > commitment.Slot+protoParams.MaxCommittableAge() {
+		if blockSlot > commitment.Slot+protoParams.MaxCommittableAge() && node != nil {
 			var parentID iotago.BlockID
 			var err error
 			commitment, parentID, err = i.reviveChain(*blockParams.BlockHeader.IssuingTime, node)
@@ -195,7 +197,7 @@ func referencesFromBlockIssuanceResponse(response *api.IssuanceBlockHeaderRespon
 	return references
 }
 
-func (i *BlockIssuer) IssueValidationBlock(ctx context.Context, alias string, node *Node, opts ...options.Option[ValidationBlockParams]) (*blocks.Block, error) {
+func (i *BlockIssuer) CreateAndSubmitValidationBlock(ctx context.Context, alias string, node *Node, opts ...options.Option[ValidationBlockParams]) (*blocks.Block, error) {
 	block, err := i.CreateValidationBlock(ctx, alias, node, opts...)
 	require.NoError(i.Testing, err)
 
@@ -293,7 +295,7 @@ func (i *BlockIssuer) IssueActivity(ctx context.Context, wg *sync.WaitGroup, sta
 
 			blockAlias := fmt.Sprintf("%s-activity.%d", i.Name, counter)
 			timeOffset := time.Since(start)
-			lo.PanicOnErr(i.IssueValidationBlock(ctx, blockAlias, node,
+			lo.PanicOnErr(i.CreateAndSubmitValidationBlock(ctx, blockAlias, node,
 				WithValidationBlockHeaderOptions(
 					WithIssuingTime(issuingTime.Add(timeOffset)),
 				),

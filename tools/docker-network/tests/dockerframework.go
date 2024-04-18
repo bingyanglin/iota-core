@@ -20,8 +20,6 @@ import (
 	"github.com/iotaledger/hive.go/lo"
 	"github.com/iotaledger/hive.go/runtime/options"
 	"github.com/iotaledger/hive.go/runtime/syncutils"
-	"github.com/iotaledger/hive.go/serializer/v2/serix"
-	"github.com/iotaledger/iota-core/pkg/model"
 	"github.com/iotaledger/iota-core/pkg/protocol"
 	"github.com/iotaledger/iota-core/pkg/testsuite/mock"
 	"github.com/iotaledger/iota-core/pkg/testsuite/snapshotcreator"
@@ -440,45 +438,6 @@ func (d *DockerTestFramework) CreateTaggedDataBlock(wallet *mock.Wallet, tag []b
 	}))).ProtocolBlock()
 }
 
-func (d *DockerTestFramework) SubmitValidationBlock(issuerID iotago.AccountID, issueNode ...string) *iotago.Block {
-	issuer := d.defaultWallet.Account(issuerID)
-	ctx := context.TODO()
-	issuingTime := time.Now()
-	clt := d.defaultWallet.Client
-	if issueNode != nil {
-		clt = d.Client(issueNode[0])
-	}
-	currentSlot := d.defaultWallet.Client.LatestAPI().TimeProvider().SlotFromTime(issuingTime)
-	apiForSlot := d.defaultWallet.Client.APIForSlot(currentSlot)
-
-	issuerResp, _ := d.PrepareBlockIssuance(ctx, clt, issuer.Address)
-
-	protocolParametersHash, err := apiForSlot.ProtocolParameters().Hash()
-	require.NoError(d.Testing, err)
-
-	blockBuilder := builder.NewValidationBlockBuilder(apiForSlot).
-		IssuingTime(issuingTime).
-		SlotCommitmentID(issuerResp.LatestCommitment.MustID()).
-		LatestFinalizedSlot(issuerResp.LatestFinalizedSlot).
-		StrongParents(issuerResp.StrongParents).
-		WeakParents(issuerResp.WeakParents).
-		ShallowLikeParents(issuerResp.ShallowLikeParents).
-		HighestSupportedVersion(clt.LatestAPI().Version()).
-		ProtocolParametersHash(protocolParametersHash).
-		Sign(issuerID, lo.Return1(d.defaultWallet.KeyPair()))
-
-	block, err := blockBuilder.Build()
-	require.NoError(d.Testing, err)
-
-	// Make sure we only create syntactically valid blocks.
-	_, err = model.BlockFromBlock(block, serix.WithValidation())
-	require.NoError(d.Testing, err)
-
-	d.SubmitBlock(ctx, block)
-
-	return block
-}
-
 func (d *DockerTestFramework) CreateBasicOutputBlock(wallet *mock.Wallet) (*iotago.Block, *iotago.SignedTransaction, *mock.OutputData) {
 	fundsOutputData := d.RequestFaucetFunds(context.Background(), wallet, iotago.AddressEd25519)
 
@@ -606,7 +565,7 @@ func (d *DockerTestFramework) CreateAccount(opts ...options.Option[builder.Accou
 	// update the wallet with the new account data
 	newWallet.SetBlockIssuer(accountData)
 
-	fmt.Printf("Account created, Bech addr: %s", accountData.Address.Bech32(newWallet.Client.CommittedAPI().ProtocolParameters().Bech32HRP()))
+	fmt.Printf("Account created, Bech addr: %s\n", accountData.Address.Bech32(newWallet.Client.CommittedAPI().ProtocolParameters().Bech32HRP()))
 
 	return newWallet, newWallet.Account(accountData.ID)
 }
