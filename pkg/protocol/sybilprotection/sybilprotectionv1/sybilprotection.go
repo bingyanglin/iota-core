@@ -290,6 +290,7 @@ func (o *SybilProtection) slotFinalized(slot iotago.SlotIndex) {
 		if err != nil {
 			panic(ierrors.Wrap(err, "error while selecting new committee"))
 		}
+		o.LogDebugf("NewCommitteeSelected of size %d", len(newCommittee. IDs()))
 		o.events.CommitteeSelected.Trigger(newCommittee, epoch+1)
 	}
 }
