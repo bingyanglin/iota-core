@@ -247,7 +247,7 @@ func issueValidationBlockInBackground(wg *sync.WaitGroup, d *DockerTestFramework
 		defer wg.Done()
 		fmt.Println("Issuing validation block for account", accountID, "in the background...")
 		defer fmt.Println("Issuing validation block for account", accountID, "in the background......done")
-		clt := d.wallet.DefaultClient()
+		clt := d.defaultWallet.Client
 
 		for i := startSlot; i < endSlot; i++ {
 			// wait until the slot is reached
