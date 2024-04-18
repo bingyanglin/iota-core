@@ -184,13 +184,13 @@ func Test_ManagementAPI_Peers_BadRequests(t *testing.T) {
 func Test_ManagementAPI_Pruning(t *testing.T) {
 	d := NewDockerTestFramework(t,
 		WithProtocolParametersOptions(
-			iotago.WithSupplyOptions(1813620509061365, 63, 1, 4, 0, 0, 0),
-			iotago.WithTimeProviderOptions(0, time.Now().Unix(), 3, 4),
-			iotago.WithLivenessOptions(3, 4, 2, 4, 8),
+			iotago.WithTimeProviderOptions(0, time.Now().Unix(), 4, 4),
+			iotago.WithLivenessOptions(3, 4, 2, 4, 5),
 			iotago.WithCongestionControlOptions(1, 1, 1, 400_000, 250_000, 50_000_000, 1000, 100),
 			iotago.WithRewardsOptions(8, 10, 2, 384),
 			iotago.WithTargetCommitteeSize(4),
-		))
+		),
+	)
 	defer d.Stop()
 
 	d.AddValidatorNode("V1", "docker-network-inx-validator-1-1", "http://localhost:8050", "rms1pzg8cqhfxqhq7pt37y8cs4v5u4kcc48lquy2k73ehsdhf5ukhya3y5rx2w6")
@@ -217,7 +217,7 @@ func Test_ManagementAPI_Pruning(t *testing.T) {
 		currentEpoch := nodeClientV1.CommittedAPI().TimeProvider().EpochFromSlot(info.Status.LatestFinalizedSlot)
 
 		// await the start slot of the next epoch
-		d.AwaitCommitment(nodeClientV1.CommittedAPI().TimeProvider().EpochStart(currentEpoch + 1))
+		d.AwaitFinalization(nodeClientV1.CommittedAPI().TimeProvider().EpochStart(currentEpoch + 1))
 	}
 
 	type test struct {
@@ -260,7 +260,8 @@ func Test_ManagementAPI_Pruning(t *testing.T) {
 
 				// prune database by size
 				pruneDatabaseResponse, err := managementClient.PruneDatabaseBySize(getContextWithTimeout(5*time.Second), "5G")
-				require.ErrorIs(t, err, database.ErrNoPruningNeeded)
+				// Match the error string since the error chain is lost during the HTTP request.
+				require.Contains(t, err.Error(), database.ErrNoPruningNeeded.Error())
 				require.Nil(t, pruneDatabaseResponse)
 			},
 		},
