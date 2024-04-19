@@ -101,10 +101,10 @@ func (t *TipSelection) SelectTips(maxStrongParents int, maxLikedInsteadParents i
 		previousLikedInsteadConflicts := ds.NewSet[iotago.TransactionID]()
 
 		if t.collectReferences(func(tip tipmanager.TipMetadata) {
-			addedLikedInsteadReferences, updatedLikedInsteadConflicts, err := t.likedInsteadReferences(maxLikedInsteadReferencesPerParent, previousLikedInsteadConflicts, tip)
-			if err != nil {
+			switch addedLikedInsteadReferences, updatedLikedInsteadConflicts, err := t.likedInsteadReferences(maxLikedInsteadReferencesPerParent, previousLikedInsteadConflicts, tip); {
+			case err != nil:
 				tip.TipPool().Set(tipmanager.WeakTipPool)
-			} else if len(addedLikedInsteadReferences) <= maxLikedInsteadParents-len(references[iotago.ShallowLikeParentType]) {
+			case len(addedLikedInsteadReferences) <= maxLikedInsteadParents-len(references[iotago.ShallowLikeParentType]):
 				references[iotago.StrongParentType] = append(references[iotago.StrongParentType], tip.ID())
 				references[iotago.ShallowLikeParentType] = append(references[iotago.ShallowLikeParentType], addedLikedInsteadReferences...)
 
@@ -112,7 +112,7 @@ func (t *TipSelection) SelectTips(maxStrongParents int, maxLikedInsteadParents i
 				strongParents.Add(tip.ID())
 
 				previousLikedInsteadConflicts = updatedLikedInsteadConflicts
-			} else {
+			default:
 				t.LogTrace("could not add liked instead references to tip", "tip", tip.ID(), "addedLikedInsteadReferences", addedLikedInsteadReferences)
 			}
 		}, func() int {
