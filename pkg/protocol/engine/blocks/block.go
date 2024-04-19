@@ -23,9 +23,6 @@ type Block struct {
 	// PayloadDependenciesAvailable is triggered when the dependencies of the block's payload are available.
 	PayloadDependenciesAvailable reactive.Event
 
-	// SignedTransactionMetadata contains the signed transaction metadata of the block.
-	SignedTransactionMetadata reactive.Variable[mempool.SignedTransactionMetadata]
-
 	// BlockDAG block
 	missing             bool
 	missingBlockID      iotago.BlockID
@@ -89,7 +86,6 @@ func newEmptyBlock() *Block {
 	return &Block{
 		ParentsBooked:                reactive.NewEvent(),
 		PayloadDependenciesAvailable: reactive.NewEvent(),
-		SignedTransactionMetadata:    reactive.NewVariable[mempool.SignedTransactionMetadata](),
 
 		witnesses:             ds.NewSet[account.SeatIndex](),
 		spenderIDs:            ds.NewSet[iotago.TransactionID](),

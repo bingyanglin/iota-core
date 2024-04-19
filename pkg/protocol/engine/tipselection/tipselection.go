@@ -10,7 +10,7 @@ import (
 // TipSelection is a component that is used to abstract away the tip selection strategy, used to issuing new blocks.
 type TipSelection interface {
 	// SelectTips selects the tips that should be used as references for a new block.
-	SelectTips(count int) (references model.ParentReferences)
+	SelectTips(maxStrongParents int, maxLikedInsteadParents int, maxWeakParents int) (references model.ParentReferences)
 
 	// SetAcceptanceTime updates the acceptance time of the TipSelection.
 	SetAcceptanceTime(acceptanceTime time.Time) (previousTime time.Time)
