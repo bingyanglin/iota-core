@@ -187,6 +187,7 @@ func Test_DelayedClaimingRewards(t *testing.T) {
 		// check if V2 received the delegator stake
 		v2Resp, err := clt.Validator(ctx, d.Node("V2").AccountAddress(t))
 		require.NoError(t, err)
+		fmt.Printf("Pool stake: %d, Validator stake: %d\n", v2Resp.PoolStake, v2Resp.ValidatorStake)
 		require.Greater(t, v2Resp.PoolStake, v2Resp.ValidatorStake)
 
 		// delay claiming rewards
@@ -194,11 +195,13 @@ func Test_DelayedClaimingRewards(t *testing.T) {
 		apiForSlot := clt.APIForSlot(currentSlot)
 		latestCommitmentSlot := delegatorWallet.GetNewBlockIssuanceResponse().LatestCommitment.Slot
 		delegationEndEpoch := getDelegationEndEpoch(apiForSlot, currentSlot, latestCommitmentSlot)
+		delegationOutputData = d.DelayedClaimingTransition(ctx, delegatorWallet, delegationOutputData)
 		d.AwaitCommitment(delegationOutputData.ID.CreationSlot())
 
 		// the delegated stake should be removed from the validator, so the pool stake should equal to the validator stake
 		v2Resp, err = clt.Validator(ctx, d.Node("V2").AccountAddress(t))
 		require.NoError(t, err)
+		fmt.Printf("Pool stake: %d, Validator stake: %d\n", v2Resp.PoolStake, v2Resp.ValidatorStake)
 		require.Equal(t, v2Resp.PoolStake, v2Resp.ValidatorStake)
 
 		// wait until next epoch to destroy the delegation
