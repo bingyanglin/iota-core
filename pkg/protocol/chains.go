@@ -323,7 +323,9 @@ func (c *Chains) initChainSwitching() (shutdown func()) {
 
 	return lo.BatchReverse(
 		c.HeaviestClaimedCandidate.WithNonEmptyValue(func(heaviestClaimedCandidate *Chain) (shutdown func()) {
-			return heaviestClaimedCandidate.RequestAttestations.ToggleValue(true)
+			return heaviestClaimedCandidate.IsSolid.WithNonEmptyValue(func(_ bool) (teardown func()) {
+				return heaviestClaimedCandidate.RequestAttestations.ToggleValue(true)
+			})
 		}),
 
 		c.HeaviestAttestedCandidate.OnUpdate(func(_ *Chain, heaviestAttestedCandidate *Chain) {

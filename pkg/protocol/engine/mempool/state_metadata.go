@@ -16,5 +16,9 @@ type StateMetadata interface {
 
 	OnAcceptedSpenderUpdated(callback func(spender TransactionMetadata))
 
+	InclusionSlot() iotago.SlotIndex
+
+	OnInclusionSlotUpdated(callback func(prevSlot iotago.SlotIndex, newSlot iotago.SlotIndex))
+
 	inclusionFlags
 }

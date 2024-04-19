@@ -29,6 +29,8 @@ type ProtocolHandler struct {
 
 // The Manager handles the connected neighbors.
 type Manager struct {
+	logger log.Logger
+
 	// Fired when a neighbor connection has been established.
 	neighborAdded *event.Event1[network.Neighbor]
 	// Fired when a neighbor has been removed.
@@ -39,8 +41,6 @@ type Manager struct {
 
 	ctx context.Context
 
-	logger log.Logger
-
 	shutdownMutex syncutils.RWMutex
 	isShutdown    bool
 
@@ -48,6 +48,7 @@ type Manager struct {
 
 	protocolHandler      *ProtocolHandler
 	protocolHandlerMutex syncutils.RWMutex
+	onBlockSentCallback  func()
 
 	autoPeering   *autopeering.Manager
 	manualPeering *manualpeering.Manager
@@ -56,14 +57,15 @@ type Manager struct {
 var _ network.Manager = (*Manager)(nil)
 
 // NewManager creates a new Manager.
-func NewManager(libp2pHost host.Host, peerDB *network.DB, maxAutopeeringPeers int, logger log.Logger) *Manager {
+func NewManager(logger log.Logger, libp2pHost host.Host, peerDB *network.DB, maxAutopeeringPeers int, onBlockSentCallback func()) *Manager {
 	m := &Manager{
-		libp2pHost:      libp2pHost,
-		peerDB:          peerDB,
-		logger:          logger,
-		neighborAdded:   event.New1[network.Neighbor](),
-		neighborRemoved: event.New1[network.Neighbor](),
-		neighbors:       shrinkingmap.New[peer.ID, *neighbor](),
+		logger:              logger,
+		libp2pHost:          libp2pHost,
+		peerDB:              peerDB,
+		neighborAdded:       event.New1[network.Neighbor](),
+		neighborRemoved:     event.New1[network.Neighbor](),
+		neighbors:           shrinkingmap.New[peer.ID, *neighbor](),
+		onBlockSentCallback: onBlockSentCallback,
 	}
 
 	m.autoPeering = autopeering.NewManager(maxAutopeeringPeers, m, libp2pHost, peerDB, logger)
@@ -144,7 +146,7 @@ func (m *Manager) DialPeer(ctx context.Context, peer *network.Peer) error {
 		return ierrors.Wrapf(err, "failed to update peer %s", peer.ID.String())
 	}
 
-	if err := m.addNeighbor(peer, ps); err != nil {
+	if err := m.addNeighbor(peer, ps, m.onBlockSentCallback); err != nil {
 		m.closeStream(stream)
 
 		return ierrors.Wrapf(err, "failed to add neighbor %s", peer.ID.String())
@@ -309,6 +311,13 @@ func (m *Manager) handleStream(stream p2pnetwork.Stream) {
 		return
 	}
 
+	if m.ctx == nil {
+		m.logger.LogDebugf("aborting handling stream, context is nil")
+		m.closeStream(stream)
+
+		return
+	}
+
 	if m.ctx.Err() != nil {
 		m.logger.LogDebugf("aborting handling stream, context is done")
 		m.closeStream(stream)
@@ -346,7 +355,7 @@ func (m *Manager) handleStream(stream p2pnetwork.Stream) {
 		return
 	}
 
-	if err := m.addNeighbor(networkPeer, ps); err != nil {
+	if err := m.addNeighbor(networkPeer, ps, m.onBlockSentCallback); err != nil {
 		m.logger.LogErrorf("failed to add neighbor, peerID: %s, error: %s", peerID.String(), err.Error())
 		m.closeStream(stream)
 
@@ -375,7 +384,7 @@ func (m *Manager) neighbor(id peer.ID) (*neighbor, error) {
 	return nbr, nil
 }
 
-func (m *Manager) addNeighbor(peer *network.Peer, ps *PacketsStream) error {
+func (m *Manager) addNeighbor(peer *network.Peer, ps *PacketsStream, onBlockSentCallback func()) error {
 	if peer.ID == m.libp2pHost.ID() {
 		return ierrors.WithStack(network.ErrLoopbackPeer)
 	}
@@ -392,25 +401,30 @@ func (m *Manager) addNeighbor(peer *network.Peer, ps *PacketsStream) error {
 	}
 
 	var innerErr error
-	nbr := newNeighbor(m.logger, peer, ps, func(nbr *neighbor, packet proto.Message) {
-		m.protocolHandlerMutex.RLock()
-		defer m.protocolHandlerMutex.RUnlock()
+	nbr := newNeighbor(m.logger,
+		peer,
+		ps,
+		func(nbr *neighbor, packet proto.Message) {
+			m.protocolHandlerMutex.RLock()
+			defer m.protocolHandlerMutex.RUnlock()
 
-		if m.protocolHandler == nil {
-			nbr.logger.LogError("Can't handle packet as no protocol is registered")
-			return
-		}
-		if err := m.protocolHandler.PacketHandler(nbr.Peer().ID, packet); err != nil {
-			nbr.logger.LogDebugf("Can't handle packet, error: %s", err.Error())
-		}
-	}, func(nbr *neighbor) {
-		nbr.logger.LogInfof("Neighbor connected: %s", nbr.Peer().ID.String())
-		nbr.Peer().SetConnStatus(network.ConnStatusConnected)
-		m.neighborAdded.Trigger(nbr)
-	}, func(nbr *neighbor) {
-		m.deleteNeighbor(nbr)
-		m.neighborRemoved.Trigger(nbr)
-	})
+			if m.protocolHandler == nil {
+				nbr.logger.LogError("Can't handle packet as no protocol is registered")
+				return
+			}
+			if err := m.protocolHandler.PacketHandler(nbr.Peer().ID, packet); err != nil {
+				nbr.logger.LogDebugf("Can't handle packet, error: %s", err.Error())
+			}
+		},
+		onBlockSentCallback,
+		func(nbr *neighbor) {
+			nbr.logger.LogInfof("Neighbor connected: %s", nbr.Peer().ID.String())
+			nbr.Peer().SetConnStatus(network.ConnStatusConnected)
+			m.neighborAdded.Trigger(nbr)
+		}, func(nbr *neighbor) {
+			m.deleteNeighbor(nbr)
+			m.neighborRemoved.Trigger(nbr)
+		})
 	if err := m.setNeighbor(nbr); err != nil {
 		if resetErr := ps.Reset(); resetErr != nil {
 			nbr.logger.LogErrorf("error closing stream, error: %s", resetErr.Error())

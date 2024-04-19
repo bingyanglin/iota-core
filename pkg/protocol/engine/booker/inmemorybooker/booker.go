@@ -96,13 +96,11 @@ func (b *Booker) Init(ledger ledger.Ledger, loadBlockFromStorage func(iotago.Blo
 // Queue checks if payload is solid and then sets up the block to react to its parents.
 func (b *Booker) Queue(block *blocks.Block) error {
 	signedTransactionMetadata, containsTransaction := b.ledger.AttachTransaction(block)
-
 	if !containsTransaction {
-		b.setupBlock(block)
-		return nil
-	}
+		b.setupBlock(block, nil)
 
-	if signedTransactionMetadata == nil {
+		return nil
+	} else if signedTransactionMetadata == nil {
 		return ierrors.Errorf("transaction in block %s was not attached", block.ID())
 	}
 
@@ -118,16 +116,16 @@ func (b *Booker) Queue(block *blocks.Block) error {
 
 		transactionMetadata.OnBooked(func() {
 			block.SetPayloadSpenderIDs(transactionMetadata.SpenderIDs())
-			b.setupBlock(block)
+			b.setupBlock(block, signedTransactionMetadata)
 		})
 
 		transactionMetadata.OnInvalid(func(_ error) {
-			b.setupBlock(block)
+			b.setupBlock(block, signedTransactionMetadata)
 		})
 	})
 
 	signedTransactionMetadata.OnSignaturesInvalid(func(_ error) {
-		b.setupBlock(block)
+		b.setupBlock(block, signedTransactionMetadata)
 	})
 
 	return nil
@@ -136,7 +134,14 @@ func (b *Booker) Queue(block *blocks.Block) error {
 // Reset resets the component to a clean state as if it was created at the last commitment.
 func (b *Booker) Reset() { /* nothing to reset but comply with interface */ }
 
-func (b *Booker) setupBlock(block *blocks.Block) {
+func (b *Booker) setupBlock(block *blocks.Block, signedTransactionMetadata mempool.SignedTransactionMetadata) {
+	var payloadDependencies, directlyReferencedPayloadDependencies ds.Set[mempool.StateMetadata]
+
+	if signedTransactionMetadata != nil && signedTransactionMetadata.SignaturesInvalid() == nil && !signedTransactionMetadata.TransactionMetadata().IsInvalid() {
+		payloadDependencies = signedTransactionMetadata.TransactionMetadata().Inputs()
+		directlyReferencedPayloadDependencies = ds.NewSet[mempool.StateMetadata]()
+	}
+
 	var unbookedParentsCount atomic.Int32
 	unbookedParentsCount.Store(int32(len(block.Parents())))
 
@@ -149,12 +154,16 @@ func (b *Booker) setupBlock(block *blocks.Block) {
 		}
 
 		parentBlock.Booked().OnUpdateOnce(func(_ bool, _ bool) {
-			if unbookedParentsCount.Add(-1) == 0 {
-				if err := b.book(block); err != nil {
-					if block.SetInvalid() {
-						b.events.BlockInvalid.Trigger(block, ierrors.Wrap(err, "failed to book block"))
+			if directlyReferencedPayloadDependencies != nil {
+				if signedTx, hasTx := parentBlock.SignedTransaction(); hasTx {
+					if parentTransactionMetadata, exists := b.ledger.TransactionMetadata(signedTx.Transaction.MustID()); exists {
+						directlyReferencedPayloadDependencies.AddAll(parentTransactionMetadata.Outputs())
 					}
 				}
+			}
+
+			if unbookedParentsCount.Add(-1) == 0 {
+				block.ParentsBooked.Trigger()
 			}
 		})
 
@@ -163,6 +172,22 @@ func (b *Booker) setupBlock(block *blocks.Block) {
 				b.events.BlockInvalid.Trigger(block, ierrors.Errorf("block marked as invalid in Booker because parent block %s is invalid", parentBlock.ID()))
 			}
 		})
+	})
+
+	block.ParentsBooked.OnTrigger(func() {
+		if directlyReferencedPayloadDependencies != nil {
+			payloadDependencies.DeleteAll(directlyReferencedPayloadDependencies)
+		}
+
+		block.WaitForPayloadDependencies(payloadDependencies)
+	})
+
+	block.PayloadDependenciesAvailable.OnTrigger(func() {
+		if err := b.book(block); err != nil {
+			if block.SetInvalid() {
+				b.events.BlockInvalid.Trigger(block, ierrors.Wrap(err, "failed to book block"))
+			}
+		}
 	})
 }
 

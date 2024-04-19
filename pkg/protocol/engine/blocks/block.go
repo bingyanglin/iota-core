@@ -2,6 +2,7 @@ package blocks
 
 import (
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/iotaledger/hive.go/ds"
@@ -11,10 +12,17 @@ import (
 	"github.com/iotaledger/hive.go/stringify"
 	"github.com/iotaledger/iota-core/pkg/core/account"
 	"github.com/iotaledger/iota-core/pkg/model"
+	"github.com/iotaledger/iota-core/pkg/protocol/engine/mempool"
 	iotago "github.com/iotaledger/iota.go/v4"
 )
 
 type Block struct {
+	// ParentsBooked is triggered when all parents of the block are booked.
+	ParentsBooked reactive.Event
+
+	// PayloadDependenciesAvailable is triggered when the dependencies of the block's payload are available.
+	PayloadDependenciesAvailable reactive.Event
+
 	// BlockDAG block
 	missing             bool
 	missingBlockID      iotago.BlockID
@@ -86,6 +94,9 @@ func (r *rootBlock) String() string {
 
 func newEmptyBlock() *Block {
 	return &Block{
+		ParentsBooked:                reactive.NewEvent(),
+		PayloadDependenciesAvailable: reactive.NewEvent(),
+
 		witnesses:             ds.NewSet[account.SeatIndex](),
 		spenderIDs:            ds.NewSet[iotago.TransactionID](),
 		payloadSpenderIDs:     ds.NewSet[iotago.TransactionID](),
@@ -122,6 +133,8 @@ func NewRootBlock(blockID iotago.BlockID, commitmentID iotago.CommitmentID, issu
 	b.scheduled = true
 
 	// This should be true since we commit and evict on acceptance.
+	b.ParentsBooked.Set(true)
+	b.PayloadDependenciesAvailable.Set(true)
 	b.solid.Init(true)
 	b.booked.Init(true)
 	b.weightPropagated.Init(true)
@@ -778,4 +791,31 @@ func (b *Block) ModelBlock() *model.Block {
 
 func (b *Block) WorkScore() iotago.WorkScore {
 	return b.workScore
+}
+
+func (b *Block) WaitForPayloadDependencies(dependencies ds.Set[mempool.StateMetadata]) {
+	if dependencies == nil || dependencies.Size() == 0 {
+		b.PayloadDependenciesAvailable.Trigger()
+
+		return
+	}
+
+	var unreferencedOutputCount atomic.Int32
+	unreferencedOutputCount.Store(int32(dependencies.Size()))
+
+	dependencies.Range(func(dependency mempool.StateMetadata) {
+		dependencyReady := false
+
+		dependency.OnAccepted(func() {
+			dependency.OnInclusionSlotUpdated(func(_ iotago.SlotIndex, inclusionSlot iotago.SlotIndex) {
+				if !dependencyReady && inclusionSlot <= b.ID().Slot() {
+					dependencyReady = true
+
+					if unreferencedOutputCount.Add(-1) == 0 {
+						b.PayloadDependenciesAvailable.Trigger()
+					}
+				}
+			})
+		})
+	})
 }
