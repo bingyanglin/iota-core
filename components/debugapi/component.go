@@ -45,8 +45,8 @@ func init() {
 	Component = &app.Component{
 		Name:      "DebugAPIV3",
 		DepsFunc:  func(cDeps dependencies) { deps = cDeps },
-		Configure: configure,
 		Params:    params,
+		Configure: configure,
 		IsEnabled: func(_ *dig.Container) bool {
 			return ParamsDebugAPI.Enabled
 		},

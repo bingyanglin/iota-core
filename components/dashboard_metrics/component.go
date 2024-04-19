@@ -16,6 +16,7 @@ import (
 	"github.com/iotaledger/inx-app/pkg/httpserver"
 	"github.com/iotaledger/iota-core/pkg/daemon"
 	"github.com/iotaledger/iota-core/pkg/model"
+	"github.com/iotaledger/iota-core/pkg/network/p2p"
 	"github.com/iotaledger/iota-core/pkg/protocol"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/blocks"
 	restapipkg "github.com/iotaledger/iota-core/pkg/restapi"
@@ -39,6 +40,7 @@ func init() {
 	Component = &app.Component{
 		Name:      "DashboardMetrics",
 		DepsFunc:  func(cDeps dependencies) { deps = cDeps },
+		Params:    params,
 		Configure: configure,
 		Run:       run,
 	}
@@ -56,11 +58,20 @@ type dependencies struct {
 	Protocol         *protocol.Protocol
 	RestRouteManager *restapipkg.RestRouteManager
 	AppInfo          *app.Info
+	P2PMetrics       *p2p.Metrics
 }
 
 func configure() error {
-	configureComponentCountersEvents()
+	// configure protocol events
+	deps.Protocol.Network.OnBlockReceived(func(_ *model.Block, _ peer.ID) {
+		deps.P2PMetrics.IncomingBlocks.Add(1)
+	})
 
+	deps.Protocol.Events.Engine.BlockRetainer.BlockRetained.Hook(func(_ *blocks.Block) {
+		deps.P2PMetrics.IncomingNewBlocks.Add(1)
+	})
+
+	// configure rest routes
 	routeGroup := deps.RestRouteManager.AddRoute("dashboard-metrics/v2")
 
 	routeGroup.GET(RouteNodeInfoExtended, func(c echo.Context) error {
@@ -71,45 +82,22 @@ func configure() error {
 		return httpserver.JSONResponse(c, http.StatusOK, databaseSizesMetrics())
 	})
 
+	routeGroup.GET(RouteGossipMetrics, func(c echo.Context) error {
+		return httpserver.JSONResponse(c, http.StatusOK, gossipMetrics())
+	})
+
 	return nil
 }
 
 func run() error {
 	Component.Logger.LogInfof("Starting %s ...", Component.Name)
-	if err := Component.Daemon().BackgroundWorker("DashboardMetricsUpdater", func(ctx context.Context) {
-		// Do not block until the Ticker is shutdown because we might want to start multiple Tickers and we can
-		// safely ignore the last execution when shutting down.
-		timeutil.NewTicker(func() {
-			measurePerComponentCounter()
-		}, 1*time.Second, ctx)
 
-		// Wait before terminating so we get correct log blocks from the daemon regarding the shutdown order.
-		<-ctx.Done()
+	// create a background worker that "measures" the gossip metrics every second
+	if err := Component.Daemon().BackgroundWorker("GossipMetrics Updater", func(ctx context.Context) {
+		timeutil.NewTicker(measureGossipMetrics, 1*time.Second, ctx).WaitForGracefulShutdown()
 	}, daemon.PriorityDashboardMetrics); err != nil {
 		Component.LogPanicf("failed to start worker: %s", err)
 	}
 
 	return nil
-}
-
-func configureComponentCountersEvents() {
-	deps.Protocol.Network.OnBlockReceived(func(_ *model.Block, _ peer.ID) {
-		incComponentCounter(Received)
-	})
-
-	deps.Protocol.Events.Engine.PostSolidFilter.BlockAllowed.Hook(func(*blocks.Block) {
-		incComponentCounter(Allowed)
-	})
-
-	deps.Protocol.Events.Engine.BlockDAG.BlockSolid.Hook(func(*blocks.Block) {
-		incComponentCounter(Solidified)
-	})
-
-	deps.Protocol.Events.Engine.Booker.BlockBooked.Hook(func(*blocks.Block) {
-		incComponentCounter(Booked)
-	})
-
-	deps.Protocol.Events.Engine.Scheduler.BlockScheduled.Hook(func(*blocks.Block) {
-		incComponentCounter(Scheduled)
-	})
 }
