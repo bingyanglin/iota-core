@@ -17,8 +17,9 @@ import (
 )
 
 type ValidatorYaml struct {
-	Name      string `yaml:"name"`
-	PublicKey string `yaml:"publicKey"`
+	Name                 string `yaml:"name"`
+	PublicKey            string `yaml:"publicKey"`
+	BlockIssuanceCredits uint64 `yaml:"blockIssuanceCredits"`
 }
 
 type BlockIssuerYaml struct {
@@ -81,7 +82,7 @@ func GenerateFromYaml(hostsFile string) ([]options.Option[snapshotcreator.Option
 			Amount:               mock.MinValidatorAccountAmount(protocolParams),
 			IssuerKey:            iotago.Ed25519PublicKeyHashBlockIssuerKeyFromPublicKey(ed25519.PublicKey(lo.PanicOnErr(hexutil.DecodeHex(pubkey)))),
 			ExpirySlot:           iotago.MaxSlotIndex,
-			BlockIssuanceCredits: 0,
+			BlockIssuanceCredits: iotago.BlockIssuanceCredits(validator.BlockIssuanceCredits),
 			StakingEndEpoch:      iotago.MaxEpochIndex,
 			FixedCost:            1,
 			StakedAmount:         mock.MinValidatorAccountAmount(protocolParams),
