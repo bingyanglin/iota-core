@@ -2,7 +2,12 @@ package inx
 
 import (
 	"context"
+	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	"github.com/iotaledger/hive.go/ierrors"
 	"github.com/iotaledger/hive.go/lo"
 	"github.com/iotaledger/hive.go/serializer/v2/serix"
 	inx "github.com/iotaledger/inx/go"
@@ -10,13 +15,65 @@ import (
 	iotago "github.com/iotaledger/iota.go/v4"
 )
 
-func (s *Server) RequestTips(_ context.Context, req *inx.TipsRequest) (*inx.TipsResponse, error) {
-	references := deps.Protocol.Engines.Main.Get().TipSelection.SelectTips(int(req.GetCount()), int(req.GetCount()), int(req.GetCount()))
+func (s *Server) ReadBlockIssuance(_ context.Context, req *inx.BlockIssuanceRequest) (*inx.BlockIssuanceResponse, error) {
+	references := deps.Protocol.Engines.Main.Get().TipSelection.SelectTips(int(req.GetMaxStrongParentsCount()), int(req.GetMaxShallowLikeParentsCount()), int(req.GetMaxWeakParentsCount()))
+	if len(references[iotago.StrongParentType]) == 0 {
+		return nil, status.Errorf(codes.Unavailable, "no strong parents available")
+	}
 
-	return &inx.TipsResponse{
-		StrongTips:      inx.NewBlockIds(references[iotago.StrongParentType]),
-		WeakTips:        inx.NewBlockIds(references[iotago.WeakParentType]),
-		ShallowLikeTips: inx.NewBlockIds(references[iotago.ShallowLikeParentType]),
+	// get the latest parent block issuing time
+	var latestParentBlockIssuingTime time.Time
+
+	checkParent := func(parentBlockID iotago.BlockID) error {
+		parentBlock, exists := deps.Protocol.Engines.Main.Get().Block(parentBlockID)
+		if !exists {
+			// check if this is the genesis block
+			if parentBlockID == deps.Protocol.CommittedAPI().ProtocolParameters().GenesisBlockID() {
+				return nil
+			}
+
+			// or a root block
+			rootBlocks, err := deps.Protocol.Engines.Main.Get().Storage.RootBlocks(parentBlockID.Slot())
+			if err != nil {
+				return status.Errorf(codes.Internal, "failed to get root blocks for slot %d: %s", parentBlockID.Slot(), err.Error())
+			}
+
+			isRootBlock, err := rootBlocks.Has(parentBlockID)
+			if err != nil {
+				return status.Errorf(codes.Internal, "failed to check if block %s is a root block: %s", parentBlockID, err.Error())
+			}
+
+			if isRootBlock {
+				return nil
+			}
+
+			return status.Errorf(codes.NotFound, "no block found for block ID %s", parentBlockID)
+		}
+
+		if latestParentBlockIssuingTime.Before(parentBlock.ProtocolBlock().Header.IssuingTime) {
+			latestParentBlockIssuingTime = parentBlock.ProtocolBlock().Header.IssuingTime
+		}
+
+		return nil
+	}
+
+	for _, parentType := range []iotago.ParentsType{iotago.StrongParentType, iotago.WeakParentType, iotago.ShallowLikeParentType} {
+		for _, parentBlockID := range references[parentType] {
+			if err := checkParent(parentBlockID); err != nil {
+				return nil, ierrors.Wrap(err, "failed to retrieve parents")
+			}
+		}
+	}
+
+	latestCommitment := deps.Protocol.Engines.Main.Get().SyncManager.LatestCommitment()
+
+	return &inx.BlockIssuanceResponse{
+		StrongParents:                inx.NewBlockIds(references[iotago.StrongParentType]),
+		WeakParents:                  inx.NewBlockIds(references[iotago.WeakParentType]),
+		ShallowLikeParents:           inx.NewBlockIds(references[iotago.ShallowLikeParentType]),
+		LatestParentBlockIssuingTime: inx.TimeToUint64(latestParentBlockIssuingTime),
+		LatestFinalizedSlot:          uint32(deps.Protocol.Engines.Main.Get().SyncManager.LatestFinalizedSlot()),
+		LatestCommitment:             inx.NewCommitmentWithBytes(latestCommitment.ID(), latestCommitment.Data()),
 	}, nil
 }
 
