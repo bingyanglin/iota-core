@@ -416,7 +416,7 @@ func (c *SpendDAG[SpenderID, ResourceID, VoteRank]) evictSpender(spenderID Spend
 		unhookFunc, unhookExists := c.spendUnhooks.Get(spenderID)
 		if unhookExists {
 			unhookFunc()
-			c.spendUnhooks.Delete(spenderID)
+			c.spendUnhooks.Delete(evictedSpenderID)
 		}
 	}
 
