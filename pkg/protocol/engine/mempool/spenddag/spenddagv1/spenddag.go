@@ -413,7 +413,7 @@ func (c *SpendDAG[SpenderID, ResourceID, VoteRank]) evictSpender(spenderID Spend
 	for _, evictedSpenderID := range evictedSpenderIDs {
 		c.spendersByID.Delete(evictedSpenderID)
 		// unhook the spend events and remove the unhook method from the storage
-		unhookFunc, unhookExists := c.spendUnhooks.Get(spenderID)
+		unhookFunc, unhookExists := c.spendUnhooks.Get(evictedSpenderID)
 		if unhookExists {
 			unhookFunc()
 			c.spendUnhooks.Delete(evictedSpenderID)
