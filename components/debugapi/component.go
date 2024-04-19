@@ -167,7 +167,7 @@ func configure() error {
 			return c.String(http.StatusInternalServerError, err.Error())
 		}
 
-		return c.Blob(http.StatusOK, echo.MIMEApplicationJSONCharsetUTF8, blockJSON)
+		return c.Blob(http.StatusOK, echo.MIMEApplicationJSON, blockJSON)
 	})
 
 	routeGroup.GET(RouteValidators, func(c echo.Context) error {

@@ -35,12 +35,12 @@ func (s *Server) ReadBlockIssuance(_ context.Context, req *inx.BlockIssuanceRequ
 			// or a root block
 			rootBlocks, err := deps.Protocol.Engines.Main.Get().Storage.RootBlocks(parentBlockID.Slot())
 			if err != nil {
-				return status.Errorf(codes.Internal, "failed to get root blocks for slot %d: %s", parentBlockID.Slot(), err)
+				return status.Errorf(codes.Internal, "failed to get root blocks for slot %d: %s", parentBlockID.Slot(), err.Error())
 			}
 
 			isRootBlock, err := rootBlocks.Has(parentBlockID)
 			if err != nil {
-				return status.Errorf(codes.Internal, "failed to check if block %s is a root block: %w", parentBlockID, err)
+				return status.Errorf(codes.Internal, "failed to check if block %s is a root block: %s", parentBlockID, err.Error())
 			}
 
 			if isRootBlock {
