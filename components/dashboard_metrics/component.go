@@ -75,15 +75,15 @@ func configure() error {
 	routeGroup := deps.RestRouteManager.AddRoute("dashboard-metrics/v2")
 
 	routeGroup.GET(RouteNodeInfoExtended, func(c echo.Context) error {
-		return httpserver.JSONResponse(c, http.StatusOK, nodeInfoExtended())
+		return responseByHeader(c, nodeInfoExtended(), http.StatusOK)
 	})
 
 	routeGroup.GET(RouteDatabaseSizes, func(c echo.Context) error {
-		return httpserver.JSONResponse(c, http.StatusOK, databaseSizesMetrics())
+		return responseByHeader(c, databaseSizesMetrics(), http.StatusOK)
 	})
 
 	routeGroup.GET(RouteGossipMetrics, func(c echo.Context) error {
-		return httpserver.JSONResponse(c, http.StatusOK, gossipMetrics())
+		return responseByHeader(c, gossipMetrics(), http.StatusOK)
 	})
 
 	return nil
@@ -100,4 +100,8 @@ func run() error {
 	}
 
 	return nil
+}
+
+func responseByHeader(c echo.Context, obj any, httpStatusCode ...int) error {
+	return httpserver.SendResponseByHeader(c, deps.Protocol.Engines.Main.Get().CommittedAPI(), obj, httpStatusCode...)
 }
