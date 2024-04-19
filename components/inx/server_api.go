@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"net/http/httptest"
+	"net/url"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -47,7 +48,13 @@ func (s *Server) PerformAPIRequest(_ context.Context, req *inx.APIRequest) (*inx
 
 	rec := httptest.NewRecorder()
 	c := deps.Echo.NewContext(httpReq, rec)
-	deps.Echo.Router().Find(req.GetMethod(), req.GetPath(), c)
+
+	reqURL, err := url.Parse(req.GetPath())
+	if err != nil {
+		return nil, err
+	}
+
+	deps.Echo.Router().Find(req.GetMethod(), reqURL.Path, c)
 	if err := c.Handler()(c); err != nil {
 		return nil, err
 	}
