@@ -61,7 +61,7 @@ func (r *RequestHandler) BlockWithMetadataFromBlockID(blockID iotago.BlockID) (*
 }
 
 func (r *RequestHandler) BlockIssuance() (*api.IssuanceBlockHeaderResponse, error) {
-	references := r.protocol.Engines.Main.Get().TipSelection.SelectTips(iotago.BasicBlockMaxParents)
+	references := r.protocol.Engines.Main.Get().TipSelection.SelectTips(iotago.BasicBlockMaxParents, iotago.BasicBlockMaxParents, iotago.BasicBlockMaxParents)
 	if len(references[iotago.StrongParentType]) == 0 {
 		return nil, ierrors.WithMessage(echo.ErrServiceUnavailable, "no strong parents available")
 	}
