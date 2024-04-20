@@ -19,12 +19,17 @@ import (
 type ValidatorYaml struct {
 	Name                 string `yaml:"name"`
 	PublicKey            string `yaml:"publicKey"`
+	Amount               uint64 `yaml:"amount"`
+	Mana                 uint64 `yaml:"mana"`
 	BlockIssuanceCredits uint64 `yaml:"blockIssuanceCredits"`
+	FixedCost            uint64 `yaml:"fixedCost"`
 }
 
 type BlockIssuerYaml struct {
 	Name                 string `yaml:"name"`
 	PublicKey            string `yaml:"publicKey"`
+	Amount               uint64 `yaml:"amount"`
+	Mana                 uint64 `yaml:"mana"`
 	BlockIssuanceCredits uint64 `yaml:"blockIssuanceCredits"`
 }
 
@@ -74,34 +79,39 @@ func GenerateFromYaml(hostsFile string) ([]options.Option[snapshotcreator.Option
 
 	accounts := make([]snapshotcreator.AccountDetails, 0, len(configYaml.Validators)+len(configYaml.BlockIssuers))
 	for _, validator := range configYaml.Validators {
-		pubkey := validator.PublicKey
-		fmt.Printf("adding validator %s with publicKey %s\n", validator.Name, pubkey)
+		pubKey := validator.PublicKey
+		stake := lo.Max(mock.MinValidatorAccountAmount(protocolParams), iotago.BaseToken(validator.Amount))
+		mana := lo.Max(iotago.Mana(mock.MinValidatorAccountAmount(protocolParams)), iotago.Mana(validator.Mana))
+		fixedCost := lo.Max(1, iotago.Mana(validator.FixedCost))
+		fmt.Printf("adding validator %s with publicKey %s, stake %d, mana %d and fixedCost %d\n", validator.Name, pubKey, stake, mana, fixedCost)
 		account := snapshotcreator.AccountDetails{
-			AccountID:            blake2b.Sum256(lo.PanicOnErr(hexutil.DecodeHex(pubkey))),
-			Address:              iotago.Ed25519AddressFromPubKey(lo.PanicOnErr(hexutil.DecodeHex(pubkey))),
-			Amount:               mock.MinValidatorAccountAmount(protocolParams),
-			IssuerKey:            iotago.Ed25519PublicKeyHashBlockIssuerKeyFromPublicKey(ed25519.PublicKey(lo.PanicOnErr(hexutil.DecodeHex(pubkey)))),
+			AccountID:            blake2b.Sum256(lo.PanicOnErr(hexutil.DecodeHex(pubKey))),
+			Address:              iotago.Ed25519AddressFromPubKey(lo.PanicOnErr(hexutil.DecodeHex(pubKey))),
+			Amount:               stake,
+			IssuerKey:            iotago.Ed25519PublicKeyHashBlockIssuerKeyFromPublicKey(ed25519.PublicKey(lo.PanicOnErr(hexutil.DecodeHex(pubKey)))),
 			ExpirySlot:           iotago.MaxSlotIndex,
 			BlockIssuanceCredits: iotago.BlockIssuanceCredits(validator.BlockIssuanceCredits),
 			StakingEndEpoch:      iotago.MaxEpochIndex,
-			FixedCost:            1,
-			StakedAmount:         mock.MinValidatorAccountAmount(protocolParams),
-			Mana:                 iotago.Mana(mock.MinValidatorAccountAmount(protocolParams)),
+			FixedCost:            fixedCost,
+			StakedAmount:         stake,
+			Mana:                 mana,
 		}
 		accounts = append(accounts, account)
 	}
 
 	for _, blockIssuer := range configYaml.BlockIssuers {
-		pubkey := blockIssuer.PublicKey
-		fmt.Printf("adding blockissuer %s with publicKey %s\n", blockIssuer.Name, pubkey)
+		pubKey := blockIssuer.PublicKey
+		amount := lo.Max(mock.MinValidatorAccountAmount(protocolParams), iotago.BaseToken(blockIssuer.Amount))
+		mana := lo.Max(iotago.Mana(mock.MinValidatorAccountAmount(protocolParams)), iotago.Mana(blockIssuer.Mana))
+		fmt.Printf("adding blockissuer %s with publicKey %s, amount %d, mana %d\n", blockIssuer.Name, pubKey, amount, mana)
 		account := snapshotcreator.AccountDetails{
-			AccountID:            blake2b.Sum256(lo.PanicOnErr(hexutil.DecodeHex(pubkey))),
-			Address:              iotago.Ed25519AddressFromPubKey(lo.PanicOnErr(hexutil.DecodeHex(pubkey))),
-			Amount:               mock.MinValidatorAccountAmount(protocolParams),
-			IssuerKey:            iotago.Ed25519PublicKeyHashBlockIssuerKeyFromPublicKey(ed25519.PublicKey(lo.PanicOnErr(hexutil.DecodeHex(pubkey)))),
+			AccountID:            blake2b.Sum256(lo.PanicOnErr(hexutil.DecodeHex(pubKey))),
+			Address:              iotago.Ed25519AddressFromPubKey(lo.PanicOnErr(hexutil.DecodeHex(pubKey))),
+			Amount:               amount,
+			IssuerKey:            iotago.Ed25519PublicKeyHashBlockIssuerKeyFromPublicKey(ed25519.PublicKey(lo.PanicOnErr(hexutil.DecodeHex(pubKey)))),
 			ExpirySlot:           iotago.MaxSlotIndex,
 			BlockIssuanceCredits: iotago.BlockIssuanceCredits(blockIssuer.BlockIssuanceCredits),
-			Mana:                 iotago.Mana(mock.MinValidatorAccountAmount(protocolParams)),
+			Mana:                 mana,
 		}
 		accounts = append(accounts, account)
 	}
