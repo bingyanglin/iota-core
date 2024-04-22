@@ -28,7 +28,7 @@ linters-settings:
         post-statements-are-reads: true
         # Mark all exported identifiers as used.g
         # Default: true
-        exported-is-used: false
+        # exported-is-used: false     # linter panics if this is set
         # Mark all exported fields as used.
         # default: true
         exported-fields-are-used: false
