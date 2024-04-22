@@ -26,10 +26,10 @@
       "highWatermark": 10,
       "lowWatermark": 5
     },
-    "externalMultiAddresses": [],
     "identityPrivateKey": "",
     "autopeering": {
-      "maxPeers": 5
+      "maxPeers": 5,
+      "externalMultiAddresses": []
     },
     "db": {
       "path": "testnet/p2pstore"

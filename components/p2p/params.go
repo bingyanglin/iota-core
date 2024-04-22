@@ -22,14 +22,15 @@ type ParametersP2P struct {
 		LowWatermark int `default:"5" usage:"the minimum connections count to hold after the high watermark was reached"`
 	}
 
-	// ExternalMultiAddress defines additional p2p multiaddresses to be advertised via DHT.
-	ExternalMultiAddresses []string `default:"" usage:"external reacheable multi addresses advertised to the network"`
-
 	// Defines the private key used to derive the node identity (optional).
 	IdentityPrivateKey string `default:"" usage:"private key used to derive the node identity (optional)"`
 
 	Autopeering struct {
-		MaxPeers int `default:"5" usage:"the max number of autopeer connections. Set to 0 to disable autopeering."`
+		// MaxPeers defines the max number of auto-peer connections. Set to 0 to disable auto-peering.
+		MaxPeers int `default:"5" usage:"the max number of auto-peer connections. Set to 0 to disable auto-peering."`
+
+		// ExternalMultiAddress defines additional p2p multiaddresses to be advertised via DHT.
+		ExternalMultiAddresses []string `default:"" usage:"external reacheable multi addresses advertised to the network"`
 	}
 
 	Database struct {

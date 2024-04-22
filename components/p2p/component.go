@@ -8,9 +8,11 @@ import (
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
+	p2pbhost "github.com/libp2p/go-libp2p/p2p/host/basic"
 	"github.com/libp2p/go-libp2p/p2p/net/connmgr"
 	"github.com/libp2p/go-libp2p/p2p/transport/tcp"
 	"github.com/multiformats/go-multiaddr"
+	mamask "github.com/whyrusleeping/multiaddr-filter"
 	"go.uber.org/dig"
 
 	"github.com/iotaledger/hive.go/app"
@@ -19,6 +21,7 @@ import (
 	"github.com/iotaledger/hive.go/db"
 	"github.com/iotaledger/hive.go/ierrors"
 	"github.com/iotaledger/hive.go/kvstore"
+	"github.com/iotaledger/hive.go/lo"
 	"github.com/iotaledger/iota-core/pkg/daemon"
 	"github.com/iotaledger/iota-core/pkg/network"
 	"github.com/iotaledger/iota-core/pkg/network/p2p"
@@ -215,23 +218,7 @@ func provide(c *dig.Container) error {
 			libp2p.NATPortMap(),
 			libp2p.DisableRelay(),
 			// Define a custom address factory to inject external addresses to the DHT advertisements.
-			libp2p.AddrsFactory(func() func(addrs []multiaddr.Multiaddr) []multiaddr.Multiaddr {
-				var externalMultiAddrs []multiaddr.Multiaddr
-				if len(ParamsP2P.ExternalMultiAddresses) > 0 {
-					for _, externalMultiAddress := range ParamsP2P.ExternalMultiAddresses {
-						addr, err := multiaddr.NewMultiaddr(externalMultiAddress)
-						if err != nil {
-							Component.LogPanicf("unable to parse external multi address %s: %s", externalMultiAddress, err)
-						}
-
-						externalMultiAddrs = append(externalMultiAddrs, addr)
-					}
-				}
-
-				return func(addrs []multiaddr.Multiaddr) []multiaddr.Multiaddr {
-					return append(addrs, externalMultiAddrs...)
-				}
-			}()),
+			libp2p.AddrsFactory(publicOnlyAddresses(ParamsP2P.Autopeering.ExternalMultiAddresses)),
 		)
 		if err != nil {
 			Component.LogFatalf("unable to initialize libp2p host: %s", err)
@@ -366,5 +353,74 @@ func connectConfigKnownPeers() {
 		if _, err := deps.NetworkManager.AddManualPeer(multiAddr); err != nil {
 			Component.LogInfof("failed to add peer: %s, error: %s", multiAddr.String(), err)
 		}
+	}
+}
+
+// Based on https://github.com/ipfs/kubo/blob/master/config/profile.go
+// defaultServerFilters has is a list of IPv4 and IPv6 prefixes that are private, local only, or unrouteable.
+// according to https://www.iana.org/assignments/iana-ipv4-special-registry/iana-ipv4-special-registry.xhtml
+// and https://www.iana.org/assignments/iana-ipv6-special-registry/iana-ipv6-special-registry.xhtml
+var reservedFilters = []string{
+	"/ip4/0.0.0.0/ipcidr/32",
+	"/ip4/10.0.0.0/ipcidr/8",
+	"/ip4/100.64.0.0/ipcidr/10",
+	"/ip4/127.0.0.0/ipcidr/8",
+	"/ip4/169.254.0.0/ipcidr/16",
+	"/ip4/172.16.0.0/ipcidr/12",
+	"/ip4/192.0.0.0/ipcidr/24",
+	"/ip4/192.0.2.0/ipcidr/24",
+	"/ip4/192.168.0.0/ipcidr/16",
+	"/ip4/192.31.196.0/ipcidr/24",
+	"/ip4/192.52.193.0/ipcidr/24",
+	"/ip4/198.18.0.0/ipcidr/15",
+	"/ip4/198.51.100.0/ipcidr/24",
+	"/ip4/203.0.113.0/ipcidr/24",
+	"/ip4/240.0.0.0/ipcidr/4",
+
+	"/ip6/::1/ipcidr/64",
+	"/ip6/100::/ipcidr/64",
+	"/ip6/2001:2::/ipcidr/48",
+	"/ip6/2001:db8::/ipcidr/32",
+	"/ip6/fc00::/ipcidr/7",
+	"/ip6/fe80::/ipcidr/10",
+}
+
+func publicOnlyAddresses(additionalMultiaddresses []string) p2pbhost.AddrsFactory {
+	var externalMultiAddrs []multiaddr.Multiaddr
+
+	// Add the external multi addresses to the list of addresses to be announced.
+	if len(additionalMultiaddresses) > 0 {
+		for _, externalMultiAddress := range additionalMultiaddresses {
+			addr, err := multiaddr.NewMultiaddr(externalMultiAddress)
+			if err != nil {
+				Component.LogPanicf("unable to parse external multi address %s: %s", externalMultiAddress, err)
+			}
+
+			externalMultiAddrs = append(externalMultiAddrs, addr)
+		}
+	}
+
+	// Create a filter that blocks localhost and reserved addresses.
+	filters := multiaddr.NewFilters()
+	for _, addr := range reservedFilters {
+		f, err := mamask.NewMask(addr)
+		if err != nil {
+			Component.LogPanicf("unable to parse ip mask filter %s: %s", addr, err)
+		}
+		filters.AddFilter(*f, multiaddr.ActionDeny)
+	}
+
+	return func(addresses []multiaddr.Multiaddr) []multiaddr.Multiaddr {
+		filteredAddresses := lo.Filter(append(addresses, externalMultiAddrs...), func(m multiaddr.Multiaddr) bool {
+			blocked := filters.AddrBlocked(m)
+			if blocked {
+				Component.LogTracef("Filtered out address %s", m)
+			}
+			return !blocked
+		})
+
+		Component.LogTracef("Announcing addresses: %v", filteredAddresses)
+
+		return filteredAddresses
 	}
 }

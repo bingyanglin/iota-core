@@ -93,14 +93,13 @@ Example:
 
 ## <a id="p2p"></a> 3. Peer to Peer
 
-| Name                                        | Description                                                   | Type   | Default value                                |
-| ------------------------------------------- | ------------------------------------------------------------- | ------ | -------------------------------------------- |
-| bindMultiAddresses                          | The bind multi addresses for p2p connections                  | array  | /ip4/0.0.0.0/tcp/15600<br/>/ip6/::/tcp/15600 |
-| [connectionManager](#p2p_connectionmanager) | Configuration for connectionManager                           | object |                                              |
-| externalMultiAddresses                      | External reacheable multi addresses advertised to the network | array  |                                              |
-| identityPrivateKey                          | Private key used to derive the node identity (optional)       | string | ""                                           |
-| [autopeering](#p2p_autopeering)             | Configuration for autopeering                                 | object |                                              |
-| [db](#p2p_db)                               | Configuration for Database                                    | object |                                              |
+| Name                                        | Description                                             | Type   | Default value                                |
+| ------------------------------------------- | ------------------------------------------------------- | ------ | -------------------------------------------- |
+| bindMultiAddresses                          | The bind multi addresses for p2p connections            | array  | /ip4/0.0.0.0/tcp/15600<br/>/ip6/::/tcp/15600 |
+| [connectionManager](#p2p_connectionmanager) | Configuration for connectionManager                     | object |                                              |
+| identityPrivateKey                          | Private key used to derive the node identity (optional) | string | ""                                           |
+| [autopeering](#p2p_autopeering)             | Configuration for autopeering                           | object |                                              |
+| [db](#p2p_db)                               | Configuration for Database                              | object |                                              |
 
 ### <a id="p2p_connectionmanager"></a> ConnectionManager
 
@@ -111,9 +110,10 @@ Example:
 
 ### <a id="p2p_autopeering"></a> Autopeering
 
-| Name     | Description                                                              | Type | Default value |
-| -------- | ------------------------------------------------------------------------ | ---- | ------------- |
-| maxPeers | The max number of autopeer connections. Set to 0 to disable autopeering. | int  | 5             |
+| Name                   | Description                                                                | Type  | Default value |
+| ---------------------- | -------------------------------------------------------------------------- | ----- | ------------- |
+| maxPeers               | The max number of auto-peer connections. Set to 0 to disable auto-peering. | int   | 5             |
+| externalMultiAddresses | External reacheable multi addresses advertised to the network              | array |               |
 
 ### <a id="p2p_db"></a> Database
 
@@ -134,10 +134,10 @@ Example:
         "highWatermark": 10,
         "lowWatermark": 5
       },
-      "externalMultiAddresses": [],
       "identityPrivateKey": "",
       "autopeering": {
-        "maxPeers": 5
+        "maxPeers": 5,
+        "externalMultiAddresses": []
       },
       "db": {
         "path": "testnet/p2pstore"
