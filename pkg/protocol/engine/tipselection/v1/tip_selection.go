@@ -186,7 +186,12 @@ func (t *TipSelection) likedInsteadReferences(maxLikedInsteadReferencesPerParent
 			return ierrors.Errorf("transaction required for liked instead reference (%s) not found in mem-pool", likedSpenderID)
 		}
 
-		necessaryReferences[likedSpenderID] = lo.First(transactionMetadata.ValidAttachments())
+		validAttachments := transactionMetadata.ValidAttachments()
+		if len(validAttachments) == 0 {
+			return ierrors.Errorf("attachment of the transaction required for liked instead reference (%s) does not exist", likedSpenderID)
+		}
+
+		necessaryReferences[likedSpenderID] = lo.First(validAttachments)
 
 		return nil
 	}); err != nil {
