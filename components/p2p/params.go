@@ -29,6 +29,12 @@ type ParametersP2P struct {
 		// MaxPeers defines the max number of auto-peer connections. Set to 0 to disable auto-peering.
 		MaxPeers int `default:"5" usage:"the max number of auto-peer connections. Set to 0 to disable auto-peering."`
 
+		// Defines the peers to be used as discovery for other peers (CLI).
+		BootstrapPeers []string `default:"" usage:"peers to be used as discovery for other peers"`
+
+		// AllowLocalIPs defines if local IPs are allowed to be used for autopeering.
+		AllowLocalIPs bool `default:"false" usage:"allow local IPs to be used for autopeering"`
+
 		// ExternalMultiAddress defines additional p2p multiaddresses to be advertised via DHT.
 		ExternalMultiAddresses []string `default:"" usage:"external reacheable multi addresses advertised to the network"`
 	}
@@ -45,8 +51,6 @@ type ParametersPeers struct {
 	Peers []string `default:"" usage:"the static peers this node should retain a connection to (CLI)"`
 	// Defines the aliases of the static peers (must be the same length like CfgP2PPeers) (CLI).
 	PeerAliases []string `default:"" usage:"the aliases of the static peers (must be the same amount like \"p2p.peers\""`
-	// Defines the peers to be used as discovery for other peers (CLI).
-	BootstrapPeers []string `default:"" usage:"peers to be used as discovery for other peers (CLI)"`
 }
 
 var (

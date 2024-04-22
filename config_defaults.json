@@ -29,6 +29,8 @@
     "identityPrivateKey": "",
     "autopeering": {
       "maxPeers": 5,
+      "bootstrapPeers": [],
+      "allowLocalIPs": false,
       "externalMultiAddresses": []
     },
     "db": {

@@ -110,10 +110,12 @@ Example:
 
 ### <a id="p2p_autopeering"></a> Autopeering
 
-| Name                   | Description                                                                | Type  | Default value |
-| ---------------------- | -------------------------------------------------------------------------- | ----- | ------------- |
-| maxPeers               | The max number of auto-peer connections. Set to 0 to disable auto-peering. | int   | 5             |
-| externalMultiAddresses | External reacheable multi addresses advertised to the network              | array |               |
+| Name                   | Description                                                                | Type    | Default value |
+| ---------------------- | -------------------------------------------------------------------------- | ------- | ------------- |
+| maxPeers               | The max number of auto-peer connections. Set to 0 to disable auto-peering. | int     | 5             |
+| bootstrapPeers         | Peers to be used as discovery for other peers                              | array   |               |
+| allowLocalIPs          | Allow local IPs to be used for autopeering                                 | boolean | false         |
+| externalMultiAddresses | External reacheable multi addresses advertised to the network              | array   |               |
 
 ### <a id="p2p_db"></a> Database
 
@@ -137,6 +139,8 @@ Example:
       "identityPrivateKey": "",
       "autopeering": {
         "maxPeers": 5,
+        "bootstrapPeers": [],
+        "allowLocalIPs": false,
         "externalMultiAddresses": []
       },
       "db": {
