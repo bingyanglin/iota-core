@@ -215,23 +215,7 @@ func provide(c *dig.Container) error {
 			libp2p.NATPortMap(),
 			libp2p.DisableRelay(),
 			// Define a custom address factory to inject external addresses to the DHT advertisements.
-			libp2p.AddrsFactory(func() func(addrs []multiaddr.Multiaddr) []multiaddr.Multiaddr {
-				var externalMultiAddrs []multiaddr.Multiaddr
-				if len(ParamsP2P.ExternalMultiAddresses) > 0 {
-					for _, externalMultiAddress := range ParamsP2P.ExternalMultiAddresses {
-						addr, err := multiaddr.NewMultiaddr(externalMultiAddress)
-						if err != nil {
-							Component.LogPanicf("unable to parse external multi address %s: %s", externalMultiAddress, err)
-						}
-
-						externalMultiAddrs = append(externalMultiAddrs, addr)
-					}
-				}
-
-				return func(addrs []multiaddr.Multiaddr) []multiaddr.Multiaddr {
-					return append(addrs, externalMultiAddrs...)
-				}
-			}()),
+			libp2p.AddrsFactory(externalAddresses(ParamsP2P.Autopeering.ExternalMultiAddresses, ParamsP2P.Autopeering.AllowLocalIPs)),
 		)
 		if err != nil {
 			Component.LogFatalf("unable to initialize libp2p host: %s", err)
@@ -259,27 +243,11 @@ func provide(c *dig.Container) error {
 	}
 
 	return c.Provide(func(inDeps p2pManagerDeps) network.Manager {
-		peersMultiAddresses, err := getMultiAddrsFromString(ParamsPeers.BootstrapPeers)
-		if err != nil {
-			Component.LogFatalf("Failed to parse bootstrapPeers param: %s", err)
-		}
-
-		for _, multiAddr := range peersMultiAddresses {
-			bootstrapPeer, err := network.NewPeerFromMultiAddr(multiAddr)
-			if err != nil {
-				Component.LogFatalf("Failed to parse bootstrap peer multiaddress: %s", err)
-			}
-
-			if err := inDeps.PeerDB.UpdatePeer(bootstrapPeer); err != nil {
-				Component.LogErrorf("Failed to update bootstrap peer: %s", err)
-			}
-		}
-
 		onBlockSentCallback := func() {
 			inDeps.P2PMetrics.OutgoingBlocks.Add(1)
 		}
 
-		return p2p.NewManager(Component.Logger, inDeps.Host, inDeps.PeerDB, ParamsP2P.Autopeering.MaxPeers, onBlockSentCallback)
+		return p2p.NewManager(Component.Logger, inDeps.Host, inDeps.PeerDB, ParamsP2P.Autopeering.MaxPeers, ParamsP2P.Autopeering.AllowLocalIPs, onBlockSentCallback)
 	})
 }
 
@@ -320,7 +288,7 @@ func run() error {
 	if err := Component.Daemon().BackgroundWorker(Component.Name, func(ctx context.Context) {
 		defer deps.NetworkManager.Shutdown()
 
-		if err := deps.NetworkManager.Start(ctx, deps.Protocol.LatestAPI().ProtocolParameters().NetworkName()); err != nil {
+		if err := deps.NetworkManager.Start(ctx, deps.Protocol.LatestAPI().ProtocolParameters().NetworkName(), bootstrapPeers()); err != nil {
 			Component.LogFatalf("Failed to start p2p manager: %s", err)
 		}
 
@@ -333,6 +301,24 @@ func run() error {
 	}
 
 	return nil
+}
+
+func bootstrapPeers() []peer.AddrInfo {
+	peersMultiAddresses, err := getMultiAddrsFromString(ParamsP2P.Autopeering.BootstrapPeers)
+	if err != nil {
+		Component.LogFatalf("Failed to parse bootstrapPeers param: %s", err)
+	}
+
+	addrInfos := make([]peer.AddrInfo, 0, len(peersMultiAddresses))
+	for _, multiAddr := range peersMultiAddresses {
+		addrInfo, err := peer.AddrInfoFromP2pAddr(multiAddr)
+		if err != nil {
+			Component.LogFatalf("Failed to parse bootstrap peer multiaddress: %s", err)
+		}
+		addrInfos = append(addrInfos, *addrInfo)
+	}
+
+	return addrInfos
 }
 
 func getMultiAddrsFromString(peers []string) ([]multiaddr.Multiaddr, error) {
@@ -366,5 +352,27 @@ func connectConfigKnownPeers() {
 		if _, err := deps.NetworkManager.AddManualPeer(multiAddr); err != nil {
 			Component.LogInfof("failed to add peer: %s, error: %s", multiAddr.String(), err)
 		}
+	}
+}
+
+func externalAddresses(additionalMultiaddresses []string, allowLocalNetworks bool) network.AddressFilter {
+	var externalMultiAddrs []multiaddr.Multiaddr
+
+	// Add the external multi addresses to the list of addresses to be announced.
+	if len(additionalMultiaddresses) > 0 {
+		for _, externalMultiAddress := range additionalMultiaddresses {
+			addr, err := multiaddr.NewMultiaddr(externalMultiAddress)
+			if err != nil {
+				Component.LogPanicf("unable to parse external multi address %s: %s", externalMultiAddress, err)
+			}
+
+			externalMultiAddrs = append(externalMultiAddrs, addr)
+		}
+	}
+
+	publicFilter := network.PublicOnlyAddressesFilter(allowLocalNetworks)
+
+	return func(addresses []multiaddr.Multiaddr) []multiaddr.Multiaddr {
+		return publicFilter(append(addresses, externalMultiAddrs...))
 	}
 }

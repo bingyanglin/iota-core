@@ -236,7 +236,6 @@ func (m *Manager) onGossipNeighborRemoved(neighbor network.Neighbor) {
 
 func (m *Manager) onGossipNeighborAdded(neighbor network.Neighbor) {
 	m.changeNeighborStatus(neighbor)
-	m.logger.LogInfof("Gossip layer successfully connected with the peer %s", neighbor.Peer())
 }
 
 func (m *Manager) changeNeighborStatus(neighbor network.Neighbor) {

@@ -47,6 +47,6 @@ type Manager interface {
 
 	P2PHost() host.Host
 
-	Start(ctx context.Context, networkID string) error
+	Start(ctx context.Context, networkID string, bootstrapPeers []peer.AddrInfo) error
 	Shutdown()
 }
