@@ -37,8 +37,7 @@ func NewLedgerOutput(o *utxoledger.Output, slotIncluded ...iotago.SlotIndex) (*i
 		},
 	}
 
-	if includedSlot > 0 &&
-		includedSlot <= latestCommitment.Slot() &&
+	if includedSlot <= latestCommitment.Slot() &&
 		includedSlot >= deps.Protocol.CommittedAPI().ProtocolParameters().GenesisSlot() {
 		includedCommitment, err := deps.Protocol.Engines.Main.Get().Storage.Commitments().Load(includedSlot)
 		if err != nil {
@@ -64,8 +63,7 @@ func NewLedgerSpent(s *utxoledger.Spent) (*inx.LedgerSpent, error) {
 
 	latestCommitment := deps.Protocol.Engines.Main.Get().SyncManager.LatestCommitment()
 	spentSlot := s.SlotSpent()
-	if spentSlot > 0 &&
-		spentSlot <= latestCommitment.Slot() &&
+	if spentSlot <= latestCommitment.Slot() &&
 		spentSlot >= deps.Protocol.CommittedAPI().ProtocolParameters().GenesisSlot() {
 		spentCommitment, err := deps.Protocol.Engines.Main.Get().Storage.Commitments().Load(spentSlot)
 		if err != nil {
