@@ -8,7 +8,6 @@ import (
 
 	flag "github.com/spf13/pflag"
 
-	"github.com/iotaledger/hive.go/app/configuration"
 	"github.com/iotaledger/hive.go/ierrors"
 )
 
@@ -132,24 +131,6 @@ func printJSON(obj interface{}) error {
 	}
 
 	fmt.Println(string(output))
-
-	return nil
-}
-
-//nolint:unused // we will need it at a later point in time
-func loadConfigFile(filePath string, parameters map[string]any) error {
-	config := configuration.New()
-	flagset := configuration.NewUnsortedFlagSet("", flag.ContinueOnError)
-
-	for namespace, pointerToStruct := range parameters {
-		config.BindParameters(flagset, namespace, pointerToStruct)
-	}
-
-	if err := config.LoadFile(filePath); err != nil {
-		return ierrors.Wrap(err, "loading config file failed")
-	}
-
-	config.UpdateBoundParameters()
 
 	return nil
 }
