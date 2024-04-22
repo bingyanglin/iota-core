@@ -32,10 +32,8 @@ func init() {
 		Name:     "Prometheus",
 		DepsFunc: func(cDeps dependencies) { deps = cDeps },
 		Params:   params,
+		Provide:  provide,
 		Run:      run,
-		Provide: func(c *dig.Container) error {
-			return c.Provide(createCollector)
-		},
 		IsEnabled: func(_ *dig.Container) bool {
 			return ParamsMetrics.Enabled
 		},
@@ -121,8 +119,8 @@ func run() error {
 	}, daemon.PriorityMetrics)
 }
 
-func createCollector() *collector.Collector {
-	return collector.New()
+func provide(c *dig.Container) error {
+	return c.Provide(collector.New)
 }
 
 func registerMetrics() {

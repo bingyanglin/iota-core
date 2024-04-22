@@ -34,7 +34,7 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-docker compose pull inx-indexer inx-mqtt inx-blockissuer inx-faucet inx-validator-1
+docker compose pull inx-indexer inx-mqtt inx-blockissuer inx-faucet inx-validator-1 inx-dashboard-1
 
 # Remove old snapshot file
 rm *.snapshot

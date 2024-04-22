@@ -1,68 +1,27 @@
 package dashboardmetrics
 
-import "fmt"
-
-// ComponentType defines the component for the different BPS metrics.
-type ComponentType byte
-
-const (
-	// Received denotes blocks received from the network.
-	Received ComponentType = iota
-	// Issued denotes blocks that the node itself issued.
-	Issued
-	// Allowed denotes blocks that passed the filter checks.
-	Allowed
-	// Solidified denotes blocks solidified by the solidifier.
-	Solidified
-	// Scheduled denotes blocks scheduled by the scheduler.
-	Scheduled
-	// SchedulerDropped denotes blocks dropped by the scheduler.
-	SchedulerDropped
-	// SchedulerSkipped denotes confirmed blocks skipped by the scheduler.
-	SchedulerSkipped
-	// Booked denotes blocks booked by the booker.
-	Booked
-)
-
 // NodeInfoExtended represents extended information about the node.
 type NodeInfoExtended struct {
-	Version       string `json:"version"`
-	LatestVersion string `json:"latestVersion"`
-	Uptime        int64  `json:"uptime"`
-	NodeID        string `json:"nodeId"`
-	NodeAlias     string `json:"nodeAlias"`
-	MemoryUsage   int64  `json:"memUsage"`
+	Version       string `serix:",lenPrefix=uint8"`
+	LatestVersion string `serix:",lenPrefix=uint8"`
+	Uptime        int64  `serix:""`
+	NodeID        string `serix:",lenPrefix=uint8"`
+	NodeAlias     string `serix:",lenPrefix=uint8"`
+	MemoryUsage   int64  `serix:""`
 }
 
 // DatabaseSizesMetric represents database size metrics.
 type DatabaseSizesMetric struct {
-	Permanent  int64 `json:"permanent"`
-	Prunable   int64 `json:"prunable"`
-	TxRetainer int64 `json:"txRetainer"`
-	Total      int64 `json:"total"`
-	Time       int64 `json:"ts"`
+	Permanent  int64 `serix:""`
+	Prunable   int64 `serix:""`
+	TxRetainer int64 `serix:""`
+	Total      int64 `serix:""`
+	Time       int64 `serix:""`
 }
 
-// String returns the stringified component type.
-func (c ComponentType) String() string {
-	switch c {
-	case Received:
-		return "Received"
-	case Issued:
-		return "Issued"
-	case Allowed:
-		return "Allowed"
-	case Solidified:
-		return "Solidified"
-	case Scheduled:
-		return "Scheduled"
-	case SchedulerDropped:
-		return "SchedulerDropped"
-	case SchedulerSkipped:
-		return "SchedulerSkipped"
-	case Booked:
-		return "Booked"
-	default:
-		return fmt.Sprintf("Unknown (%d)", c)
-	}
+// GossipMetrics represents the metrics for blocks per second.
+type GossipMetrics struct {
+	Incoming uint32 `serix:""`
+	New      uint32 `serix:""`
+	Outgoing uint32 `serix:""`
 }
