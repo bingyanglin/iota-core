@@ -58,7 +58,7 @@ func TestnetProtocolParameters(networkName string, bech32HRP iotago.NetworkPrefi
 		iotago.WithStakingOptions(3, 10, 10),
 		iotago.WithVersionSignalingOptions(7, 5, 7),
 		iotago.WithRewardsOptions(8, 11, 2, 384),
-		iotago.WithTargetCommitteeSize(16),
+		// iotago.WithTargetCommitteeSize(16),
 		iotago.WithChainSwitchingThreshold(10),
 	)
 }
