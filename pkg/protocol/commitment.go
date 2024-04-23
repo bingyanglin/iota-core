@@ -359,8 +359,8 @@ func (c *Commitment) deriveIsAboveLatestVerifiedCommitment(parent *Commitment) f
 // deriveRequestAttestations derives the RequestAttestations flag of this Commitment which is true if our Chain is
 // requesting attestations (while not having an engine), and we are the directly above the latest attested Commitment.
 func (c *Commitment) deriveRequestAttestations(chain *Chain, parent *Commitment) func() {
-	return c.RequestAttestations.DeriveValueFrom(reactive.NewDerivedVariable4(func(_ bool, startEngine bool, verifyAttestations bool, parentIsAttested bool, isAttested bool) bool {
-		return !startEngine && verifyAttestations && parentIsAttested && !isAttested
+	return c.RequestAttestations.DeriveValueFrom(reactive.NewDerivedVariable4(func(_ bool, startEngine bool, requestAttestations bool, parentIsAttested bool, isAttested bool) bool {
+		return !startEngine && requestAttestations && parentIsAttested && !isAttested
 	}, chain.StartEngine, chain.RequestAttestations, parent.IsAttested, c.IsAttested))
 }
 

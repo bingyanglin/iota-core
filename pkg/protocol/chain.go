@@ -223,8 +223,6 @@ func (c *Chain) initLogger() (shutdown func()) {
 // initDerivedProperties initializes the behavior of this chain by setting up the relations between its properties.
 func (c *Chain) initDerivedProperties() (shutdown func()) {
 	return lo.BatchReverse(
-		c.deriveWarpSyncMode(),
-
 		c.shouldEvict.OnTrigger(func() { go c.IsEvicted.Trigger() }),
 
 		lo.BatchReverse(
@@ -245,7 +243,13 @@ func (c *Chain) initDerivedProperties() (shutdown func()) {
 			}),
 		),
 
-		c.Engine.WithNonEmptyValue(c.deriveOutOfSyncThreshold),
+		c.Engine.WithNonEmptyValue(func(engine *engine.Engine) (teardown func()) {
+			return lo.BatchReverse(
+				c.deriveWarpSyncMode(engine),
+
+				c.deriveOutOfSyncThreshold(engine),
+			)
+		}),
 	)
 }
 
@@ -268,16 +272,16 @@ func (c *Chain) deriveShouldEvict(forkingPoint *Commitment, parentChain *Chain) 
 }
 
 // deriveWarpSyncMode defines how a chain determines whether it is in warp sync mode or not.
-func (c *Chain) deriveWarpSyncMode() func() {
-	return c.WarpSyncMode.DeriveValueFrom(reactive.NewDerivedVariable3(func(warpSyncMode bool, latestSyncedSlot iotago.SlotIndex, latestSeenSlot iotago.SlotIndex, outOfSyncThreshold iotago.SlotIndex) bool {
+func (c *Chain) deriveWarpSyncMode(engine *engine.Engine) func() {
+	return c.WarpSyncMode.DeriveValueFrom(reactive.NewDerivedVariable4(func(warpSyncMode bool, engineInitialized bool, latestSyncedSlot iotago.SlotIndex, latestSeenSlot iotago.SlotIndex, outOfSyncThreshold iotago.SlotIndex) bool {
 		// if warp sync mode is enabled, keep it enabled until we have synced all slots
 		if warpSyncMode {
-			return latestSyncedSlot < latestSeenSlot
+			return engineInitialized && latestSyncedSlot < latestSeenSlot
 		}
 
 		// if warp sync mode is disabled, enable it only if we fall below the out of sync threshold
-		return latestSyncedSlot < outOfSyncThreshold
-	}, c.LatestSyncedSlot, c.chains.LatestSeenSlot, c.OutOfSyncThreshold, c.WarpSyncMode.Get()))
+		return engineInitialized && latestSyncedSlot < outOfSyncThreshold
+	}, engine.InitializedEvent(), c.LatestSyncedSlot, c.chains.LatestSeenSlot, c.OutOfSyncThreshold, c.WarpSyncMode.Get()))
 }
 
 // deriveChildChains defines how a chain determines its ChildChains (by adding each child to the set).
