@@ -226,7 +226,7 @@ func (d *DockerTestFramework) prepareAssets(totalAssetsNum int) (coreAPIAssets, 
 		d.SubmitBlock(ctx, valueBlock)
 		d.AwaitTransactionPayloadAccepted(ctx, signedTx.Transaction.MustID())
 
-		// issue reattachment after the fisrt one is already included
+		// issue reattachment after the first one is already included
 		secondAttachment, err := wallet.CreateAndSubmitBasicBlock(ctx, "", mock.WithPayload(signedTx))
 		require.NoError(d.Testing, err)
 		assets[valueBlockSlot].reattachments = append(assets[valueBlockSlot].reattachments, secondAttachment.ID())

@@ -237,6 +237,7 @@ func (c *TestSuiteClient) Rewards(_ context.Context, outputID iotago.OutputID) (
 }
 
 func (c *TestSuiteClient) Routes(_ context.Context) (*api.RoutesResponse, error) {
+	// Not currently used in the tests: implement if needed.
 	panic("not implemented")
 }
 
@@ -245,6 +246,7 @@ func (c *TestSuiteClient) SubmitBlock(ctx context.Context, block *iotago.Block) 
 }
 
 func (c *TestSuiteClient) TransactionByID(_ context.Context, _ iotago.TransactionID) (*iotago.Transaction, error) {
+	// Not currently used in the tests: implement if needed.
 	panic("not implemented")
 }
 
@@ -265,9 +267,11 @@ func (c *TestSuiteClient) Validator(_ context.Context, accountAddress *iotago.Ac
 }
 
 func (c *TestSuiteClient) Validators(_ context.Context, _ uint64, _ ...string) (*api.ValidatorsResponse, error) {
+	// Not currently used in the tests: implement if needed.
 	panic("not implemented")
 }
 
 func (c *TestSuiteClient) ValidatorsAll(_ context.Context, _ ...int) (*api.ValidatorsResponse, bool, error) {
+	// Not currently used in the tests: implement if needed.
 	panic("not implemented")
 }

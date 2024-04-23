@@ -187,7 +187,6 @@ func Test_DelayedClaimingRewards(t *testing.T) {
 		// check if V2 received the delegator stake
 		v2Resp, err := clt.Validator(ctx, d.Node("V2").AccountAddress(t))
 		require.NoError(t, err)
-		fmt.Printf("Pool stake: %d, Validator stake: %d\n", v2Resp.PoolStake, v2Resp.ValidatorStake)
 		require.Greater(t, v2Resp.PoolStake, v2Resp.ValidatorStake)
 
 		// delay claiming rewards
@@ -201,7 +200,6 @@ func Test_DelayedClaimingRewards(t *testing.T) {
 		// the delegated stake should be removed from the validator, so the pool stake should equal to the validator stake
 		v2Resp, err = clt.Validator(ctx, d.Node("V2").AccountAddress(t))
 		require.NoError(t, err)
-		fmt.Printf("Pool stake: %d, Validator stake: %d\n", v2Resp.PoolStake, v2Resp.ValidatorStake)
 		require.Equal(t, v2Resp.PoolStake, v2Resp.ValidatorStake)
 
 		// wait until next epoch to destroy the delegation
@@ -248,8 +246,8 @@ func issueValidationBlockInBackground(wg *sync.WaitGroup, wallet *mock.Wallet, s
 
 	go func() {
 		defer wg.Done()
-		fmt.Println("Issuing validation block for account", wallet.Name, "in the background...")
-		defer fmt.Println("Issuing validation block for account", wallet.Name, "in the background......done")
+		fmt.Println("Issuing validation block for wallet", wallet.Name, "in the background...")
+		defer fmt.Println("Issuing validation block for wallet", wallet.Name, "in the background......done")
 
 		for i := startSlot; i < endSlot; i++ {
 			// wait until the slot is reached
