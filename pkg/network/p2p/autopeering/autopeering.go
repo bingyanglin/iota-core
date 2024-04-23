@@ -11,6 +11,7 @@ import (
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/discovery"
 	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/libp2p/go-libp2p/p2p/discovery/routing"
 	"github.com/libp2p/go-libp2p/p2p/discovery/util"
@@ -33,6 +34,7 @@ type Manager struct {
 	ctx              context.Context
 	stopFunc         context.CancelFunc
 	routingDiscovery *routing.RoutingDiscovery
+	addrFilter       network.AddressFilter
 
 	advertiseLock   sync.Mutex
 	advertiseCtx    context.Context
@@ -40,13 +42,14 @@ type Manager struct {
 }
 
 // NewManager creates a new autopeering manager.
-func NewManager(maxPeers int, networkManager network.Manager, host host.Host, peerDB *network.DB, logger log.Logger) *Manager {
+func NewManager(maxPeers int, networkManager network.Manager, host host.Host, peerDB *network.DB, addressFilter network.AddressFilter, logger log.Logger) *Manager {
 	return &Manager{
 		maxPeers:       maxPeers,
 		networkManager: networkManager,
 		host:           host,
 		peerDB:         peerDB,
 		logger:         logger.NewChildLogger("Autopeering"),
+		addrFilter:     addressFilter,
 	}
 }
 
@@ -55,7 +58,7 @@ func (m *Manager) MaxNeighbors() int {
 }
 
 // Start starts the autopeering manager.
-func (m *Manager) Start(ctx context.Context, networkID string) (err error) {
+func (m *Manager) Start(ctx context.Context, networkID string, bootstrapPeers []peer.AddrInfo) (err error) {
 	//nolint:contextcheck
 	m.startOnce.Do(func() {
 		// We will use /iota/networkID/kad/1.0.0 for the DHT protocol.
@@ -64,7 +67,15 @@ func (m *Manager) Start(ctx context.Context, networkID string) (err error) {
 		extension := protocol.ID(fmt.Sprintf("/%s", networkID))
 		m.namespace = fmt.Sprintf("%s%s/%s", prefix, extension, network.CoreProtocolID)
 		dhtCtx, dhtCancel := context.WithCancel(ctx)
-		kademliaDHT, innerErr := dht.New(dhtCtx, m.host, dht.Mode(dht.ModeServer), dht.ProtocolPrefix(prefix), dht.ProtocolExtension(extension))
+		kademliaDHT, innerErr := dht.New(
+			dhtCtx,
+			m.host,
+			dht.Mode(dht.ModeServer),
+			dht.ProtocolPrefix(prefix),
+			dht.ProtocolExtension(extension),
+			dht.AddressFilter(m.addrFilter),
+			dht.BootstrapPeers(bootstrapPeers...),
+		)
 		if innerErr != nil {
 			err = innerErr
 			dhtCancel()
@@ -105,7 +116,8 @@ func (m *Manager) Start(ctx context.Context, networkID string) (err error) {
 		onGossipNeighborRemovedHook := m.networkManager.OnNeighborRemoved(func(_ network.Neighbor) {
 			m.startAdvertisingIfNeeded()
 		})
-		onGossipNeighborAddedHook := m.networkManager.OnNeighborAdded(func(_ network.Neighbor) {
+		onGossipNeighborAddedHook := m.networkManager.OnNeighborAdded(func(neighbor network.Neighbor) {
+			m.logger.LogInfof("Gossip layer successfully connected with the peer %s", neighbor.Peer())
 			m.stopAdvertisingItNotNeeded()
 		})
 
@@ -253,13 +265,26 @@ func (m *Manager) discoverAndDialPeers() {
 			continue
 		}
 
-		m.logger.LogDebugf("Found peer: %s", peerAddrInfo)
+		peerInfo := m.filteredPeerAddrInfo(&peerAddrInfo)
+		if len(peerInfo.Addrs) == 0 {
+			m.logger.LogWarnf("Filtered out peer %s because it has no public reachable addresses", peerAddrInfo)
+			continue
+		}
 
-		peer := network.NewPeerFromAddrInfo(&peerAddrInfo)
-		if err := m.networkManager.DialPeer(m.ctx, peer); err != nil {
+		m.logger.LogInfof("Found peer: %s", peerInfo)
+
+		p := network.NewPeerFromAddrInfo(peerInfo)
+		if err := m.networkManager.DialPeer(m.ctx, p); err != nil {
 			m.logger.LogWarnf("Failed to dial peer %s: %s", peerAddrInfo, err)
 		} else {
 			peersToFind--
 		}
+	}
+}
+
+func (m *Manager) filteredPeerAddrInfo(peerAddrInfo *peer.AddrInfo) *peer.AddrInfo {
+	return &peer.AddrInfo{
+		ID:    peerAddrInfo.ID,
+		Addrs: m.addrFilter(peerAddrInfo.Addrs),
 	}
 }

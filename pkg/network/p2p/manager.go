@@ -50,6 +50,7 @@ type Manager struct {
 	protocolHandlerMutex syncutils.RWMutex
 	onBlockSentCallback  func()
 
+	addrFilter    network.AddressFilter
 	autoPeering   *autopeering.Manager
 	manualPeering *manualpeering.Manager
 }
@@ -57,7 +58,7 @@ type Manager struct {
 var _ network.Manager = (*Manager)(nil)
 
 // NewManager creates a new Manager.
-func NewManager(logger log.Logger, libp2pHost host.Host, peerDB *network.DB, maxAutopeeringPeers int, onBlockSentCallback func()) *Manager {
+func NewManager(logger log.Logger, libp2pHost host.Host, peerDB *network.DB, maxAutopeeringPeers int, allowLocalAutopeering bool, onBlockSentCallback func()) *Manager {
 	m := &Manager{
 		logger:              logger,
 		libp2pHost:          libp2pHost,
@@ -66,9 +67,10 @@ func NewManager(logger log.Logger, libp2pHost host.Host, peerDB *network.DB, max
 		neighborRemoved:     event.New1[network.Neighbor](),
 		neighbors:           shrinkingmap.New[peer.ID, *neighbor](),
 		onBlockSentCallback: onBlockSentCallback,
+		addrFilter:          network.PublicOnlyAddressesFilter(allowLocalAutopeering),
 	}
 
-	m.autoPeering = autopeering.NewManager(maxAutopeeringPeers, m, libp2pHost, peerDB, logger)
+	m.autoPeering = autopeering.NewManager(maxAutopeeringPeers, m, libp2pHost, peerDB, m.addrFilter, logger)
 	m.manualPeering = manualpeering.NewManager(m, logger)
 
 	return m
@@ -123,7 +125,7 @@ func (m *Manager) DialPeer(ctx context.Context, peer *network.Peer) error {
 	}
 
 	// Adds the peer's multiaddresses to the peerstore, so that they can be used for dialing.
-	m.libp2pHost.Peerstore().AddAddrs(peer.ID, peer.PeerAddresses, peerstore.ConnectedAddrTTL)
+	m.libp2pHost.Peerstore().AddAddrs(peer.ID, m.addrFilter(peer.PeerAddresses), peerstore.ConnectedAddrTTL)
 	cancelCtx := ctx
 
 	stream, err := m.P2PHost().NewStream(cancelCtx, peer.ID, network.CoreProtocolID)
@@ -156,13 +158,13 @@ func (m *Manager) DialPeer(ctx context.Context, peer *network.Peer) error {
 }
 
 // Start starts the manager and initiates manual- and autopeering.
-func (m *Manager) Start(ctx context.Context, networkID string) error {
+func (m *Manager) Start(ctx context.Context, networkID string, bootstrapPeers []peer.AddrInfo) error {
 	m.ctx = ctx
 
 	m.manualPeering.Start()
 
 	if m.autoPeering.MaxNeighbors() > 0 {
-		return m.autoPeering.Start(ctx, networkID)
+		return m.autoPeering.Start(ctx, networkID, bootstrapPeers)
 	}
 
 	return nil
