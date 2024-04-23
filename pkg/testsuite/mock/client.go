@@ -39,7 +39,6 @@ type Client interface {
 	Info(ctx context.Context) (*api.InfoResponse, error)
 	LatestAPI() iotago.API
 	Management(ctx context.Context) (nodeclient.ManagementClient, error)
-	Name() string
 	NetworkMetrics(ctx context.Context) (*api.NetworkMetricsResponse, error)
 	NodeSupportsRoute(ctx context.Context, route string) (bool, error)
 	OutputByID(ctx context.Context, outputID iotago.OutputID) (iotago.Output, error)
@@ -48,6 +47,7 @@ type Client interface {
 	Rewards(ctx context.Context, outputID iotago.OutputID) (*api.ManaRewardsResponse, error)
 	Routes(ctx context.Context) (*api.RoutesResponse, error)
 	SubmitBlock(ctx context.Context, m *iotago.Block) (iotago.BlockID, error)
+	TransactionByID(ctx context.Context, txID iotago.TransactionID) (*iotago.Transaction, error)
 	TransactionIncludedBlock(ctx context.Context, txID iotago.TransactionID) (*iotago.Block, error)
 	TransactionIncludedBlockMetadata(ctx context.Context, txID iotago.TransactionID) (*api.BlockMetadataResponse, error)
 	TransactionMetadata(ctx context.Context, txID iotago.TransactionID) (*api.TransactionMetadataResponse, error)
@@ -237,11 +237,17 @@ func (c *TestSuiteClient) Rewards(_ context.Context, outputID iotago.OutputID) (
 }
 
 func (c *TestSuiteClient) Routes(_ context.Context) (*api.RoutesResponse, error) {
+	// Not currently used in the tests: implement if needed.
 	panic("not implemented")
 }
 
 func (c *TestSuiteClient) SubmitBlock(ctx context.Context, block *iotago.Block) (iotago.BlockID, error) {
 	return c.Node.RequestHandler.SubmitBlockAndAwaitRetainer(ctx, block)
+}
+
+func (c *TestSuiteClient) TransactionByID(_ context.Context, _ iotago.TransactionID) (*iotago.Transaction, error) {
+	// Not currently used in the tests: implement if needed.
+	panic("not implemented")
 }
 
 func (c *TestSuiteClient) TransactionIncludedBlock(_ context.Context, txID iotago.TransactionID) (*iotago.Block, error) {
@@ -261,9 +267,11 @@ func (c *TestSuiteClient) Validator(_ context.Context, accountAddress *iotago.Ac
 }
 
 func (c *TestSuiteClient) Validators(_ context.Context, _ uint64, _ ...string) (*api.ValidatorsResponse, error) {
+	// Not currently used in the tests: implement if needed.
 	panic("not implemented")
 }
 
 func (c *TestSuiteClient) ValidatorsAll(_ context.Context, _ ...int) (*api.ValidatorsResponse, bool, error) {
+	// Not currently used in the tests: implement if needed.
 	panic("not implemented")
 }

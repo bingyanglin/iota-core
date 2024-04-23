@@ -214,7 +214,7 @@ func Test_ManagementAPI_Pruning(t *testing.T) {
 		info, err := nodeClientV1.Info(getContextWithTimeout(5 * time.Second))
 		require.NoError(t, err)
 
-		currentEpoch := nodeClientV1.CommittedAPI().TimeProvider().EpochFromSlot(info.Status.LatestFinalizedSlot)
+		currentEpoch := nodeClientV1.CommittedAPI().TimeProvider().EpochFromSlot(info.Status.LatestCommitmentID.Slot())
 
 		// await the start slot of the next epoch
 		d.AwaitFinalization(nodeClientV1.CommittedAPI().TimeProvider().EpochStart(currentEpoch + 1))
@@ -275,7 +275,6 @@ func Test_ManagementAPI_Pruning(t *testing.T) {
 func Test_ManagementAPI_Snapshots(t *testing.T) {
 	d := NewDockerTestFramework(t,
 		WithProtocolParametersOptions(
-			iotago.WithSupplyOptions(1813620509061365, 63, 1, 4, 0, 0, 0),
 			iotago.WithTimeProviderOptions(0, time.Now().Unix(), 3, 4),
 			iotago.WithLivenessOptions(3, 4, 2, 4, 8),
 			iotago.WithCongestionControlOptions(1, 1, 1, 400_000, 250_000, 50_000_000, 1000, 100),

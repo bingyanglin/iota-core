@@ -2,6 +2,7 @@ package mock
 
 import (
 	"crypto/ed25519"
+	"sync"
 	"testing"
 
 	"github.com/iotaledger/hive.go/ierrors"
@@ -44,6 +45,23 @@ type AccountData struct {
 	OutputID iotago.OutputID
 }
 
+func NewAccountData(accountID iotago.AccountID, optAddressIndex ...uint32) *AccountData {
+	accountAddress, ok := accountID.ToAddress().(*iotago.AccountAddress)
+	if !ok {
+		panic(ierrors.Errorf("accountID %s is not an account address", accountID.ToHex()))
+	}
+	var addressIndex uint32
+	if len(optAddressIndex) == 0 {
+		addressIndex = 0
+	}
+
+	return &AccountData{
+		ID:           accountID,
+		Address:      accountAddress,
+		AddressIndex: addressIndex,
+	}
+}
+
 // WalletClock is an interface that provides the current slot.
 type WalletClock interface {
 	SetCurrentSlot(slot iotago.SlotIndex)
@@ -52,6 +70,10 @@ type WalletClock interface {
 
 type TestSuiteWalletClock struct {
 	currentSlot iotago.SlotIndex
+}
+
+func NewTestSuiteWalletClock() *TestSuiteWalletClock {
+	return &TestSuiteWalletClock{}
 }
 
 func (c *TestSuiteWalletClock) SetCurrentSlot(slot iotago.SlotIndex) {
@@ -76,15 +98,19 @@ type Wallet struct {
 
 	keyManager *wallet.KeyManager
 
-	BlockIssuer   *BlockIssuer
-	IssuerAccount *AccountData
+	BlockIssuer *BlockIssuer
 
 	outputs      map[string]*OutputData
+	outputsByID  map[iotago.OutputID]*OutputData
 	transactions map[string]*iotago.Transaction
-	clock        WalletClock
+
+	accounts map[iotago.AccountID]*AccountData
+	mutex    sync.RWMutex
+
+	clock WalletClock
 }
 
-func NewWallet(t *testing.T, name string, client Client, keyManager ...*wallet.KeyManager) *Wallet {
+func NewWallet(t *testing.T, name string, client Client, clock WalletClock, keyManager ...*wallet.KeyManager) *Wallet {
 	t.Helper()
 
 	var km *wallet.KeyManager
@@ -93,26 +119,25 @@ func NewWallet(t *testing.T, name string, client Client, keyManager ...*wallet.K
 	} else {
 		km = keyManager[0]
 	}
-	issuerAccountData := &AccountData{
-		ID:           iotago.EmptyAccountID,
-		AddressIndex: 0,
-	}
+	blockIssuerAddressIndex := uint32(0)
+	blockIssuerID := iotago.EmptyAccountID
 
 	return &Wallet{
-		Testing:       t,
-		Name:          name,
-		Client:        client,
-		outputs:       make(map[string]*OutputData),
-		transactions:  make(map[string]*iotago.Transaction),
-		keyManager:    km,
-		IssuerAccount: issuerAccountData,
-		BlockIssuer:   NewBlockIssuer(t, name, km, client, issuerAccountData.AddressIndex, issuerAccountData.ID, false),
-		clock:         &TestSuiteWalletClock{},
+		Testing:      t,
+		Name:         name,
+		Client:       client,
+		outputs:      make(map[string]*OutputData),
+		outputsByID:  make(map[iotago.OutputID]*OutputData),
+		accounts:     make(map[iotago.AccountID]*AccountData),
+		transactions: make(map[string]*iotago.Transaction),
+		keyManager:   km,
+		BlockIssuer:  NewBlockIssuer(t, name, km, client, NewAccountData(blockIssuerID, blockIssuerAddressIndex), false),
+		clock:        clock,
 	}
 }
 
 func (w *Wallet) SetBlockIssuer(accountData *AccountData) {
-	w.BlockIssuer = NewBlockIssuer(w.Testing, w.Name, w.keyManager, w.Client, accountData.AddressIndex, accountData.ID, false)
+	w.BlockIssuer = NewBlockIssuer(w.Testing, w.Name, w.keyManager, w.Client, accountData, false)
 }
 
 func (w *Wallet) SetDefaultClient(client Client) {
@@ -129,10 +154,17 @@ func (w *Wallet) CurrentSlot() iotago.SlotIndex {
 }
 
 func (w *Wallet) AddOutput(outputName string, output *OutputData) {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+
 	w.outputs[outputName] = output
+	w.outputsByID[output.ID] = output
 }
 
 func (w *Wallet) Balance() iotago.BaseToken {
+	w.mutex.RLock()
+	defer w.mutex.RUnlock()
+
 	var balance iotago.BaseToken
 	for _, outputData := range w.outputs {
 		balance += outputData.Output.BaseTokenAmount()
@@ -141,10 +173,39 @@ func (w *Wallet) Balance() iotago.BaseToken {
 	return balance
 }
 
+func (w *Wallet) Outputs() []*OutputData {
+	w.mutex.RLock()
+	defer w.mutex.RUnlock()
+
+	return lo.Values(w.outputs)
+}
+
+func (w *Wallet) OutputNames() []string {
+	w.mutex.RLock()
+	defer w.mutex.RUnlock()
+
+	return lo.Keys(w.outputs)
+}
+
 func (w *Wallet) OutputData(outputName string) *OutputData {
+	w.mutex.RLock()
+	defer w.mutex.RUnlock()
+
 	output, exists := w.outputs[outputName]
 	if !exists {
 		panic(ierrors.Errorf("output %s not registered in wallet %s", outputName, w.Name))
+	}
+
+	return output
+}
+
+func (w *Wallet) Output(outputID iotago.OutputID) *OutputData {
+	w.mutex.RLock()
+	defer w.mutex.RUnlock()
+
+	output, exists := w.outputsByID[outputID]
+	if !exists {
+		panic(ierrors.Errorf("output %s not registered in wallet %s", outputID.ToHex(), w.Name))
 	}
 
 	return output
@@ -174,6 +235,38 @@ func (w *Wallet) Transactions(transactionNames ...string) []*iotago.Transaction 
 
 func (w *Wallet) TransactionID(alias string) iotago.TransactionID {
 	return w.Transaction(alias).MustID()
+}
+
+func (w *Wallet) Account(accountID iotago.AccountID) *AccountData {
+	w.mutex.RLock()
+	defer w.mutex.RUnlock()
+
+	acc, exists := w.accounts[accountID]
+	if !exists {
+		panic(ierrors.Errorf("account %s not registered in wallet", accountID))
+	}
+
+	return acc
+}
+
+func (w *Wallet) Accounts(accountIDs ...iotago.AccountID) []*AccountData {
+	w.mutex.RLock()
+	defer w.mutex.RUnlock()
+
+	accounts := make([]*AccountData, 0)
+	if len(accountIDs) == 0 {
+		return lo.Values(w.accounts)
+	}
+
+	for _, id := range accountIDs {
+		acc, exists := w.accounts[id]
+		if !exists {
+			panic(ierrors.Errorf("account %s not registered in wallet", id))
+		}
+		accounts = append(accounts, acc)
+	}
+
+	return accounts
 }
 
 func (w *Wallet) Address(index ...uint32) iotago.DirectUnlockableAddress {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/iotaledger/hive.go/ds/types"
 	"github.com/iotaledger/hive.go/lo"
+	"github.com/iotaledger/iota-core/pkg/testsuite/mock"
 	iotago "github.com/iotaledger/iota.go/v4"
 	"github.com/iotaledger/iota.go/v4/api"
 )
@@ -201,19 +202,19 @@ func (d *DockerTestFramework) prepareAssets(totalAssetsNum int) (coreAPIAssets, 
 
 	for i := 0; i < totalAssetsNum; i++ {
 		// account
-		account := d.CreateAccount()
+		wallet, account := d.CreateAccount()
 		assets.setupAssetsForSlot(account.OutputID.Slot())
 		assets[account.OutputID.Slot()].accountAddress = account.Address
 
 		// data block
-		block := d.CreateTaggedDataBlock(account.ID, []byte("tag"))
+		block := d.CreateTaggedDataBlock(wallet, []byte("tag"))
 		blockSlot := lo.PanicOnErr(block.ID()).Slot()
 		assets.setupAssetsForSlot(blockSlot)
 		assets[blockSlot].dataBlocks = append(assets[blockSlot].dataBlocks, block)
 		d.SubmitBlock(ctx, block)
 
 		// transaction
-		valueBlock, signedTx, faucetOutput := d.CreateBasicOutputBlock(account.ID)
+		valueBlock, signedTx, faucetOutput := d.CreateBasicOutputBlock(wallet)
 		valueBlockSlot := valueBlock.MustID().Slot()
 		assets.setupAssetsForSlot(valueBlockSlot)
 		// transaction and outputs are stored with the earliest included block
@@ -225,21 +226,22 @@ func (d *DockerTestFramework) prepareAssets(totalAssetsNum int) (coreAPIAssets, 
 		d.SubmitBlock(ctx, valueBlock)
 		d.AwaitTransactionPayloadAccepted(ctx, signedTx.Transaction.MustID())
 
-		// issue reattachment after the fisrt one is already included
-		issuerResp, congestionResp := d.PrepareBlockIssuance(ctx, d.wallet.DefaultClient(), account.Address)
-		secondAttachment := d.SubmitPayload(ctx, signedTx, account.Address.AccountID(), congestionResp, issuerResp)
-		assets[valueBlockSlot].reattachments = append(assets[valueBlockSlot].reattachments, secondAttachment)
+		// issue reattachment after the first one is already included
+		secondAttachment, err := wallet.CreateAndSubmitBasicBlock(ctx, "second_attachment", mock.WithPayload(signedTx))
+		require.NoError(d.Testing, err)
+		assets[valueBlockSlot].reattachments = append(assets[valueBlockSlot].reattachments, secondAttachment.ID())
 
 		// delegation
-		delegationOutputID, delegationOutput := d.DelegateToValidator(account.ID, d.Node("V1").AccountAddress(d.Testing))
-		assets.setupAssetsForSlot(delegationOutputID.CreationSlot())
-		assets[delegationOutputID.CreationSlot()].delegationOutputs[delegationOutputID] = delegationOutput
+		//nolint:forcetypeassert
+		delegationOutputData:= d.DelegateToValidator(wallet, d.Node("V1").AccountAddress(d.Testing))
+		assets.setupAssetsForSlot(delegationOutputData.ID.CreationSlot())
+		assets[delegationOutputData.ID.CreationSlot()].delegationOutputs[delegationOutputData.ID] = delegationOutputData.Output.(*iotago.DelegationOutput)
 
-		latestSlot = lo.Max[iotago.SlotIndex](latestSlot, blockSlot, valueBlockSlot, delegationOutputID.CreationSlot(), secondAttachment.Slot())
+		latestSlot = lo.Max[iotago.SlotIndex](latestSlot, blockSlot, valueBlockSlot, delegationOutputData.ID.CreationSlot(), secondAttachment.ID().Slot())
 
 		fmt.Printf("Assets for slot %d\n: dataBlock: %s block: %s\ntx: %s\nbasic output: %s, faucet output: %s\n delegation output: %s\n",
 			valueBlockSlot, block.MustID().String(), valueBlock.MustID().String(), signedTx.MustID().String(),
-			basicOutputID.String(), faucetOutput.ID.String(), delegationOutputID.String())
+			basicOutputID.String(), faucetOutput.ID.String(), delegationOutputData.ID.String())
 	}
 
 	return assets, latestSlot
