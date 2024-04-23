@@ -243,6 +243,10 @@ func (c *Commitment) initDerivedProperties() (shutdown func()) {
 		c.IsVerified.InheritFrom(c.IsRoot),
 		c.IsSolid.InheritFrom(c.IsRoot),
 
+		c.IsRoot.OnTrigger(func() {
+			c.CumulativeAttestedWeight.Set(c.Commitment.CumulativeWeight())
+		}),
+
 		// mark commitments that are marked as verified as attested and synced
 		c.IsAttested.InheritFrom(c.IsVerified),
 		c.IsSynced.InheritFrom(c.IsVerified),
