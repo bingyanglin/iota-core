@@ -20,7 +20,7 @@ export DOCKERFILE_PATH="./Dockerfile.dev"
 docker compose build --build-arg DOCKER_BUILD_CONTEXT=${DOCKER_BUILD_CONTEXT} --build-arg DOCKERFILE_PATH=${DOCKERFILE_PATH}
 
 # Pull missing images
-docker compose pull inx-indexer inx-mqtt inx-blockissuer inx-faucet inx-validator-1
+docker compose pull inx-indexer inx-mqtt inx-blockissuer inx-faucet inx-validator-1 inx-dashboard-1
 
 # Change directory back to the original directory
 popd
