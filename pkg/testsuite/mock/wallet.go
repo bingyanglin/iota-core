@@ -243,7 +243,7 @@ func (w *Wallet) Account(accountID iotago.AccountID) *AccountData {
 
 	acc, exists := w.accounts[accountID]
 	if !exists {
-		panic(ierrors.Errorf("account %s not registered in wallet", accountID.ToHex()))
+		panic(ierrors.Errorf("account %s not registered in wallet", accountID))
 	}
 
 	return acc
