@@ -51,21 +51,18 @@ type BlockIssuer struct {
 	blockIssuanceResponseUsed bool
 	mutex                     syncutils.RWMutex
 
-	AccountData AccountData
+	AccountData *AccountData
 }
 
-func NewBlockIssuer(t *testing.T, name string, keyManager *wallet.KeyManager, client Client, addressIndex uint32, accountID iotago.AccountID, validator bool, opts ...options.Option[BlockIssuer]) *BlockIssuer {
+func NewBlockIssuer(t *testing.T, name string, keyManager *wallet.KeyManager, client Client, accountData *AccountData, validator bool, opts ...options.Option[BlockIssuer]) *BlockIssuer {
 	t.Helper()
 
-	_, pub := keyManager.KeyPair(addressIndex)
+	_, pub := keyManager.KeyPair(accountData.AddressIndex)
 
-	if accountID == iotago.EmptyAccountID {
-		accountID = blake2b.Sum256(pub)
+	if accountData.ID == iotago.EmptyAccountID {
+		accountData.ID = blake2b.Sum256(pub)
 	}
-	accountID.RegisterAlias(name)
-
-	accountAddress, ok := accountID.ToAddress().(*iotago.AccountAddress)
-	require.True(t, ok)
+	accountData.ID.RegisterAlias(name)
 
 	return options.Apply(&BlockIssuer{
 		Testing:                   t,
@@ -74,11 +71,7 @@ func NewBlockIssuer(t *testing.T, name string, keyManager *wallet.KeyManager, cl
 		keyManager:                keyManager,
 		Client:                    client,
 		blockIssuanceResponseUsed: true,
-		AccountData: AccountData{
-			ID:           accountID,
-			AddressIndex: addressIndex,
-			Address:      accountAddress,
-		},
+		AccountData:               accountData,
 	}, opts)
 }
 
@@ -96,8 +89,10 @@ func (i *BlockIssuer) Address() iotago.Address {
 	return iotago.Ed25519AddressFromPubKey(pub)
 }
 
+// CreateValidationBlock creates a new validation block with the options provided. If a node is specified, it will try to
+// revive the chain if the block is too far behind the latest commitment.
 func (i *BlockIssuer) CreateValidationBlock(ctx context.Context, alias string, node *Node, opts ...options.Option[ValidationBlockParams]) (*blocks.Block, error) {
-	blockParams := options.Apply(&ValidationBlockParams{}, opts)
+	blockParams := options.Apply(NewValidationBlockParams(), opts)
 
 	if blockParams.BlockHeader.IssuingTime == nil {
 		issuingTime := time.Now().UTC()
@@ -111,7 +106,7 @@ func (i *BlockIssuer) CreateValidationBlock(ctx context.Context, alias string, n
 	if blockParams.BlockHeader.SlotCommitment == nil {
 		commitment := blockIssuanceInfo.LatestCommitment
 		blockSlot := apiForBlock.TimeProvider().SlotFromTime(*blockParams.BlockHeader.IssuingTime)
-		if blockSlot > commitment.Slot+protoParams.MaxCommittableAge() {
+		if blockSlot > commitment.Slot+protoParams.MaxCommittableAge() && node != nil {
 			var parentID iotago.BlockID
 			var err error
 			commitment, parentID, err = i.reviveChain(*blockParams.BlockHeader.IssuingTime, node)
@@ -202,7 +197,7 @@ func referencesFromBlockIssuanceResponse(response *api.IssuanceBlockHeaderRespon
 	return references
 }
 
-func (i *BlockIssuer) IssueValidationBlock(ctx context.Context, alias string, node *Node, opts ...options.Option[ValidationBlockParams]) (*blocks.Block, error) {
+func (i *BlockIssuer) CreateAndSubmitValidationBlock(ctx context.Context, alias string, node *Node, opts ...options.Option[ValidationBlockParams]) (*blocks.Block, error) {
 	block, err := i.CreateValidationBlock(ctx, alias, node, opts...)
 	require.NoError(i.Testing, err)
 
@@ -215,10 +210,6 @@ func (i *BlockIssuer) IssueValidationBlock(ctx context.Context, alias string, no
 func (i *BlockIssuer) CreateBasicBlock(ctx context.Context, alias string, opts ...options.Option[BasicBlockParams]) (*blocks.Block, error) {
 	blockParams := options.Apply(&BasicBlockParams{BlockHeader: &BlockHeaderParams{}}, opts)
 
-	if blockParams.BlockHeader.IssuingTime == nil {
-		issuingTime := time.Now().UTC()
-		blockParams.BlockHeader.IssuingTime = &issuingTime
-	}
 	blockIssuanceInfo := i.latestBlockIssuanceResponse(ctx)
 
 	if blockParams.BlockHeader.References == nil {
@@ -233,7 +224,6 @@ func (i *BlockIssuer) CreateBasicBlock(ctx context.Context, alias string, opts .
 
 	blockBuilder.SlotCommitmentID(blockParams.BlockHeader.SlotCommitment.MustID())
 	blockBuilder.LatestFinalizedSlot(*blockParams.BlockHeader.LatestFinalizedSlot)
-	blockBuilder.IssuingTime(*blockParams.BlockHeader.IssuingTime)
 	strongParents, exists := blockParams.BlockHeader.References[iotago.StrongParentType]
 	require.True(i.Testing, exists && len(strongParents) > 0, "block should have strong parents (exists: %t, parents: %s)", exists, strongParents)
 	blockBuilder.StrongParents(strongParents)
@@ -251,6 +241,13 @@ func (i *BlockIssuer) CreateBasicBlock(ctx context.Context, alias string, opts .
 	// use the rmc corresponding to the commitment used in the block
 	blockBuilder.CalculateAndSetMaxBurnedMana(blockIssuanceInfo.LatestCommitment.ReferenceManaCost)
 
+	// set the issuing time last to ensure the timestamp is greater than that of the parents selected.
+	if blockParams.BlockHeader.IssuingTime == nil {
+		issuingTime := time.Now().UTC()
+		blockParams.BlockHeader.IssuingTime = &issuingTime
+	}
+	blockBuilder.IssuingTime(*blockParams.BlockHeader.IssuingTime)
+
 	priv, _ := i.keyManager.KeyPair(i.AccountData.AddressIndex)
 	blockBuilder.Sign(i.AccountData.ID, priv)
 
@@ -263,10 +260,13 @@ func (i *BlockIssuer) CreateBasicBlock(ctx context.Context, alias string, opts .
 
 	modelBlock.ID().RegisterAlias(alias)
 
+	// mark the response as used so that the next time we query the node for the latest block issuance.
+	i.blockIssuanceResponseUsed = true
+
 	return blocks.NewBlock(modelBlock), err
 }
 
-func (i *BlockIssuer) IssueBasicBlock(ctx context.Context, alias string, opts ...options.Option[BasicBlockParams]) (*blocks.Block, error) {
+func (i *BlockIssuer) CreateAndSubmitBasicBlock(ctx context.Context, alias string, opts ...options.Option[BasicBlockParams]) (*blocks.Block, error) {
 	block, err := i.CreateBasicBlock(ctx, alias, opts...)
 	if err != nil {
 		return nil, err
@@ -295,7 +295,7 @@ func (i *BlockIssuer) IssueActivity(ctx context.Context, wg *sync.WaitGroup, sta
 
 			blockAlias := fmt.Sprintf("%s-activity.%d", i.Name, counter)
 			timeOffset := time.Since(start)
-			lo.PanicOnErr(i.IssueValidationBlock(ctx, blockAlias, node,
+			lo.PanicOnErr(i.CreateAndSubmitValidationBlock(ctx, blockAlias, node,
 				WithValidationBlockHeaderOptions(
 					WithIssuingTime(issuingTime.Add(timeOffset)),
 				),
@@ -360,9 +360,6 @@ func (i *BlockIssuer) validateReferences(ctx context.Context, issuingTime time.T
 func (i *BlockIssuer) SubmitBlock(ctx context.Context, block *model.Block) error {
 	i.mutex.Lock()
 	defer i.mutex.Unlock()
-
-	// mark the response as used so that the next time we query the node for the latest block issuance.
-	i.blockIssuanceResponseUsed = true
 
 	return lo.Return2(i.Client.SubmitBlock(ctx, block.ProtocolBlock()))
 }
