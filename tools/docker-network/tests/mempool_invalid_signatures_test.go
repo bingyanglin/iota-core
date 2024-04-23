@@ -51,16 +51,16 @@ func Test_MempoolInvalidSignatures(t *testing.T) {
 	}
 
 	fmt.Println("Submitting block with invalid TX")
-	wallet.CreateAndSubmitBasicBlock(ctx, "", mock.WithPayload(invalidTX))
+	wallet.CreateAndSubmitBasicBlock(ctx, "invalid_tx_block", mock.WithPayload(invalidTX))
 
 	d.AwaitTransactionState(ctx, invalidTX.Transaction.MustID(), api.TransactionStateFailed)
 	d.AwaitTransactionFailure(ctx, invalidTX.Transaction.MustID(), api.TxFailureUnlockSignatureInvalid)
 
 	fmt.Println("Submitting block with valid TX")
-	wallet.CreateAndSubmitBasicBlock(ctx, "", mock.WithPayload(validTX))
+	wallet.CreateAndSubmitBasicBlock(ctx, "valid_tx_block", mock.WithPayload(validTX))
 
 	fmt.Println("Submitting block with invalid TX (again)")
-	wallet.CreateAndSubmitBasicBlock(ctx, "", mock.WithPayload(invalidTX))
+	wallet.CreateAndSubmitBasicBlock(ctx, "invalid_tx_block_2", mock.WithPayload(invalidTX))
 
 	d.AwaitTransactionPayloadAccepted(ctx, validTX.Transaction.MustID())
 }

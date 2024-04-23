@@ -64,7 +64,7 @@ func (e *EventAPIDockerTestFramework) SubmitDataBlockStream(wallet *mock.Wallet,
 		select {
 		case <-ticker.C:
 			for i := 0; i < 10; i++ {
-				e.dockerFramework.defaultWallet.CreateAndSubmitBasicBlock(context.TODO(), "", mock.WithPayload(tpkg.RandTaggedData([]byte("tag"))))
+				e.dockerFramework.defaultWallet.CreateAndSubmitBasicBlock(context.TODO(), "tagged_data_block", mock.WithPayload(tpkg.RandTaggedData([]byte("tag"))))
 			}
 		case <-timer.C:
 			return

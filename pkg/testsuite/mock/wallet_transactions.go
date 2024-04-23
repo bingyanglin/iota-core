@@ -483,7 +483,7 @@ func (w *Wallet) CreateFoundryAndNativeTokensFromInput(input *OutputData, minted
 	require.NoError(w.Testing, err)
 
 	foundryOutputID := iotago.OutputIDFromTransactionIDAndIndex(signedTx.Transaction.MustID(), 1)
-	// register the output in the wallet
+	// register the output in the wallet so it can be retrieved by ID by that wallet later
 	w.AddOutput("foundry", &OutputData{
 		ID:      foundryOutputID,
 		Output:  foundryOutput,
