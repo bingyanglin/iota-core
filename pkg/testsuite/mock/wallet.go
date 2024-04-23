@@ -261,7 +261,7 @@ func (w *Wallet) Accounts(accountIDs ...iotago.AccountID) []*AccountData {
 	for _, id := range accountIDs {
 		acc, exists := w.accounts[id]
 		if !exists {
-			panic(ierrors.Errorf("account %s not registered in wallet", id.ToHex()))
+			panic(ierrors.Errorf("account %s not registered in wallet", id))
 		}
 		accounts = append(accounts, acc)
 	}
