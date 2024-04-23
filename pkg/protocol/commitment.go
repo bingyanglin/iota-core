@@ -340,9 +340,13 @@ func (c *Commitment) deriveChain(parent *Commitment) func() {
 // deriveCumulativeAttestedWeight derives the CumulativeAttestedWeight of this Commitment which is the sum of the
 // parent's CumulativeAttestedWeight and the AttestedWeight of this Commitment.
 func (c *Commitment) deriveCumulativeAttestedWeight(parent *Commitment) func() {
-	return c.CumulativeAttestedWeight.DeriveValueFrom(reactive.NewDerivedVariable2(func(_ uint64, parentCumulativeAttestedWeight uint64, attestedWeight uint64) uint64 {
+	return c.CumulativeAttestedWeight.DeriveValueFrom(reactive.NewDerivedVariable3(func(currentCumulativeAttestedWeight uint64, parentCumulativeAttestedWeight uint64, attestedWeight uint64, isAttested bool) uint64 {
+		if !isAttested {
+			return currentCumulativeAttestedWeight
+		}
+
 		return parentCumulativeAttestedWeight + attestedWeight
-	}, parent.CumulativeAttestedWeight, c.AttestedWeight))
+	}, parent.CumulativeAttestedWeight, c.AttestedWeight, c.IsAttested))
 }
 
 // deriveCumulativeVerifiedWeight derives the CumulativeVerifiedWeight of this Commitment which is the same as the
