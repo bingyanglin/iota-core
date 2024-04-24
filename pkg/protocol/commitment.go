@@ -324,15 +324,6 @@ func (c *Commitment) deriveChain(parent *Commitment) func() {
 			return currentChain
 		}
 
-		// If we are the main child of our parent, and our chain is not the parent chain,
-		// then we inherit the parent chain and evict the current one.
-		// We will spawn a new one if we ever change back to not being the main child.
-		// Here we basically move commitments to the parent chain.
-		if currentChain != nil && currentChain != parentChain {
-			// TODO: refactor it to use a dedicated WorkerPool
-			go currentChain.IsEvicted.Trigger()
-		}
-
 		return parentChain
 	}, c.IsRoot, parent.MainChild, parent.Chain, c.Chain.Get()))
 }
@@ -368,8 +359,8 @@ func (c *Commitment) deriveIsAboveLatestVerifiedCommitment(parent *Commitment) f
 // deriveRequestAttestations derives the RequestAttestations flag of this Commitment which is true if our Chain is
 // requesting attestations (while not having an engine), and we are the directly above the latest attested Commitment.
 func (c *Commitment) deriveRequestAttestations(chain *Chain, parent *Commitment) func() {
-	return c.RequestAttestations.DeriveValueFrom(reactive.NewDerivedVariable4(func(_ bool, startEngine bool, verifyAttestations bool, parentIsAttested bool, isAttested bool) bool {
-		return !startEngine && verifyAttestations && parentIsAttested && !isAttested
+	return c.RequestAttestations.DeriveValueFrom(reactive.NewDerivedVariable4(func(_ bool, startEngine bool, requestAttestations bool, parentIsAttested bool, isAttested bool) bool {
+		return !startEngine && requestAttestations && parentIsAttested && !isAttested
 	}, chain.StartEngine, chain.RequestAttestations, parent.IsAttested, c.IsAttested))
 }
 
