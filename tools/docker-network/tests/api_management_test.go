@@ -323,7 +323,7 @@ func Test_ManagementAPI_Snapshots(t *testing.T) {
 				awaitNextEpoch()
 
 				// create snapshot
-				snapshotResponse, err := managementClient.CreateSnapshot(getContextWithTimeout(5*time.Second), 1)
+				snapshotResponse, err := managementClient.CreateSnapshot(getContextWithTimeout(5 * time.Second))
 				require.NoError(t, err)
 				require.NotNil(t, snapshotResponse)
 			},
