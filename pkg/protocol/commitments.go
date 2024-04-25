@@ -206,7 +206,7 @@ func (c *Commitments) publishEngineCommitments(chain *Chain, engine *engine.Engi
 // publishCommitment publishes the given commitment and returns the singleton Commitment instance that is used to
 // represent it in our data structure (together with a boolean that indicates if we were the first goroutine to publish
 // the commitment).
-func (c *Commitments) publishCommitment(commitment *model.Commitment) (publishedCommitment *Commitment, published bool, err error) {
+func (c *Commitments) publishCommitment(commitment *model.Commitment, initManually ...bool) (publishedCommitment *Commitment, published bool, err error) {
 	// retrieve promise and abort if it was already rejected
 	cachedRequest := c.cachedRequest(commitment.ID())
 	if cachedRequest.WasRejected() {
@@ -215,9 +215,13 @@ func (c *Commitments) publishCommitment(commitment *model.Commitment) (published
 
 	// otherwise try to publish it and determine if we were the goroutine that published it
 	cachedRequest.ResolveDynamically(func() *Commitment {
+		publishedCommitment = newCommitment(c, commitment)
+		if !lo.First(initManually) {
+			publishedCommitment.initBehavior()
+		}
 		published = true
 
-		return newCommitment(c, commitment)
+		return publishedCommitment
 	})
 
 	return cachedRequest.Result(), published, nil

@@ -93,7 +93,7 @@ type Commitment struct {
 
 // NewCommitment creates a new Commitment from the given model.Commitment.
 func newCommitment(commitments *Commitments, model *model.Commitment) *Commitment {
-	c := &Commitment{
+	return &Commitment{
 		Commitment:                      model,
 		Parent:                          reactive.NewVariable[*Commitment](),
 		Children:                        reactive.NewSet[*Commitment](),
@@ -117,15 +117,6 @@ func newCommitment(commitments *Commitments, model *model.Commitment) *Commitmen
 		IsEvicted:                       reactive.NewEvent(),
 		commitments:                     commitments,
 	}
-
-	shutdown := lo.BatchReverse(
-		c.initLogger(),
-		c.initDerivedProperties(),
-	)
-
-	c.IsEvicted.OnTrigger(shutdown)
-
-	return c
 }
 
 // TargetEngine returns the engine that is responsible for booking the blocks of this Commitment.
@@ -201,6 +192,16 @@ func (c *Commitment) Less(other *Commitment) bool {
 			}
 		}
 	}
+}
+
+// initBehavior initializes the behavior of this Commitment by setting up the relations between its properties.
+func (c *Commitment) initBehavior() {
+	shutdown := lo.BatchReverse(
+		c.initLogger(),
+		c.initDerivedProperties(),
+	)
+
+	c.IsEvicted.OnTrigger(shutdown)
 }
 
 // initLogger initializes the Logger of this Commitment.
