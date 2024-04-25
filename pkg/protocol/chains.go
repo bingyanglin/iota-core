@@ -323,8 +323,12 @@ func (c *Chains) initChainSwitching() (shutdown func()) {
 
 	return lo.BatchReverse(
 		c.HeaviestClaimedCandidate.WithNonEmptyValue(func(heaviestClaimedCandidate *Chain) (shutdown func()) {
-			return heaviestClaimedCandidate.IsSolid.WithNonEmptyValue(func(_ bool) (teardown func()) {
-				return heaviestClaimedCandidate.RequestAttestations.ToggleValue(true)
+			return heaviestClaimedCandidate.ForkingPoint.WithNonEmptyValue(func(forkingPoint *Commitment) (teardown func()) {
+				return forkingPoint.Parent.WithNonEmptyValue(func(parentOfForkingPoint *Commitment) (teardown func()) {
+					return parentOfForkingPoint.IsVerified.WithNonEmptyValue(func(_ bool) (teardown func()) {
+						return heaviestClaimedCandidate.RequestAttestations.ToggleValue(true)
+					})
+				})
 			})
 		}),
 
