@@ -275,7 +275,6 @@ func Test_ManagementAPI_Pruning(t *testing.T) {
 func Test_ManagementAPI_Snapshots(t *testing.T) {
 	d := NewDockerTestFramework(t,
 		WithProtocolParametersOptions(
-			iotago.WithSupplyOptions(1813620509061365, 63, 1, 4, 0, 0, 0),
 			iotago.WithTimeProviderOptions(0, time.Now().Unix(), 3, 4),
 			iotago.WithLivenessOptions(3, 4, 2, 4, 8),
 			iotago.WithCongestionControlOptions(1, 1, 1, 400_000, 250_000, 50_000_000, 1000, 100),
@@ -324,7 +323,7 @@ func Test_ManagementAPI_Snapshots(t *testing.T) {
 				awaitNextEpoch()
 
 				// create snapshot
-				snapshotResponse, err := managementClient.CreateSnapshot(getContextWithTimeout(5*time.Second), 1)
+				snapshotResponse, err := managementClient.CreateSnapshot(getContextWithTimeout(5 * time.Second))
 				require.NoError(t, err)
 				require.NotNil(t, snapshotResponse)
 			},

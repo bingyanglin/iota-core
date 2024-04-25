@@ -1,9 +1,11 @@
 package engine
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -391,6 +393,47 @@ func (e *Engine) WriteSnapshot(filePath string, targetSlot ...iotago.SlotIndex) 
 	}
 
 	return nil
+}
+
+func (e *Engine) ExportSnapshot(filePath string, addSlotToFileName bool, useFinalized bool) (iotago.SlotIndex, string, error) {
+	// we need to create snapshots always for the last slot of the previous epoch
+	var targetSlot iotago.SlotIndex
+
+	var latestSlot iotago.SlotIndex
+	if useFinalized {
+		latestSlot = e.Storage.Settings().LatestFinalizedSlot()
+	} else {
+		latestSlot = e.Storage.Settings().LatestCommitment().Slot()
+	}
+
+	latestSlotEpoch := e.CommittedAPI().TimeProvider().EpochFromSlot(latestSlot)
+	currentEpoch := e.CommittedAPI().TimeProvider().CurrentEpoch()
+	if currentEpoch != latestSlotEpoch {
+		if useFinalized {
+			return 0, "", ierrors.Errorf("impossible to create a snapshot for the current epoch %d because the last slot of the previous epoch is not finalized yet", currentEpoch)
+		}
+
+		return 0, "", ierrors.Errorf("impossible to create a snapshot for the current epoch %d because the last slot of the previous epoch is not committed yet", currentEpoch)
+	}
+	if latestSlotEpoch == 0 {
+		return 0, "", ierrors.New("impossible to create a snapshot for the genesis epoch")
+	}
+
+	targetSlot = e.CommittedAPI().TimeProvider().EpochEnd(latestSlotEpoch - 1)
+
+	if addSlotToFileName {
+		directory := filepath.Dir(filePath)
+		fileName := filepath.Base(filePath)
+		fileExt := filepath.Ext(fileName)
+		fileNameWithoutExt := strings.TrimSuffix(fileName, fileExt)
+		filePath = filepath.Join(directory, fmt.Sprintf("%s_%d%s", fileNameWithoutExt, targetSlot, fileExt))
+	}
+
+	if err := e.WriteSnapshot(filePath, targetSlot); err != nil {
+		return 0, "", err
+	}
+
+	return targetSlot, filePath, nil
 }
 
 func (e *Engine) ImportSettings(reader io.ReadSeeker) (err error) {
