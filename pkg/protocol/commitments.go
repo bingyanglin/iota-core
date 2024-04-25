@@ -194,7 +194,7 @@ func (c *Commitments) publishEngineCommitments(chain *Chain, engine *engine.Engi
 				return
 			}
 
-			// force the chain before initializing the commitment manually to prevent the creation of unnecessary chains
+			// force the chain before initializing the behavior to prevent the creation of unnecessary chains
 			publishedCommitment.forceChain(chain)
 			if published {
 				publishedCommitment.initBehavior()
