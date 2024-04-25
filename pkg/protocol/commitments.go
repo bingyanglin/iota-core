@@ -221,10 +221,11 @@ func (c *Commitments) publishCommitment(commitment *model.Commitment, initManual
 	// otherwise try to publish it and determine if we were the goroutine that published it
 	cachedRequest.ResolveDynamically(func() *Commitment {
 		publishedCommitment = newCommitment(c, commitment)
+		published = true
+
 		if !lo.First(initManually) {
 			publishedCommitment.initBehavior()
 		}
-		published = true
 
 		return publishedCommitment
 	})
