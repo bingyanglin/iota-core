@@ -1,17 +1,11 @@
 package database
 
 import (
-	"encoding/json"
-	"time"
-
 	hivedb "github.com/iotaledger/hive.go/db"
 	"github.com/iotaledger/hive.go/ierrors"
 	"github.com/iotaledger/hive.go/kvstore"
 	"github.com/iotaledger/hive.go/kvstore/mapdb"
 	"github.com/iotaledger/hive.go/kvstore/rocksdb"
-	"github.com/iotaledger/hive.go/runtime/event"
-	"github.com/iotaledger/hive.go/runtime/ioutils"
-	"github.com/iotaledger/iota-core/pkg/metrics"
 )
 
 var (
@@ -27,109 +21,6 @@ var (
 
 	AllowedEnginesStorageAuto = append(AllowedEnginesStorage, hivedb.EngineAuto)
 )
-
-var (
-	// ErrNothingToCleanUp is returned when nothing is there to clean up in the database.
-	ErrNothingToCleanUp = ierrors.New("Nothing to clean up in the databases")
-)
-
-type Cleanup struct {
-	Start time.Time
-	End   time.Time
-}
-
-func (c *Cleanup) MarshalJSON() ([]byte, error) {
-	cleanup := struct {
-		Start int64 `json:"start"`
-		End   int64 `json:"end"`
-	}{
-		Start: 0,
-		End:   0,
-	}
-
-	if !c.Start.IsZero() {
-		cleanup.Start = c.Start.Unix()
-	}
-
-	if !c.End.IsZero() {
-		cleanup.End = c.End.Unix()
-	}
-
-	return json.Marshal(cleanup)
-}
-
-type Events struct {
-	Cleanup    *event.Event1[*Cleanup]
-	Compaction *event.Event1[bool]
-}
-
-// Database holds the underlying KVStore and database specific functions.
-type Database struct {
-	databaseDir           string
-	store                 kvstore.KVStore
-	engine                hivedb.Engine
-	metrics               *metrics.DatabaseMetrics
-	events                *Events
-	compactionSupported   bool
-	compactionRunningFunc func() bool
-}
-
-// New creates a new Database instance.
-func New(databaseDirectory string, kvStore kvstore.KVStore, engine hivedb.Engine, metrics *metrics.DatabaseMetrics, events *Events, compactionSupported bool, compactionRunningFunc func() bool) *Database {
-	return &Database{
-		databaseDir:           databaseDirectory,
-		store:                 kvStore,
-		engine:                engine,
-		metrics:               metrics,
-		events:                events,
-		compactionSupported:   compactionSupported,
-		compactionRunningFunc: compactionRunningFunc,
-	}
-}
-
-// KVStore returns the underlying KVStore.
-func (db *Database) KVStore() kvstore.KVStore {
-	return db.store
-}
-
-// Engine returns the database engine.
-func (db *Database) Engine() hivedb.Engine {
-	return db.engine
-}
-
-// Metrics returns the database metrics.
-func (db *Database) Metrics() *metrics.DatabaseMetrics {
-	return db.metrics
-}
-
-// Events returns the events of the database.
-func (db *Database) Events() *Events {
-	return db.events
-}
-
-// CompactionSupported returns whether the database engine supports compaction.
-func (db *Database) CompactionSupported() bool {
-	return db.compactionSupported
-}
-
-// CompactionRunning returns whether a compaction is running.
-func (db *Database) CompactionRunning() bool {
-	if db.compactionRunningFunc == nil {
-		return false
-	}
-
-	return db.compactionRunningFunc()
-}
-
-// Size returns the size of the database.
-func (db *Database) Size() (int64, error) {
-	if db.engine == hivedb.EngineMapDB {
-		// in-memory database does not support this method.
-		return 0, nil
-	}
-
-	return ioutils.FolderSize(db.databaseDir)
-}
 
 // CheckEngine is a wrapper around hivedb.CheckEngine to throw a custom error message in case of engine mismatch.
 func CheckEngine(dbPath string, createDatabaseIfNotExists bool, dbEngine hivedb.Engine, allowedEngines ...hivedb.Engine) (hivedb.Engine, error) {
