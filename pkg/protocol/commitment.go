@@ -116,6 +116,7 @@ func newCommitment(commitments *Commitments, model *model.Commitment) *Commitmen
 		ReplayDroppedBlocks:             reactive.NewVariable[bool](),
 		IsEvicted:                       reactive.NewEvent(),
 		commitments:                     commitments,
+		Logger:                          commitments.NewChildLogger(fmt.Sprintf("Slot%d.", model.Slot()), true),
 	}
 }
 
@@ -206,8 +207,6 @@ func (c *Commitment) initBehavior() {
 
 // initLogger initializes the Logger of this Commitment.
 func (c *Commitment) initLogger() (shutdown func()) {
-	c.Logger = c.commitments.NewChildLogger(fmt.Sprintf("Slot%d.", c.Slot()), true)
-
 	return lo.BatchReverse(
 		c.Parent.LogUpdates(c, log.LevelTrace, "Parent", (*Commitment).LogName),
 		c.MainChild.LogUpdates(c, log.LevelTrace, "MainChild", (*Commitment).LogName),

@@ -187,18 +187,24 @@ func (c *Commitments) publishEngineCommitments(chain *Chain, engine *engine.Engi
 			}
 
 			// publish the commitment
-			publishedCommitment, _, err := c.publishCommitment(commitment)
+			publishedCommitment, published, err := c.publishCommitment(commitment, true)
 			if err != nil {
 				c.LogError("failed to publish commitment from engine", "engine", engine.LogName(), "commitment", commitment, "err", err)
 
 				return
 			}
 
+			// force the chain before initializing the commitment manually to prevent the creation of unnecessary chains
+			publishedCommitment.forceChain(chain)
+			if published {
+				publishedCommitment.initBehavior()
+			}
+
 			// mark it as produced by ourselves and force it to be on the right chain (in case our chain produced a
 			// different commitment than the one we erroneously expected it to be - we always trust our engine most).
 			publishedCommitment.AttestedWeight.Set(publishedCommitment.Weight.Get())
 			publishedCommitment.IsVerified.Set(true)
-			publishedCommitment.forceChain(chain)
+
 		}
 	})
 }
