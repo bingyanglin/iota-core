@@ -54,6 +54,9 @@ type Chain struct {
 	// Engine contains the engine instance that is used to process blocks for this chain.
 	Engine reactive.Variable[*engine.Engine]
 
+	// IsSolid contains a flag that indicates whether this chain is solid (has a connection to the root).
+	IsSolid reactive.Event
+
 	// IsEvicted contains a flag that indicates whether this chain was evicted.
 	IsEvicted reactive.Event
 
@@ -86,6 +89,7 @@ func newChain(chains *Chains) *Chain {
 		StartEngine:              reactive.NewVariable[bool](),
 		Engine:                   reactive.NewVariable[*engine.Engine](),
 		IsEvicted:                reactive.NewEvent(),
+		IsSolid:                  reactive.NewEvent(),
 		shouldEvict:              reactive.NewEvent(),
 
 		chains:      chains,
@@ -230,6 +234,8 @@ func (c *Chain) initDerivedProperties() (shutdown func()) {
 							parentChain.deriveChildChains(c),
 
 							c.deriveShouldEvict(forkingPoint, parentChain),
+
+							c.deriveIsSolid(forkingPoint, parentChain),
 						)
 					}),
 				)
@@ -262,6 +268,15 @@ func (c *Chain) deriveShouldEvict(forkingPoint *Commitment, parentChain *Chain) 
 	}
 
 	return
+}
+
+// deriveIsSolid defines how a chain determines whether it is solid (has a connection to the root).
+func (c *Chain) deriveIsSolid(forkingPoint *Commitment, parentChain *Chain) (shutdown func()) {
+	if parentChain != nil {
+		return c.IsSolid.InheritFrom(parentChain.IsSolid)
+	}
+
+	return c.IsSolid.InheritFrom(forkingPoint.IsRoot)
 }
 
 // deriveWarpSyncMode defines how a chain determines whether it is in warp sync mode or not.
