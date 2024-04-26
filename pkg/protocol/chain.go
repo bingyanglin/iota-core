@@ -20,6 +20,9 @@ type Chain struct {
 	// ParentChain contains the chain that this chain forked from.
 	ParentChain reactive.Variable[*Chain]
 
+	// DivergencePointVerified contains a flag that indicates whether the divergence point of this chain is verified.
+	DivergencePointVerified reactive.Event
+
 	// ChildChains contains the set of all chains that forked from this chain.
 	ChildChains reactive.Set[*Chain]
 
@@ -75,6 +78,7 @@ func newChain(chains *Chains) *Chain {
 	c := &Chain{
 		ForkingPoint:             reactive.NewVariable[*Commitment](),
 		ParentChain:              reactive.NewVariable[*Chain](),
+		DivergencePointVerified:  reactive.NewEvent(),
 		ChildChains:              reactive.NewSet[*Chain](),
 		LatestCommitment:         reactive.NewVariable[*Commitment](),
 		LatestAttestedCommitment: reactive.NewVariable[*Commitment](),
@@ -232,6 +236,8 @@ func (c *Chain) initDerivedProperties() (shutdown func()) {
 							c.deriveShouldEvict(forkingPoint, parentChain),
 						)
 					}),
+
+					c.deriveDivergencePointVerified(forkingPoint),
 				)
 			}),
 		),
@@ -288,6 +294,17 @@ func (c *Chain) deriveChildChains(child *Chain) (teardown func()) {
 	}
 
 	return
+}
+
+// deriveDivergencePointVerified defines how a chain determines whether its divergence point is verified.
+func (c *Chain) deriveDivergencePointVerified(forkingPoint *Commitment) (shutdown func()) {
+	return lo.Batch(
+		c.DivergencePointVerified.InheritFrom(forkingPoint.IsRoot),
+
+		forkingPoint.Parent.WithNonEmptyValue(func(parentOfForkingPoint *Commitment) (teardown func()) {
+			return c.DivergencePointVerified.InheritFrom(parentOfForkingPoint.IsVerified)
+		}),
+	)
 }
 
 // deriveParentChain defines how a chain determines its parent chain from its forking point (it inherits the Chain from
