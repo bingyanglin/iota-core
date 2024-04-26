@@ -104,13 +104,7 @@ func (c *Chains) initChainSwitching() (shutdown func()) {
 
 	return lo.BatchReverse(
 		c.HeaviestClaimedCandidate.WithNonEmptyValue(func(heaviestClaimedCandidate *Chain) (shutdown func()) {
-			return heaviestClaimedCandidate.ForkingPoint.WithNonEmptyValue(func(forkingPoint *Commitment) (teardown func()) {
-				return forkingPoint.Parent.WithNonEmptyValue(func(parentOfForkingPoint *Commitment) (teardown func()) {
-					return parentOfForkingPoint.IsVerified.WithNonEmptyValue(func(_ bool) (teardown func()) {
-						return heaviestClaimedCandidate.RequestAttestations.ToggleValue(true)
-					})
-				})
-			})
+			return heaviestClaimedCandidate.RequestAttestations.ToggleValue(true)
 		}),
 
 		c.HeaviestAttestedCandidate.OnUpdate(func(_ *Chain, heaviestAttestedCandidate *Chain) {
@@ -132,7 +126,7 @@ func (c *Chains) initChainSwitching() (shutdown func()) {
 
 func (c *Chains) trackHeaviestCandidates(chain *Chain) (teardown func()) {
 	return chain.LatestCommitment.OnUpdate(func(_ *Commitment, latestCommitment *Commitment) {
-		chain.IsSolid.OnTrigger(func() {
+		chain.DivergencePointVerified.OnTrigger(func() {
 			targetSlot := latestCommitment.ID().Index()
 
 			if evictionEvent := c.protocol.EvictionEvent(targetSlot); !evictionEvent.WasTriggered() {
