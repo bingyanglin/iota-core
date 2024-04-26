@@ -315,7 +315,7 @@ func (m *Manager) Rollback(targetSlot iotago.SlotIndex) error {
 	}
 
 	if err := m.accountsTree.Commit(); err != nil {
-		return err
+		return ierrors.Wrap(err, "unable to commit account tree")
 	}
 
 	return nil
