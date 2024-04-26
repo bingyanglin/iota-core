@@ -93,7 +93,7 @@ type Commitment struct {
 
 // NewCommitment creates a new Commitment from the given model.Commitment.
 func newCommitment(commitments *Commitments, model *model.Commitment) *Commitment {
-	c := &Commitment{
+	return &Commitment{
 		Commitment:                      model,
 		Parent:                          reactive.NewVariable[*Commitment](),
 		Children:                        reactive.NewSet[*Commitment](),
@@ -116,16 +116,8 @@ func newCommitment(commitments *Commitments, model *model.Commitment) *Commitmen
 		ReplayDroppedBlocks:             reactive.NewVariable[bool](),
 		IsEvicted:                       reactive.NewEvent(),
 		commitments:                     commitments,
+		Logger:                          commitments.NewChildLogger(fmt.Sprintf("Slot%d.", model.Slot()), true),
 	}
-
-	shutdown := lo.BatchReverse(
-		c.initLogger(),
-		c.initDerivedProperties(),
-	)
-
-	c.IsEvicted.OnTrigger(shutdown)
-
-	return c
 }
 
 // TargetEngine returns the engine that is responsible for booking the blocks of this Commitment.
@@ -203,10 +195,18 @@ func (c *Commitment) Less(other *Commitment) bool {
 	}
 }
 
+// initBehavior initializes the behavior of this Commitment by setting up the relations between its properties.
+func (c *Commitment) initBehavior() {
+	shutdown := lo.BatchReverse(
+		c.initLogger(),
+		c.initDerivedProperties(),
+	)
+
+	c.IsEvicted.OnTrigger(shutdown)
+}
+
 // initLogger initializes the Logger of this Commitment.
 func (c *Commitment) initLogger() (shutdown func()) {
-	c.Logger = c.commitments.NewChildLogger(fmt.Sprintf("Slot%d.", c.Slot()), true)
-
 	return lo.BatchReverse(
 		c.Parent.LogUpdates(c, log.LevelTrace, "Parent", (*Commitment).LogName),
 		c.MainChild.LogUpdates(c, log.LevelTrace, "MainChild", (*Commitment).LogName),

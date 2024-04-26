@@ -187,18 +187,23 @@ func (c *Commitments) publishEngineCommitments(chain *Chain, engine *engine.Engi
 			}
 
 			// publish the commitment
-			publishedCommitment, _, err := c.publishCommitment(commitment)
+			publishedCommitment, published, err := c.publishCommitment(commitment, true)
 			if err != nil {
 				c.LogError("failed to publish commitment from engine", "engine", engine.LogName(), "commitment", commitment, "err", err)
 
 				return
 			}
 
+			// force the chain before initializing the behavior to prevent the creation of unnecessary chains
+			publishedCommitment.forceChain(chain)
+			if published {
+				publishedCommitment.initBehavior()
+			}
+
 			// mark it as produced by ourselves and force it to be on the right chain (in case our chain produced a
 			// different commitment than the one we erroneously expected it to be - we always trust our engine most).
 			publishedCommitment.AttestedWeight.Set(publishedCommitment.Weight.Get())
 			publishedCommitment.IsVerified.Set(true)
-			publishedCommitment.forceChain(chain)
 		}
 	})
 }
@@ -206,7 +211,7 @@ func (c *Commitments) publishEngineCommitments(chain *Chain, engine *engine.Engi
 // publishCommitment publishes the given commitment and returns the singleton Commitment instance that is used to
 // represent it in our data structure (together with a boolean that indicates if we were the first goroutine to publish
 // the commitment).
-func (c *Commitments) publishCommitment(commitment *model.Commitment) (publishedCommitment *Commitment, published bool, err error) {
+func (c *Commitments) publishCommitment(commitment *model.Commitment, initManually ...bool) (publishedCommitment *Commitment, published bool, err error) {
 	// retrieve promise and abort if it was already rejected
 	cachedRequest := c.cachedRequest(commitment.ID())
 	if cachedRequest.WasRejected() {
@@ -215,9 +220,14 @@ func (c *Commitments) publishCommitment(commitment *model.Commitment) (published
 
 	// otherwise try to publish it and determine if we were the goroutine that published it
 	cachedRequest.ResolveDynamically(func() *Commitment {
+		publishedCommitment = newCommitment(c, commitment)
 		published = true
 
-		return newCommitment(c, commitment)
+		if !lo.First(initManually) {
+			publishedCommitment.initBehavior()
+		}
+
+		return publishedCommitment
 	})
 
 	return cachedRequest.Result(), published, nil
