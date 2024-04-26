@@ -690,10 +690,6 @@ func (e *Engine) attachEngineLogs() (teardown func()) {
 					logMessage("BlockDAG.BlockSolid", "block", block.ID())
 				}).Unhook,
 
-				e.Events.BlockDAG.BlockInvalid.Hook(func(block *blocks.Block, err error) {
-					logMessage("BlockDAG.BlockInvalid", "block", block.ID(), "err", err)
-				}).Unhook,
-
 				e.Events.BlockDAG.BlockMissing.Hook(func(block *blocks.Block) {
 					logMessage("BlockDAG.BlockMissing", "block", block.ID())
 				}).Unhook,
@@ -710,14 +706,6 @@ func (e *Engine) attachEngineLogs() (teardown func()) {
 					logMessage("Booker.BlockBooked", "block", block.ID())
 				}).Unhook,
 
-				e.Events.Booker.BlockInvalid.Hook(func(block *blocks.Block, err error) {
-					logMessage("Booker.BlockInvalid", "block", block.ID(), "err", err)
-				}).Unhook,
-
-				e.Events.Booker.TransactionInvalid.Hook(func(metadata mempool.TransactionMetadata, err error) {
-					logMessage("Booker.TransactionInvalid", "tx", metadata.ID(), "err", err)
-				}).Unhook,
-
 				e.Events.Scheduler.BlockScheduled.Hook(func(block *blocks.Block) {
 					logMessage("Scheduler.BlockScheduled", "block", block.ID())
 				}).Unhook,
@@ -728,10 +716,6 @@ func (e *Engine) attachEngineLogs() (teardown func()) {
 
 				e.Events.Scheduler.BlockSkipped.Hook(func(block *blocks.Block) {
 					logMessage("Scheduler.BlockSkipped", "block", block.ID())
-				}).Unhook,
-
-				e.Events.Scheduler.BlockDropped.Hook(func(block *blocks.Block, err error) {
-					logMessage("Scheduler.BlockDropped", "block", block.ID(), "err", err)
 				}).Unhook,
 
 				e.Events.Clock.AcceptedTimeUpdated.Hook(func(newTime time.Time) {
@@ -746,16 +730,8 @@ func (e *Engine) attachEngineLogs() (teardown func()) {
 					logMessage("PreSolidFilter.BlockPreAllowed", "block", block.ID())
 				}).Unhook,
 
-				e.Events.PreSolidFilter.BlockPreFiltered.Hook(func(event *presolidfilter.BlockPreFilteredEvent) {
-					logMessage("PreSolidFilter.BlockPreFiltered", "block", event.Block.ID(), "err", event.Reason)
-				}).Unhook,
-
 				e.Events.PostSolidFilter.BlockAllowed.Hook(func(block *blocks.Block) {
 					logMessage("PostSolidFilter.BlockAllowed", "block", block.ID())
-				}).Unhook,
-
-				e.Events.PostSolidFilter.BlockFiltered.Hook(func(event *postsolidfilter.BlockFilteredEvent) {
-					logMessage("PostSolidFilter.BlockFiltered", "block", event.Block.ID(), "err", event.Reason)
 				}).Unhook,
 
 				e.Events.BlockRequester.Tick.Hook(func(blockID iotago.BlockID) {
@@ -778,16 +754,12 @@ func (e *Engine) attachEngineLogs() (teardown func()) {
 					logMessage("BlockGadget.BlockPreAccepted", "block", block.ID(), "slotCommitmentID", block.ProtocolBlock().Header.SlotCommitmentID)
 				}).Unhook,
 
-				e.Events.BlockGadget.BlockAccepted.Hook(func(block *blocks.Block) {
-					logMessage("BlockGadget.BlockAccepted", "block", block.ID(), "slotCommitmentID", block.ProtocolBlock().Header.SlotCommitmentID)
-				}).Unhook,
-
 				e.Events.BlockGadget.BlockPreConfirmed.Hook(func(block *blocks.Block) {
 					logMessage("BlockGadget.BlockPreConfirmed", "block", block.ID(), "slotCommitmentID", block.ProtocolBlock().Header.SlotCommitmentID)
 				}).Unhook,
 
-				e.Events.BlockGadget.BlockConfirmed.Hook(func(block *blocks.Block) {
-					logMessage("BlockGadget.BlockConfirmed", "block", block.ID(), "slotCommitmentID", block.ProtocolBlock().Header.SlotCommitmentID)
+				e.Events.Notarization.LatestCommitmentUpdated.Hook(func(commitment *model.Commitment) {
+					logMessage("NotarizationManager.LatestCommitmentUpdated", "commitment", commitment.ID())
 				}).Unhook,
 
 				e.Events.SpendDAG.SpenderCreated.Hook(func(conflictID iotago.TransactionID) {
@@ -860,6 +832,38 @@ func (e *Engine) attachEngineLogs() (teardown func()) {
 			logMessage := e.LogDebug
 
 			return lo.Batch(
+				e.Events.BlockDAG.BlockInvalid.Hook(func(block *blocks.Block, err error) {
+					logMessage("BlockDAG.BlockInvalid", "block", block.ID(), "err", err)
+				}).Unhook,
+
+				e.Events.PreSolidFilter.BlockPreFiltered.Hook(func(event *presolidfilter.BlockPreFilteredEvent) {
+					logMessage("PreSolidFilter.BlockPreFiltered", "block", event.Block.ID(), "err", event.Reason)
+				}).Unhook,
+
+				e.Events.PostSolidFilter.BlockFiltered.Hook(func(event *postsolidfilter.BlockFilteredEvent) {
+					logMessage("PostSolidFilter.BlockFiltered", "block", event.Block.ID(), "err", event.Reason)
+				}).Unhook,
+
+				e.Events.Booker.BlockInvalid.Hook(func(block *blocks.Block, err error) {
+					logMessage("Booker.BlockInvalid", "block", block.ID(), "err", err)
+				}).Unhook,
+
+				e.Events.Booker.TransactionInvalid.Hook(func(metadata mempool.TransactionMetadata, err error) {
+					logMessage("Booker.TransactionInvalid", "tx", metadata.ID(), "err", err)
+				}).Unhook,
+
+				e.Events.Scheduler.BlockDropped.Hook(func(block *blocks.Block, err error) {
+					logMessage("Scheduler.BlockDropped", "block", block.ID(), "err", err)
+				}).Unhook,
+
+				e.Events.BlockGadget.BlockAccepted.Hook(func(block *blocks.Block) {
+					logMessage("BlockGadget.BlockAccepted", "block", block.ID(), "slotCommitmentID", block.ProtocolBlock().Header.SlotCommitmentID)
+				}).Unhook,
+
+				e.Events.BlockGadget.BlockConfirmed.Hook(func(block *blocks.Block) {
+					logMessage("BlockGadget.BlockConfirmed", "block", block.ID(), "slotCommitmentID", block.ProtocolBlock().Header.SlotCommitmentID)
+				}).Unhook,
+
 				e.Events.SlotGadget.SlotFinalized.Hook(func(slot iotago.SlotIndex) {
 					logMessage("SlotGadget.SlotFinalized", "slot", slot)
 				}).Unhook,
@@ -868,8 +872,12 @@ func (e *Engine) attachEngineLogs() (teardown func()) {
 					logMessage("NotarizationManager.SlotCommitted", "commitment", details.Commitment.ID(), "acceptedBlocks count", details.AcceptedBlocks.Size(), "accepted transactions", len(details.Mutations))
 				}).Unhook,
 
-				e.Events.Notarization.LatestCommitmentUpdated.Hook(func(commitment *model.Commitment) {
-					logMessage("NotarizationManager.LatestCommitmentUpdated", "commitment", commitment.ID())
+				e.Events.SeatManager.OnlineCommitteeSeatAdded.Hook(func(seat account.SeatIndex, accountID iotago.AccountID) {
+					logMessage("SybilProtection.OnlineCommitteeSeatAdded", "seat", seat, "accountID", accountID)
+				}).Unhook,
+
+				e.Events.SeatManager.OnlineCommitteeSeatRemoved.Hook(func(seat account.SeatIndex) {
+					logMessage("SybilProtection.OnlineCommitteeSeatRemoved", "seat", seat)
 				}).Unhook,
 			)
 		}),
@@ -878,16 +886,8 @@ func (e *Engine) attachEngineLogs() (teardown func()) {
 			logMessage := e.LogInfo
 
 			return lo.Batch(
-				e.Events.SeatManager.OnlineCommitteeSeatRemoved.Hook(func(seat account.SeatIndex) {
-					logMessage("SybilProtection.OnlineCommitteeSeatRemoved", "seat", seat)
-				}).Unhook,
-
 				e.Events.SybilProtection.CommitteeSelected.Hook(func(committee *account.SeatedAccounts, epoch iotago.EpochIndex) {
 					logMessage("SybilProtection.CommitteeSelected", "epoch", epoch, "committee", committee.IDs())
-				}).Unhook,
-
-				e.Events.SeatManager.OnlineCommitteeSeatAdded.Hook(func(seat account.SeatIndex, accountID iotago.AccountID) {
-					logMessage("SybilProtection.OnlineCommitteeSeatAdded", "seat", seat, "accountID", accountID)
 				}).Unhook,
 			)
 		}),
