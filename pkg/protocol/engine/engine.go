@@ -478,7 +478,7 @@ func (e *Engine) Export(writer io.WriteSeeker, targetSlot iotago.SlotIndex) (err
 		return ierrors.Wrap(err, "failed to export ledger")
 	} else if err := e.SybilProtection.Export(writer, targetSlot); err != nil {
 		return ierrors.Wrap(err, "failed to export sybil protection")
-	} else if err = e.EvictionState.Export(writer, e.Storage.Settings().LatestFinalizedSlot(), targetSlot); err != nil {
+	} else if err = e.EvictionState.Export(writer, targetSlot); err != nil {
 		// The rootcommitment is determined from the rootblocks. Therefore, we need to export starting from the last finalized slot.
 		return ierrors.Wrap(err, "failed to export eviction state")
 	} else if err = e.Attestations.Export(writer, targetSlot); err != nil {
