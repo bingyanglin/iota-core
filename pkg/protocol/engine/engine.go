@@ -671,7 +671,7 @@ func (e *Engine) initModule() {
 func (e *Engine) attachEngineLogs() (teardown func()) {
 	return lo.Batch(
 		e.ConstructedEvent().LogUpdates(e, log.LevelTrace, "Constructed"),
-		e.InitializedEvent().LogUpdates(e, log.LevelTrace, "Initialized"),
+		e.InitializedEvent().LogUpdates(e, log.LevelInfo, "Initialized"),
 		e.ShutdownEvent().LogUpdates(e, log.LevelInfo, "Shutdown"),
 		e.StoppedEvent().LogUpdates(e, log.LevelInfo, "Stopped"),
 
