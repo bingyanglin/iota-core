@@ -690,14 +690,6 @@ func (e *Engine) attachEngineLogs() (teardown func()) {
 					logMessage("BlockDAG.BlockSolid", "block", block.ID())
 				}).Unhook,
 
-				e.Events.BlockDAG.BlockMissing.Hook(func(block *blocks.Block) {
-					logMessage("BlockDAG.BlockMissing", "block", block.ID())
-				}).Unhook,
-
-				e.Events.BlockDAG.MissingBlockAppended.Hook(func(block *blocks.Block) {
-					logMessage("BlockDAG.MissingBlockAppended", "block", block.ID())
-				}).Unhook,
-
 				e.Events.SeatManager.BlockProcessed.Hook(func(block *blocks.Block) {
 					logMessage("SeatManager.BlockProcessed", "block", block.ID())
 				}).Unhook,
@@ -832,6 +824,14 @@ func (e *Engine) attachEngineLogs() (teardown func()) {
 			logMessage := e.LogDebug
 
 			return lo.Batch(
+				e.Events.BlockDAG.BlockMissing.Hook(func(block *blocks.Block) {
+					logMessage("BlockDAG.BlockMissing", "block", block.ID())
+				}).Unhook,
+
+				e.Events.BlockDAG.MissingBlockAppended.Hook(func(block *blocks.Block) {
+					logMessage("BlockDAG.MissingBlockAppended", "block", block.ID())
+				}).Unhook,
+
 				e.Events.BlockDAG.BlockInvalid.Hook(func(block *blocks.Block, err error) {
 					logMessage("BlockDAG.BlockInvalid", "block", block.ID(), "err", err)
 				}).Unhook,
