@@ -402,8 +402,9 @@ func (m *Manager) rollbackAccountTo(accountData *accounts.AccountData, targetSlo
 			accountData.ExpirySlot = diffChange.PreviousExpirySlot
 		}
 
-		if diffChange.PreviousOutputID == iotago.EmptyOutputID {
+		if diffChange.PreviousOutputID == iotago.EmptyOutputID && diffChange.NewOutputID != iotago.EmptyOutputID {
 			// Account was created in this slot, so we need to remove it
+			m.LogDebug("Account was created in this slot, so we need to remove it", "accountID", accountData.ID, "slot", diffSlot, "diffChange.PreviousOutputID", diffChange.PreviousOutputID, "diffChange.NewOutputID", diffChange.NewOutputID)
 			return true, false, nil
 		}
 
