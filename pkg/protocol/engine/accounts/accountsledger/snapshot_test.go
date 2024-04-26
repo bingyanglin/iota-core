@@ -15,6 +15,11 @@ func TestManager_Import_Export(t *testing.T) {
 	ts := NewTestSuite(t)
 	latestSupportedVersionHash1 := tpkg.Rand32ByteArray()
 	latestSupportedVersionHash2 := tpkg.Rand32ByteArray()
+
+	accountTreeRoots := []iotago.Identifier{}
+
+	accountTreeRoots = append(accountTreeRoots, ts.Instance.AccountsTreeRoot())
+
 	ts.ApplySlotActions(1, 5, map[string]*AccountActions{
 		"A": {
 			TotalAllotments: 10,
@@ -43,6 +48,8 @@ func TestManager_Import_Export(t *testing.T) {
 			NewOutputID: "D1",
 		},
 	})
+
+	accountTreeRoots = append(accountTreeRoots, ts.Instance.AccountsTreeRoot())
 
 	ts.AssertAccountLedgerUntil(1, map[string]*AccountState{
 		"A": {
@@ -89,6 +96,8 @@ func TestManager_Import_Export(t *testing.T) {
 			LatestSupportedProtocolVersionAndHash: model.VersionAndHash{Version: 3, Hash: latestSupportedVersionHash2},
 		},
 	})
+
+	accountTreeRoots = append(accountTreeRoots, ts.Instance.AccountsTreeRoot())
 
 	ts.AssertAccountLedgerUntil(2, map[string]*AccountState{
 		"A": {
@@ -145,6 +154,8 @@ func TestManager_Import_Export(t *testing.T) {
 		},
 	})
 
+	accountTreeRoots = append(accountTreeRoots, ts.Instance.AccountsTreeRoot())
+
 	ts.AssertAccountLedgerUntil(3, map[string]*AccountState{
 		"A": {
 			Destroyed: true,
@@ -178,31 +189,31 @@ func TestManager_Import_Export(t *testing.T) {
 
 	// Export and import the account ledger into new manager for the latest slot.
 	{
-		writer := stream.NewByteBuffer()
+		writer := []*stream.ByteBuffer{
+			stream.NewByteBuffer(),
+			stream.NewByteBuffer(),
+			stream.NewByteBuffer(),
+			stream.NewByteBuffer(),
+		}
 
-		err := ts.Instance.Export(writer, iotago.SlotIndex(3))
-		require.NoError(t, err)
+		latestSlot := iotago.SlotIndex(3)
 
-		ts.Instance = ts.initAccountLedger()
-		err = ts.Instance.Import(writer.Reader())
-		require.NoError(t, err)
-		ts.Instance.SetLatestCommittedSlot(3)
+		// Export snapshots at all slots including genesis.
+		for i := iotago.SlotIndex(0); i <= latestSlot; i++ {
+			err := ts.Instance.Export(writer[i], i)
+			require.NoError(t, err)
+		}
 
-		ts.AssertAccountLedgerUntilWithoutNewState(3)
-	}
+		// Import all of the created snapshots into a new manager, assert the tree root and the states.
+		for i := iotago.SlotIndex(0); i <= latestSlot; i++ {
+			ts.Instance = ts.initAccountLedger()
+			err := ts.Instance.Import(writer[i].Reader())
+			require.NoError(t, err)
+			ts.Instance.SetLatestCommittedSlot(i)
 
-	// Export and import for pre-latest slot.
-	{
-		writer := stream.NewByteBuffer()
+			ts.AssertAccountLedgerUntilWithoutNewState(i)
 
-		err := ts.Instance.Export(writer, iotago.SlotIndex(2))
-		require.NoError(t, err)
-
-		ts.Instance = ts.initAccountLedger()
-		err = ts.Instance.Import(writer.Reader())
-		require.NoError(t, err)
-		ts.Instance.SetLatestCommittedSlot(2)
-
-		ts.AssertAccountLedgerUntilWithoutNewState(2)
+			require.Equal(t, accountTreeRoots[i], ts.Instance.AccountsTreeRoot())
+		}
 	}
 }

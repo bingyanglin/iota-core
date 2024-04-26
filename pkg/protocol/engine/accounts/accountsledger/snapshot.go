@@ -36,6 +36,10 @@ func (m *Manager) Import(reader io.ReadSeeker) error {
 		return ierrors.Wrap(err, "unable to import slot diffs")
 	}
 
+	if err := m.accountsTree.Commit(); err != nil {
+		return ierrors.Wrap(err, "unable to commit account tree")
+	}
+
 	return nil
 }
 
@@ -73,14 +77,19 @@ func (m *Manager) exportAccountTree(writer io.WriteSeeker, targetIndex iotago.Sl
 	var accountCount int
 
 	if err := m.accountsTree.Stream(func(accountID iotago.AccountID, accountData *accounts.AccountData) error {
-		if _, err := m.rollbackAccountTo(accountData, targetIndex); err != nil {
+		wasCreatedAfterTargetSlot, _, err := m.rollbackAccountTo(accountData, targetIndex)
+		if err != nil {
 			return ierrors.Wrapf(err, "unable to rollback account %s", accountID)
+		}
+
+		// Account was created after the target slot, so we don't need to export it.
+		if wasCreatedAfterTargetSlot {
+			return nil
 		}
 
 		if err := stream.WriteObject(writer, accountData, (*accounts.AccountData).Bytes); err != nil {
 			return ierrors.Wrapf(err, "unable to write account %s", accountID)
 		}
-
 		accountCount++
 
 		return nil
@@ -105,7 +114,6 @@ func (m *Manager) recreateDestroyedAccounts(writer io.WriteSeeker, targetSlot io
 			accountData := accounts.NewAccountData(accountID)
 
 			destroyedAccounts[accountID] = accountData
-			recreatedAccountsCount++
 
 			return true
 		})
@@ -115,8 +123,11 @@ func (m *Manager) recreateDestroyedAccounts(writer io.WriteSeeker, targetSlot io
 	}
 
 	for accountID, accountData := range destroyedAccounts {
-		if wasDestroyed, err := m.rollbackAccountTo(accountData, targetSlot); err != nil {
+		if wasCreatedAfterTargetSlot, wasDestroyed, err := m.rollbackAccountTo(accountData, targetSlot); err != nil {
 			return 0, ierrors.Wrapf(err, "unable to rollback account %s to target slot %d", accountID, targetSlot)
+		} else if wasCreatedAfterTargetSlot {
+			// Account was created after the target slot, so we don't need to export it.
+			continue
 		} else if !wasDestroyed {
 			return 0, ierrors.Errorf("account %s was not destroyed", accountID)
 		}
@@ -124,6 +135,8 @@ func (m *Manager) recreateDestroyedAccounts(writer io.WriteSeeker, targetSlot io
 		if err := stream.WriteObject(writer, accountData, (*accounts.AccountData).Bytes); err != nil {
 			return 0, ierrors.Wrapf(err, "unable to write account %s", accountID)
 		}
+
+		recreatedAccountsCount++
 	}
 
 	return recreatedAccountsCount, nil
