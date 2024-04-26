@@ -87,9 +87,9 @@ func (c *Chains) initLogger(logger log.Logger) (shutdown func()) {
 
 	return lo.BatchReverse(
 		c.Main.LogUpdates(c, log.LevelTrace, "Main", (*Chain).LogName),
-		c.HeaviestClaimedCandidate.LogUpdates(c, log.LevelTrace, "HeaviestClaimedCandidate", (*Chain).LogName),
-		c.HeaviestAttestedCandidate.LogUpdates(c, log.LevelTrace, "HeaviestAttestedCandidate", (*Chain).LogName),
-		c.HeaviestVerifiedCandidate.LogUpdates(c, log.LevelTrace, "HeaviestVerifiedCandidate", (*Chain).LogName),
+		c.HeaviestClaimedCandidate.LogUpdates(c, log.LevelDebug, "HeaviestClaimedCandidate", (*Chain).LogName),
+		c.HeaviestAttestedCandidate.LogUpdates(c, log.LevelDebug, "HeaviestAttestedCandidate", (*Chain).LogName),
+		c.HeaviestVerifiedCandidate.LogUpdates(c, log.LevelDebug, "HeaviestVerifiedCandidate", (*Chain).LogName),
 
 		logger.Shutdown,
 	)

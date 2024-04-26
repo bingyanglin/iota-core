@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/iotaledger/hive.go/lo"
+	"github.com/iotaledger/hive.go/log"
 	"github.com/iotaledger/iota-core/pkg/core/account"
 	"github.com/iotaledger/iota-core/pkg/protocol"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/blocks"
@@ -133,6 +134,9 @@ func TestEngineSwitchingUponStartupWithLossOfAcceptance(t *testing.T) {
 
 	ts.Run(true, nil)
 
+	node0.Protocol.SetLogLevel(log.LevelDebug)
+	node1.Protocol.SetLogLevel(log.LevelDebug)
+
 	// Create snapshot to use later.
 	snapshotPath := ts.Directory.Path(fmt.Sprintf("%d_snapshot", time.Now().Unix()))
 	require.NoError(t, node0.Protocol.Engines.Main.Get().WriteSnapshot(snapshotPath))
@@ -206,6 +210,7 @@ func TestEngineSwitchingUponStartupWithLossOfAcceptance(t *testing.T) {
 			protocol.WithSnapshotPath(snapshotPath),
 			protocol.WithBaseDirectory(ts.Directory.PathWithCreate(node3.Name)),
 		)
+		node3.Protocol.SetLogLevel(log.LevelDebug)
 
 		ts.Wait()
 	}

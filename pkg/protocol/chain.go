@@ -201,7 +201,7 @@ func (c *Chain) initLogger() (shutdown func()) {
 	c.Logger = c.chains.NewChildLogger("", true)
 
 	return lo.BatchReverse(
-		c.WarpSyncMode.LogUpdates(c, log.LevelTrace, "WarpSyncMode"),
+		c.WarpSyncMode.LogUpdates(c, log.LevelDebug, "WarpSyncMode"),
 		c.LatestSyncedSlot.LogUpdates(c, log.LevelTrace, "LatestSyncedSlot"),
 		c.OutOfSyncThreshold.LogUpdates(c, log.LevelTrace, "OutOfSyncThreshold"),
 		c.ForkingPoint.LogUpdates(c, log.LevelTrace, "ForkingPoint", (*Commitment).LogName),

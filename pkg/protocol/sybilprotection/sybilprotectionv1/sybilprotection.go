@@ -235,7 +235,7 @@ func (o *SybilProtection) committeeRoot(targetCommitteeEpoch iotago.EpochIndex) 
 
 	committeeIDs := committee.IDs()
 
-	o.LogDebug("generating committee root", "committeeIDs", committeeIDs, "epoch", targetCommitteeEpoch)
+	o.LogTrace("generating committee root", "committeeIDs", committeeIDs, "epoch", targetCommitteeEpoch)
 
 	for _, accountID := range committeeIDs {
 		if err = committeeTree.Add(accountID); err != nil {
