@@ -118,7 +118,7 @@ func (m *Manager) Start(ctx context.Context, networkID string, bootstrapPeers []
 		})
 		onGossipNeighborAddedHook := m.networkManager.OnNeighborAdded(func(neighbor network.Neighbor) {
 			m.logger.LogInfof("Gossip layer successfully connected with the peer %s", neighbor.Peer())
-			m.stopAdvertisingItNotNeeded()
+			m.stopAdvertisingIfNotNeeded()
 		})
 
 		m.stopFunc = func() {
@@ -162,7 +162,7 @@ func (m *Manager) startAdvertisingIfNeeded() {
 	}
 }
 
-func (m *Manager) stopAdvertisingItNotNeeded() {
+func (m *Manager) stopAdvertisingIfNotNeeded() {
 	if len(m.networkManager.AutopeeringNeighbors()) >= m.maxPeers {
 		m.stopAdvertising()
 	}
