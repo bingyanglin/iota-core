@@ -64,13 +64,13 @@ func (b *BufferQueue) Size() int {
 
 // IssuerQueue returns the queue for the corresponding issuer.
 func (b *BufferQueue) IssuerQueue(issuerID iotago.AccountID) *IssuerQueue {
-	element, ok := b.activeIssuers.Get(issuerID)
-	if !ok {
+	element, exists := b.activeIssuers.Get(issuerID)
+	if !exists {
 		return nil
 	}
 	issuerQueue, isIQ := element.Value.(*IssuerQueue)
 	if !isIQ {
-		return nil
+		panic("buffer contains elements that are not issuer queues")
 	}
 
 	return issuerQueue
@@ -119,8 +119,8 @@ func (b *BufferQueue) GetOrCreateIssuerQueue(issuerID iotago.AccountID) *IssuerQ
 
 // RemoveIssuerQueue removes all blocks (submitted and ready) for the given issuer and deletes the issuer queue.
 func (b *BufferQueue) RemoveIssuerQueue(issuerID iotago.AccountID) {
-	element, ok := b.activeIssuers.Get(issuerID)
-	if !ok {
+	element, exists := b.activeIssuers.Get(issuerID)
+	if !exists {
 		return
 	}
 	issuerQueue, isIQ := element.Value.(*IssuerQueue)
@@ -135,8 +135,8 @@ func (b *BufferQueue) RemoveIssuerQueue(issuerID iotago.AccountID) {
 
 // RemoveIssuerQueueIfEmpty removes all blocks (submitted and ready) for the given issuer and deletes the issuer queue if it is empty.
 func (b *BufferQueue) RemoveIssuerQueueIfEmpty(issuerID iotago.AccountID) {
-	element, ok := b.activeIssuers.Get(issuerID)
-	if !ok {
+	element, exists := b.activeIssuers.Get(issuerID)
+	if !exists {
 		return
 	}
 	issuerQueue, isIQ := element.Value.(*IssuerQueue)
@@ -168,25 +168,6 @@ func (b *BufferQueue) Submit(blk *blocks.Block, issuerQueue *IssuerQueue, quantu
 	return nil, true
 }
 
-// Unsubmit removes a block from the submitted blocks.
-// If that block is already marked as ready, Unsubmit has no effect.
-func (b *BufferQueue) Unsubmit(block *blocks.Block) bool {
-	issuerID := block.ProtocolBlock().Header.IssuerID
-
-	issuerQueue := b.IssuerQueue(issuerID)
-	if issuerQueue == nil {
-		return false
-	}
-
-	if !issuerQueue.Unsubmit(block) {
-		return false
-	}
-
-	b.size.Dec()
-
-	return true
-}
-
 // Ready marks a previously submitted block as ready to be scheduled.
 func (b *BufferQueue) Ready(block *blocks.Block) bool {
 	issuerQueue := b.IssuerQueue(block.ProtocolBlock().Header.IssuerID)
@@ -205,7 +186,7 @@ func (b *BufferQueue) ReadyBlocksCount() (readyBlocksCount int) {
 	}
 
 	for q := start; ; {
-		readyBlocksCount += q.inbox.Len()
+		readyBlocksCount += q.readyHeap.Len()
 		q = b.Next()
 		if q == start {
 			break
@@ -222,8 +203,8 @@ func (b *BufferQueue) TotalBlocksCount() (blocksCount int) {
 		return
 	}
 	for q := start; ; {
-		blocksCount += q.inbox.Len()
-		blocksCount += q.submitted.Size()
+		blocksCount += q.readyHeap.Len()
+		blocksCount += q.nonReadyMap.Size()
 		q = b.Next()
 		if q == start {
 			break
@@ -296,23 +277,28 @@ func (b *BufferQueue) dropTail(quantumFunc func(iotago.AccountID) Deficit, maxBu
 	// remove as many blocks as necessary to stay within max buffer size
 	for b.Size() > maxBuffer {
 		// find the longest mana-scaled queue
-		maxIssuerID := b.longestQueueIssuerID(quantumFunc)
-		if longestQueue := b.IssuerQueue(maxIssuerID); longestQueue != nil {
-			if tail := longestQueue.RemoveTail(); tail != nil {
-				b.size.Dec()
-				droppedBlocks = append(droppedBlocks, tail)
-			}
+		maxIssuerID := b.mustLongestQueueIssuerID(quantumFunc)
+		longestQueue := b.IssuerQueue(maxIssuerID)
+		if longestQueue == nil {
+			panic("longest queue does not exist")
+		}
+
+		if tail := longestQueue.RemoveTail(); tail != nil {
+			b.size.Dec()
+			droppedBlocks = append(droppedBlocks, tail)
 		}
 	}
 
 	return droppedBlocks
 }
 
-func (b *BufferQueue) longestQueueIssuerID(quantumFunc func(iotago.AccountID) Deficit) iotago.AccountID {
+// mustLongestQueueIssuerID returns the issuerID of the longest queue in the buffer.
+// This function panics if no longest queue is found.
+func (b *BufferQueue) mustLongestQueueIssuerID(quantumFunc func(iotago.AccountID) Deficit) iotago.AccountID {
 	start := b.Current()
 	ringStart := b.ring
 	maxScale := math.Inf(-1)
-	var maxIssuerID iotago.AccountID
+	maxIssuerID := iotago.EmptyAccountID
 	for q := start; ; {
 		if issuerQuantum := quantumFunc(q.IssuerID()); issuerQuantum > 0 {
 			if scale := float64(q.Work()) / float64(issuerQuantum); scale > maxScale {
@@ -330,6 +316,10 @@ func (b *BufferQueue) longestQueueIssuerID(quantumFunc func(iotago.AccountID) De
 		if q == start {
 			break
 		}
+	}
+
+	if maxIssuerID == iotago.EmptyAccountID {
+		panic("no longest queue determined")
 	}
 
 	return maxIssuerID

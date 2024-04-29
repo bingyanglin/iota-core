@@ -580,15 +580,15 @@ func (s *Scheduler) selectIssuer(start *IssuerQueue, slot iotago.SlotIndex) (Def
 
 func (s *Scheduler) removeIssuer(issuerID iotago.AccountID, err error) {
 	q := s.basicBuffer.IssuerQueue(issuerID)
-	q.submitted.ForEach(func(_ iotago.BlockID, block *blocks.Block) bool {
+	q.nonReadyMap.ForEach(func(_ iotago.BlockID, block *blocks.Block) bool {
 		block.SetDropped()
 		s.events.BlockDropped.Trigger(block, err)
 
 		return true
 	})
 
-	for q.inbox.Len() > 0 {
-		block := q.PopFront()
+	for i := 0; i < q.readyHeap.Len(); i++ {
+		block := q.readyHeap[i].Value
 		block.SetDropped()
 		s.events.BlockDropped.Trigger(block, err)
 	}
