@@ -280,13 +280,17 @@ func (b *BasicBuffer) dropTail(quantumFunc func(iotago.AccountID) Deficit, maxBu
 		maxIssuerID := b.mustLongestQueueIssuerID(quantumFunc)
 		longestQueue := b.IssuerQueue(maxIssuerID)
 		if longestQueue == nil {
-			panic("longest queue does not exist")
+			panic("buffer is full, but longest queue does not exist")
 		}
 
-		if tail := longestQueue.RemoveTail(); tail != nil {
-			b.size.Dec()
-			droppedBlocks = append(droppedBlocks, tail)
+		tail := longestQueue.RemoveTail()
+		if tail == nil {
+			panic("buffer is full, but tail of longest queue does not exist")
 		}
+
+		b.size.Dec()
+		droppedBlocks = append(droppedBlocks, tail)
+
 	}
 
 	return droppedBlocks
