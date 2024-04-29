@@ -63,6 +63,22 @@ func (q *ValidatorQueue) AccountID() iotago.AccountID {
 	return q.accountID
 }
 
+// ScheduleNext schedules the next block.
+func (q *ValidatorQueue) ScheduleNext() bool {
+	// already a block selected to be scheduled.
+	if len(q.blockChan) > 0 {
+		return false
+	}
+
+	if blockToSchedule := q.PopFront(); blockToSchedule != nil {
+		q.blockChan <- blockToSchedule
+
+		return true
+	}
+
+	return false
+}
+
 func (q *ValidatorQueue) Submit(block *blocks.Block, maxBuffer int) (*blocks.Block, bool) {
 	if blkAccountID := block.IssuerID(); q.accountID != blkAccountID {
 		panic(fmt.Sprintf("issuerqueue: queue issuer ID(%x) and issuer ID(%x) does not match.", q.accountID, blkAccountID))
@@ -242,24 +258,20 @@ func (b *ValidatorBuffer) GetOrCreate(accountID iotago.AccountID, onCreateCallba
 	})
 }
 
-func (b *ValidatorBuffer) Set(accountID iotago.AccountID, validatorQueue *ValidatorQueue) bool {
-	return b.buffer.Set(accountID, validatorQueue)
+// Ready marks a previously submitted block as ready to be scheduled.
+func (b *ValidatorBuffer) Ready(block *blocks.Block) {
+	if validatorQueue, exists := b.Get(block.IssuerID()); exists {
+		validatorQueue.Ready(block)
+	}
 }
 
-func (b *ValidatorBuffer) Submit(block *blocks.Block, maxBuffer int) (*blocks.Block, bool) {
-	validatorQueue, exists := b.buffer.Get(block.IssuerID())
-	if !exists {
-		return nil, false
-	}
-	droppedBlock, submitted := validatorQueue.Submit(block, maxBuffer)
-	if submitted {
-		b.size.Inc()
-	}
-	if droppedBlock != nil {
-		b.size.Dec()
-	}
+// ScheduleNext schedules the next blocks of all validator queues.
+func (b *ValidatorBuffer) ScheduleNext() {
+	b.buffer.ForEach(func(_ iotago.AccountID, validatorQueue *ValidatorQueue) bool {
+		validatorQueue.ScheduleNext()
 
-	return droppedBlock, submitted
+		return true
+	})
 }
 
 // Delete removes all validator queues that match the predicate.

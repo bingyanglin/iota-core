@@ -387,29 +387,9 @@ func (s *Scheduler) selectBlockToScheduleWithLocking() {
 	s.bufferMutex.Lock()
 	defer s.bufferMutex.Unlock()
 
-	s.validatorBuffer.buffer.ForEach(func(_ iotago.AccountID, validatorQueue *ValidatorQueue) bool {
-		if s.selectValidationBlockWithoutLocking(validatorQueue) {
-			s.validatorBuffer.size.Dec()
-		}
+	s.validatorBuffer.ScheduleNext()
 
-		return true
-	})
 	s.selectBasicBlockWithoutLocking()
-}
-
-func (s *Scheduler) selectValidationBlockWithoutLocking(validatorQueue *ValidatorQueue) bool {
-	// already a block selected to be scheduled.
-	if len(validatorQueue.blockChan) > 0 {
-		return false
-	}
-
-	if blockToSchedule := validatorQueue.PopFront(); blockToSchedule != nil {
-		validatorQueue.blockChan <- blockToSchedule
-
-		return true
-	}
-
-	return false
 }
 
 func (s *Scheduler) selectBasicBlockWithoutLocking() {
@@ -666,24 +646,14 @@ func (s *Scheduler) isReady(block *blocks.Block) bool {
 // tryReady tries to set the given block as ready.
 func (s *Scheduler) tryReady(block *blocks.Block) {
 	if s.isReady(block) {
-		s.ready(block)
+		s.basicBuffer.Ready(block)
 	}
 }
 
 // tryReadyValidator tries to set the given validation block as ready.
 func (s *Scheduler) tryReadyValidationBlock(block *blocks.Block) {
 	if s.isReady(block) {
-		s.readyValidationBlock(block)
-	}
-}
-
-func (s *Scheduler) ready(block *blocks.Block) {
-	s.basicBuffer.Ready(block)
-}
-
-func (s *Scheduler) readyValidationBlock(block *blocks.Block) {
-	if validatorQueue, exists := s.validatorBuffer.Get(block.IssuerID()); exists {
-		validatorQueue.Ready(block)
+		s.validatorBuffer.Ready(block)
 	}
 }
 
