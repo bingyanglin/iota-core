@@ -94,17 +94,17 @@ func (b *BasicBuffer) IssuerQueueBlockCount(issuerID iotago.AccountID) int {
 }
 
 func (b *BasicBuffer) CreateIssuerQueue(issuerID iotago.AccountID) *IssuerQueue {
-	element := b.activeIssuers.Compute(issuerID, func(currentValue *ring.Ring, exists bool) *ring.Ring {
+	element := b.activeIssuers.Compute(issuerID, func(_ *ring.Ring, exists bool) *ring.Ring {
 		if exists {
 			panic(fmt.Sprintf("issuer queue already exists: %s", issuerID.String()))
 		}
 
 		return b.ringInsert(NewIssuerQueue(issuerID, func(totalSizeDelta int64, readySizeDelta int64) {
 			if totalSizeDelta != 0 {
-				b.totalBlocksCount.Add(int64(totalSizeDelta))
+				b.totalBlocksCount.Add(totalSizeDelta)
 			}
 			if readySizeDelta != 0 {
-				b.readyBlocksCount.Add(int64(readySizeDelta))
+				b.readyBlocksCount.Add(readySizeDelta)
 			}
 		}))
 	})

@@ -565,7 +565,7 @@ func (s *Scheduler) getOrCreateIssuer(accountID iotago.AccountID) *IssuerQueue {
 
 func (s *Scheduler) createIssuer(accountID iotago.AccountID) *IssuerQueue {
 	issuerQueue := s.basicBuffer.CreateIssuerQueue(accountID)
-	s.deficits.Compute(accountID, func(currentValue Deficit, exists bool) Deficit {
+	s.deficits.Compute(accountID, func(_ Deficit, exists bool) Deficit {
 		if exists {
 			panic(fmt.Sprintf("issuer already exists: %s", accountID.String()))
 		}
