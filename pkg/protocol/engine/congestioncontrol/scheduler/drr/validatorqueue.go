@@ -174,6 +174,21 @@ func (q *ValidatorQueue) deductTokens(tokens float64) {
 	q.tokenBucket -= tokens
 }
 
+// Clear removes all blocks from the queue.
+func (q *ValidatorQueue) Clear() {
+	q.submitted.Clear()
+	for q.inbox.Len() > 0 {
+		_ = heap.Pop(&q.inbox)
+	}
+}
+
+// Shutdown stops the queue and clears all blocks.
+func (q ValidatorQueue) Shutdown() {
+	close(q.shutdownSignal)
+
+	q.Clear()
+}
+
 type ValidatorBuffer struct {
 	buffer *shrinkingmap.ShrinkingMap[iotago.AccountID, *ValidatorQueue]
 	size   atomic.Int64
@@ -217,20 +232,22 @@ func (b *ValidatorBuffer) Submit(block *blocks.Block, maxBuffer int) (*blocks.Bl
 	return droppedBlock, submitted
 }
 
-func (b *ValidatorBuffer) Delete(accountID iotago.AccountID) {
-	validatorQueue, exists := b.buffer.Get(accountID)
-	if !exists {
-		return
-	}
-	b.size.Sub(int64(validatorQueue.Size()))
+// Delete removes all validator queues that match the predicate.
+func (b *ValidatorBuffer) Delete(predicate func(element *ValidatorQueue) bool) {
+	b.buffer.ForEach(func(accountID iotago.AccountID, validatorQueue *ValidatorQueue) bool {
+		if predicate(validatorQueue) {
+			// validator workers need to be shut down first, otherwise they will hang on the shutdown channel.
+			validatorQueue.Shutdown()
+			b.buffer.Delete(accountID)
+		}
 
-	b.buffer.Delete(accountID)
+		return true
+	})
 }
 
 func (b *ValidatorBuffer) Clear() {
-	b.buffer.ForEachKey(func(accountID iotago.AccountID) bool {
-		b.Delete(accountID)
-
+	b.Delete(func(_ *ValidatorQueue) bool {
+		// remove all
 		return true
 	})
 }

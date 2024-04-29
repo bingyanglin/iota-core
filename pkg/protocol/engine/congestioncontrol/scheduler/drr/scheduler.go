@@ -1,6 +1,7 @@
 package drr
 
 import (
+	"fmt"
 	"math"
 	"sync"
 	"time"
@@ -78,15 +79,9 @@ func NewProvider(opts ...options.Option[Scheduler]) module.Provider[*engine.Engi
 						return
 					}
 
-					s.validatorBuffer.buffer.ForEach(func(accountID iotago.AccountID, validatorQueue *ValidatorQueue) bool {
-						if !committee.HasAccount(accountID) {
-							s.shutdownValidatorQueue(validatorQueue)
-						}
-
-						return true
+					s.validatorBuffer.Delete(func(validatorQueue *ValidatorQueue) bool {
+						return !committee.HasAccount(validatorQueue.AccountID())
 					})
-
-					s.validatorBuffer.Clear()
 				}
 			})
 			e.Ledger.InitializedEvent().OnTrigger(func() {
@@ -150,12 +145,6 @@ func (s *Scheduler) shutdown() {
 	s.bufferMutex.Lock()
 	defer s.bufferMutex.Unlock()
 
-	// validator workers need to be shut down first, otherwise they will hang on the shutdown channel.
-	s.validatorBuffer.buffer.ForEach(func(_ iotago.AccountID, validatorQueue *ValidatorQueue) bool {
-		s.shutdownValidatorQueue(validatorQueue)
-
-		return true
-	})
 	s.validatorBuffer.Clear()
 
 	close(s.shutdownSignal)
@@ -256,13 +245,6 @@ func (s *Scheduler) AddBlock(block *blocks.Block) {
 func (s *Scheduler) Reset() {
 	s.bufferMutex.Lock()
 	defer s.bufferMutex.Unlock()
-
-	// Validator workers need to be signaled to exit.
-	s.validatorBuffer.buffer.ForEach(func(_ iotago.AccountID, validatorQueue *ValidatorQueue) bool {
-		s.shutdownValidatorQueue(validatorQueue)
-
-		return true
-	})
 
 	s.basicBuffer.Clear()
 	s.validatorBuffer.Clear()
@@ -752,8 +734,4 @@ func (s *Scheduler) addValidator(accountID iotago.AccountID) *ValidatorQueue {
 	go s.validatorLoop(validatorQueue)
 
 	return validatorQueue
-}
-
-func (s *Scheduler) shutdownValidatorQueue(validatorQueue *ValidatorQueue) {
-	close(validatorQueue.shutdownSignal)
 }
