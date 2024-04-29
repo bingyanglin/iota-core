@@ -95,11 +95,11 @@ func (c *PostSolidBlockFilter) ProcessSolidBlock(block *blocks.Block) {
 	// Perform account related checks.
 	{
 		// check if the account exists in the specified slot.
-		accountData, exists, err := c.accountRetrieveFunc(block.ProtocolBlock().Header.IssuerID, block.SlotCommitmentID().Slot())
+		accountData, exists, err := c.accountRetrieveFunc(block.IssuerID(), block.SlotCommitmentID().Slot())
 		if err != nil {
 			c.filterBlock(
 				block,
-				ierrors.WithMessagef(iotago.ErrIssuerAccountNotFound, "could not retrieve account information for block issuer %s: %w", block.ProtocolBlock().Header.IssuerID, err),
+				ierrors.WithMessagef(iotago.ErrIssuerAccountNotFound, "could not retrieve account information for block issuer %s: %w", block.IssuerID(), err),
 			)
 
 			return
@@ -107,7 +107,7 @@ func (c *PostSolidBlockFilter) ProcessSolidBlock(block *blocks.Block) {
 		if !exists {
 			c.filterBlock(
 				block,
-				ierrors.WithMessagef(iotago.ErrIssuerAccountNotFound, "block issuer account %s does not exist in slot commitment %s", block.ProtocolBlock().Header.IssuerID, block.ProtocolBlock().Header.SlotCommitmentID.Slot()),
+				ierrors.WithMessagef(iotago.ErrIssuerAccountNotFound, "block issuer account %s does not exist in slot commitment %s", block.IssuerID(), block.ProtocolBlock().Header.SlotCommitmentID.Slot()),
 			)
 
 			return
@@ -136,7 +136,7 @@ func (c *PostSolidBlockFilter) ProcessSolidBlock(block *blocks.Block) {
 				if basicBlock.MaxBurnedMana < manaCost {
 					c.filterBlock(
 						block,
-						ierrors.WithMessagef(iotago.ErrBurnedInsufficientMana, "block issuer account %s burned insufficient Mana, required %d, burned %d", block.ProtocolBlock().Header.IssuerID, manaCost, basicBlock.MaxBurnedMana),
+						ierrors.WithMessagef(iotago.ErrBurnedInsufficientMana, "block issuer account %s burned insufficient Mana, required %d, burned %d", block.IssuerID(), manaCost, basicBlock.MaxBurnedMana),
 					)
 
 					return
@@ -149,7 +149,7 @@ func (c *PostSolidBlockFilter) ProcessSolidBlock(block *blocks.Block) {
 			if accountData.Credits.Value < 0 {
 				c.filterBlock(
 					block,
-					ierrors.WithMessagef(iotago.ErrAccountLocked, "block issuer account %s", block.ProtocolBlock().Header.IssuerID),
+					ierrors.WithMessagef(iotago.ErrAccountLocked, "block issuer account %s", block.IssuerID()),
 				)
 
 				return
@@ -161,7 +161,7 @@ func (c *PostSolidBlockFilter) ProcessSolidBlock(block *blocks.Block) {
 			if accountData.ExpirySlot < block.ProtocolBlock().Header.SlotCommitmentID.Slot() {
 				c.filterBlock(
 					block,
-					ierrors.WithMessagef(iotago.ErrAccountExpired, "block issuer account %s is expired, expiry slot %d in commitment %d", block.ProtocolBlock().Header.IssuerID, accountData.ExpirySlot, block.ProtocolBlock().Header.SlotCommitmentID.Slot()),
+					ierrors.WithMessagef(iotago.ErrAccountExpired, "block issuer account %s is expired, expiry slot %d in commitment %d", block.IssuerID(), accountData.ExpirySlot, block.ProtocolBlock().Header.SlotCommitmentID.Slot()),
 				)
 
 				return
@@ -177,7 +177,7 @@ func (c *PostSolidBlockFilter) ProcessSolidBlock(block *blocks.Block) {
 				if !accountData.BlockIssuerKeys.Has(expectedBlockIssuerKey) {
 					c.filterBlock(
 						block,
-						ierrors.WithMessagef(iotago.ErrInvalidSignature, "block issuer account %s does not have block issuer key corresponding to public key %s in slot %d", block.ProtocolBlock().Header.IssuerID, hexutil.EncodeHex(signature.PublicKey[:]), block.ProtocolBlock().Header.SlotCommitmentID.Index()),
+						ierrors.WithMessagef(iotago.ErrInvalidSignature, "block issuer account %s does not have block issuer key corresponding to public key %s in slot %d", block.IssuerID(), hexutil.EncodeHex(signature.PublicKey[:]), block.ProtocolBlock().Header.SlotCommitmentID.Index()),
 					)
 
 					return

@@ -94,7 +94,7 @@ func (m *Manager) TrackBlock(block *blocks.Block) {
 	if validationBlock, isValidationBlock := block.ValidationBlock(); isValidationBlock {
 		newSignaledBlock := model.NewSignaledBlock(block.ID(), block.ProtocolBlock(), validationBlock)
 
-		m.latestSupportedVersionSignals.Get(block.ID().Slot(), true).Compute(block.ProtocolBlock().Header.IssuerID, func(currentValue *model.SignaledBlock, exists bool) *model.SignaledBlock {
+		m.latestSupportedVersionSignals.Get(block.ID().Slot(), true).Compute(block.IssuerID(), func(currentValue *model.SignaledBlock, exists bool) *model.SignaledBlock {
 			if !exists {
 				return newSignaledBlock
 			}
@@ -481,10 +481,10 @@ func (m *Manager) computeBlockBurnsForSlot(slot iotago.SlotIndex, rmc iotago.Man
 			if !blockLoaded {
 				return nil, ierrors.Errorf("cannot apply the new diff, block %s not found in the block cache", blockID)
 			}
-			if _, isBasicBlock := block.BasicBlock(); isBasicBlock {
-				burns[block.ProtocolBlock().Header.IssuerID] += iotago.Mana(block.WorkScore()) * rmc
-			} else if _, isValidationBlock := block.ValidationBlock(); isValidationBlock {
-				validationBlockCount[block.ProtocolBlock().Header.IssuerID]++
+			if block.IsBasicBlock() {
+				burns[block.IssuerID()] += iotago.Mana(block.WorkScore()) * rmc
+			} else if block.IsValidationBlock() {
+				validationBlockCount[block.IssuerID()]++
 			}
 		}
 		validationBlocksPerSlot := int(apiForSlot.ProtocolParameters().ValidationBlocksPerSlot())

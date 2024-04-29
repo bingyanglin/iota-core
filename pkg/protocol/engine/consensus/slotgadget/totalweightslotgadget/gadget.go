@@ -110,7 +110,7 @@ func (g *Gadget) trackVotes(block *blocks.Block) {
 
 		tracker, _ := g.slotTrackers.GetOrCreate(block.ID().Slot(), slottracker.NewSlotTracker)
 
-		prevLatestSlot, latestSlot, updated := tracker.TrackVotes(block.SlotCommitmentID().Slot(), block.ProtocolBlock().Header.IssuerID, g.lastFinalizedSlot)
+		prevLatestSlot, latestSlot, updated := tracker.TrackVotes(block.SlotCommitmentID().Slot(), block.IssuerID(), g.lastFinalizedSlot)
 		if !updated {
 			return nil
 		}

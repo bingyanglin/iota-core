@@ -99,7 +99,7 @@ func (g *Gadget) propagate(initialBlockIDs iotago.BlockIDs, evaluateFunc func(bl
 }
 
 func (g *Gadget) isCommitteeValidationBlock(block *blocks.Block) (seat account.SeatIndex, isValid bool) {
-	if _, isValidationBlock := block.ValidationBlock(); !isValidationBlock {
+	if !block.IsValidationBlock() {
 		return 0, false
 	}
 
@@ -111,7 +111,7 @@ func (g *Gadget) isCommitteeValidationBlock(block *blocks.Block) (seat account.S
 	}
 
 	// Only accept blocks for issuers that are part of the committee.
-	return committee.GetSeat(block.ProtocolBlock().Header.IssuerID)
+	return committee.GetSeat(block.IssuerID())
 }
 
 func anyChildInSet(block *blocks.Block, set ds.Set[iotago.BlockID]) bool {

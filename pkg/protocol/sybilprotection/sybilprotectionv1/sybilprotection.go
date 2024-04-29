@@ -105,7 +105,7 @@ func New(subModule module.Module, engine *engine.Engine, opts ...options.Option[
 }
 
 func (o *SybilProtection) TrackBlock(block *blocks.Block) {
-	if _, isValidationBlock := block.ValidationBlock(); isValidationBlock {
+	if block.IsValidationBlock() {
 		o.performanceTracker.TrackValidationBlock(block)
 
 		return
@@ -115,9 +115,9 @@ func (o *SybilProtection) TrackBlock(block *blocks.Block) {
 		return
 	}
 
-	accountData, exists, err := o.ledger.Account(block.ProtocolBlock().Header.IssuerID, block.SlotCommitmentID().Slot())
+	accountData, exists, err := o.ledger.Account(block.IssuerID(), block.SlotCommitmentID().Slot())
 	if err != nil {
-		o.errHandler(ierrors.Wrapf(err, "error while retrieving data for account %s in slot %d from accounts ledger", block.ProtocolBlock().Header.IssuerID, block.SlotCommitmentID().Slot()))
+		o.errHandler(ierrors.Wrapf(err, "error while retrieving data for account %s in slot %d from accounts ledger", block.IssuerID(), block.SlotCommitmentID().Slot()))
 
 		return
 	}
