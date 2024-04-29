@@ -61,7 +61,7 @@ func (q *IssuerQueue) IssuerID() iotago.AccountID {
 // Submit submits a block for the queue. Return true if submitted and false if it was already submitted.
 func (q *IssuerQueue) Submit(element *blocks.Block) bool {
 	// this is just a debugging check, it should never happen in practice and we should panic if it does.
-	if blkIssuerID := element.ProtocolBlock().Header.IssuerID; q.issuerID != blkIssuerID {
+	if blkIssuerID := element.IssuerID(); q.issuerID != blkIssuerID {
 		panic(fmt.Sprintf("issuerqueue: queue issuer ID(%x) and issuer ID(%x) does not match.", q.issuerID, blkIssuerID))
 	}
 

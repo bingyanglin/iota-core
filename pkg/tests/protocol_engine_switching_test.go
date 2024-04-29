@@ -1037,7 +1037,7 @@ func TestProtocol_EngineSwitching_Tie(t *testing.T) {
 
 					e.ConstructedEvent().OnTrigger(func() {
 						e.Events.PostSolidFilter.BlockAllowed.Hook(func(block *blocks.Block) {
-							if node, exists := validatorsByAccountID[block.ModelBlock().ProtocolBlock().Header.IssuerID]; exists && onlineValidators.Add(node.Name) {
+							if node, exists := validatorsByAccountID[block.IssuerID()]; exists && onlineValidators.Add(node.Name) {
 								e.LogError("node online", "name", node.Name)
 								poa.SetOnline(onlineValidators.ToSlice()...)
 							}

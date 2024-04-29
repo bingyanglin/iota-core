@@ -35,7 +35,7 @@ type Scheduler struct {
 
 	seatManager seatmanager.SeatManager
 
-	basicBuffer     *BufferQueue
+	basicBuffer     *BasicBuffer
 	validatorBuffer *ValidatorBuffer
 	bufferMutex     syncutils.RWMutex
 
@@ -55,7 +55,7 @@ func NewProvider(opts ...options.Option[Scheduler]) module.Provider[*engine.Engi
 	return module.Provide(func(e *engine.Engine) scheduler.Scheduler {
 		s := New(e.NewSubModule("Scheduler"), e, opts...)
 		s.errorHandler = e.ErrorHandler("scheduler")
-		s.basicBuffer = NewBufferQueue()
+		s.basicBuffer = NewBasicBuffer()
 
 		e.ConstructedEvent().OnTrigger(func() {
 			s.latestCommittedSlot = func() iotago.SlotIndex {
@@ -244,9 +244,9 @@ func (s *Scheduler) IsBlockIssuerReady(accountID iotago.AccountID, workScores ..
 }
 
 func (s *Scheduler) AddBlock(block *blocks.Block) {
-	if _, isValidation := block.ValidationBlock(); isValidation {
+	if block.IsValidationBlock() {
 		s.enqueueValidationBlock(block)
-	} else if _, isBasic := block.BasicBlock(); isBasic {
+	} else if block.IsBasicBlock() {
 		s.enqueueBasicBlock(block)
 	}
 }
@@ -273,7 +273,7 @@ func (s *Scheduler) enqueueBasicBlock(block *blocks.Block) {
 
 	slot := s.latestCommittedSlot()
 
-	issuerID := block.ProtocolBlock().Header.IssuerID
+	issuerID := block.IssuerID()
 	issuerQueue := s.getOrCreateIssuer(issuerID)
 
 	droppedBlocks, submitted := s.basicBuffer.Submit(
@@ -309,9 +309,9 @@ func (s *Scheduler) enqueueValidationBlock(block *blocks.Block) {
 	s.bufferMutex.Lock()
 	defer s.bufferMutex.Unlock()
 
-	_, exists := s.validatorBuffer.Get(block.ProtocolBlock().Header.IssuerID)
+	_, exists := s.validatorBuffer.Get(block.IssuerID())
 	if !exists {
-		s.addValidator(block.ProtocolBlock().Header.IssuerID)
+		s.addValidator(block.IssuerID())
 	}
 	droppedBlock, submitted := s.validatorBuffer.Submit(block, int(s.apiProvider.CommittedAPI().ProtocolParameters().CongestionControlParameters().MaxValidationBufferSize))
 	if !submitted {
@@ -492,7 +492,7 @@ func (s *Scheduler) selectBasicBlockWithoutLocking() {
 
 	// remove the block from the buffer and adjust issuer's deficit
 	block := s.basicBuffer.PopFront()
-	issuerID := block.ProtocolBlock().Header.IssuerID
+	issuerID := block.IssuerID()
 	if _, err := s.updateDeficit(issuerID, -s.deficitFromWork(block.WorkScore())); err != nil {
 		// if something goes wrong with deficit update, drop the block instead of scheduling it.
 		block.SetDropped()
@@ -526,7 +526,7 @@ func (s *Scheduler) selectIssuer(start *IssuerQueue, slot iotago.SlotIndex) (Def
 				continue
 			}
 
-			issuerID := block.ProtocolBlock().Header.IssuerID
+			issuerID := block.IssuerID()
 
 			// compute how often the deficit needs to be incremented until the block can be scheduled
 			deficit, exists := s.deficits.Get(issuerID)
@@ -696,7 +696,7 @@ func (s *Scheduler) ready(block *blocks.Block) {
 }
 
 func (s *Scheduler) readyValidationBlock(block *blocks.Block) {
-	if validatorQueue, exists := s.validatorBuffer.Get(block.ProtocolBlock().Header.IssuerID); exists {
+	if validatorQueue, exists := s.validatorBuffer.Get(block.IssuerID()); exists {
 		validatorQueue.Ready(block)
 	}
 }
@@ -715,11 +715,12 @@ func (s *Scheduler) updateChildrenWithLocking(block *blocks.Block) {
 func (s *Scheduler) updateChildrenWithoutLocking(block *blocks.Block) {
 	block.Children().Range(func(childBlock *blocks.Block) {
 		if _, childBlockExists := s.blockCache.Block(childBlock.ID()); childBlockExists && childBlock.IsEnqueued() {
-			if _, isBasic := childBlock.BasicBlock(); isBasic {
+			switch {
+			case childBlock.IsBasicBlock():
 				s.tryReady(childBlock)
-			} else if _, isValidation := childBlock.ValidationBlock(); isValidation {
+			case childBlock.IsValidationBlock():
 				s.tryReadyValidationBlock(childBlock)
-			} else {
+			default:
 				panic("invalid block type")
 			}
 		}

@@ -88,9 +88,9 @@ func (t *Tracker) TrackValidationBlock(block *blocks.Block) {
 
 	t.performanceFactorsMutex.Lock()
 	defer t.performanceFactorsMutex.Unlock()
-	isCommitteeMember, err := t.isCommitteeMember(block.ID().Slot(), block.ProtocolBlock().Header.IssuerID)
+	isCommitteeMember, err := t.isCommitteeMember(block.ID().Slot(), block.IssuerID())
 	if err != nil {
-		t.errHandler(ierrors.Wrapf(err, "error while checking if account %s is a committee member in slot %d", block.ProtocolBlock().Header.IssuerID, block.ID().Slot()))
+		t.errHandler(ierrors.Wrapf(err, "error while checking if account %s is a committee member in slot %d", block.IssuerID(), block.ID().Slot()))
 
 		return
 	}
@@ -111,7 +111,7 @@ func (t *Tracker) TrackCandidateBlock(block *blocks.Block) {
 	blockEpoch := t.apiProvider.APIForSlot(block.ID().Slot()).TimeProvider().EpochFromSlot(block.ID().Slot())
 
 	var rollback bool
-	t.nextEpochCommitteeCandidates.Compute(block.ProtocolBlock().Header.IssuerID, func(currentValue iotago.SlotIndex, exists bool) iotago.SlotIndex {
+	t.nextEpochCommitteeCandidates.Compute(block.IssuerID(), func(currentValue iotago.SlotIndex, exists bool) iotago.SlotIndex {
 		if !exists || currentValue > block.ID().Slot() {
 			committeeCandidatesStore, err := t.committeeCandidatesInEpochFunc(blockEpoch)
 			if err != nil {
@@ -124,7 +124,7 @@ func (t *Tracker) TrackCandidateBlock(block *blocks.Block) {
 				return currentValue
 			}
 
-			err = committeeCandidatesStore.Set(block.ProtocolBlock().Header.IssuerID, block.ID().Slot())
+			err = committeeCandidatesStore.Set(block.IssuerID(), block.ID().Slot())
 			if err != nil {
 				// if there is an error, and we don't register a candidate, then we might eventually create a different commitment
 				t.errHandler(ierrors.Wrapf(err, "error while updating candidate activity for epoch %d", blockEpoch))
@@ -144,7 +144,7 @@ func (t *Tracker) TrackCandidateBlock(block *blocks.Block) {
 	// if there was an error when computing the value,
 	// and it was the first entry for the given issuer, then remove the entry
 	if rollback {
-		t.nextEpochCommitteeCandidates.Delete(block.ProtocolBlock().Header.IssuerID)
+		t.nextEpochCommitteeCandidates.Delete(block.IssuerID())
 	}
 }
 
@@ -346,9 +346,9 @@ func (t *Tracker) trackCommitteeMemberPerformance(validationBlock *iotago.Valida
 		return
 	}
 
-	validatorPerformance, exists, err := validatorPerformances.Load(block.ProtocolBlock().Header.IssuerID)
+	validatorPerformance, exists, err := validatorPerformances.Load(block.IssuerID())
 	if err != nil {
-		t.errHandler(ierrors.Errorf("failed to load performance factor for account %s", block.ProtocolBlock().Header.IssuerID))
+		t.errHandler(ierrors.Errorf("failed to load performance factor for account %s", block.IssuerID()))
 
 		return
 	}
@@ -375,8 +375,8 @@ func (t *Tracker) trackCommitteeMemberPerformance(validationBlock *iotago.Valida
 		Hash:    validationBlock.ProtocolParametersHash,
 	}
 
-	if err = validatorPerformances.Store(block.ProtocolBlock().Header.IssuerID, validatorPerformance); err != nil {
-		t.errHandler(ierrors.Errorf("failed to store performance factor for account %s", block.ProtocolBlock().Header.IssuerID))
+	if err = validatorPerformances.Store(block.IssuerID(), validatorPerformance); err != nil {
+		t.errHandler(ierrors.Errorf("failed to store performance factor for account %s", block.IssuerID()))
 	}
 }
 
