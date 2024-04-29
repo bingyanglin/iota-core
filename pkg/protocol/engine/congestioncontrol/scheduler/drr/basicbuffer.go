@@ -14,10 +14,10 @@ import (
 	iotago "github.com/iotaledger/iota.go/v4"
 )
 
-// region BufferQueue /////////////////////////////////////////////////////////////////////////////////////////////
+// region BasicBuffer /////////////////////////////////////////////////////////////////////////////////////////////
 
-// BufferQueue represents a buffer of IssuerQueue.
-type BufferQueue struct {
+// BasicBuffer represents a buffer of IssuerQueue.
+type BasicBuffer struct {
 	activeIssuers *shrinkingmap.ShrinkingMap[iotago.AccountID, *ring.Ring]
 	ring          *ring.Ring
 	// size is the number of blocks in the buffer.
@@ -29,9 +29,9 @@ type BufferQueue struct {
 	blockChan chan *blocks.Block
 }
 
-// NewBufferQueue returns a new BufferQueue.
-func NewBufferQueue() *BufferQueue {
-	return &BufferQueue{
+// NewBasicBuffer returns a new BasicBuffer.
+func NewBasicBuffer() *BasicBuffer {
+	return &BasicBuffer{
 		activeIssuers:    shrinkingmap.New[iotago.AccountID, *ring.Ring](),
 		ring:             nil,
 		lastScheduleTime: time.Now(),
@@ -40,11 +40,11 @@ func NewBufferQueue() *BufferQueue {
 }
 
 // NumActiveIssuers returns the number of active issuers in b.
-func (b *BufferQueue) NumActiveIssuers() int {
+func (b *BasicBuffer) NumActiveIssuers() int {
 	return b.activeIssuers.Size()
 }
 
-func (b *BufferQueue) Clear() {
+func (b *BasicBuffer) Clear() {
 	select {
 	case <-b.blockChan:
 	default:
@@ -57,13 +57,13 @@ func (b *BufferQueue) Clear() {
 	})
 }
 
-// Size returns the total number of blocks in BufferQueue.
-func (b *BufferQueue) Size() int {
+// Size returns the total number of blocks in BasicBuffer.
+func (b *BasicBuffer) Size() int {
 	return int(b.size.Load())
 }
 
 // IssuerQueue returns the queue for the corresponding issuer.
-func (b *BufferQueue) IssuerQueue(issuerID iotago.AccountID) *IssuerQueue {
+func (b *BasicBuffer) IssuerQueue(issuerID iotago.AccountID) *IssuerQueue {
 	element, ok := b.activeIssuers.Get(issuerID)
 	if !ok {
 		return nil
@@ -77,7 +77,7 @@ func (b *BufferQueue) IssuerQueue(issuerID iotago.AccountID) *IssuerQueue {
 }
 
 // IssuerQueueWork returns the total WorkScore of block in the queue for the corresponding issuer.
-func (b *BufferQueue) IssuerQueueWork(issuerID iotago.AccountID) iotago.WorkScore {
+func (b *BasicBuffer) IssuerQueueWork(issuerID iotago.AccountID) iotago.WorkScore {
 	issuerQueue := b.IssuerQueue(issuerID)
 	if issuerQueue == nil {
 		return 0
@@ -87,7 +87,7 @@ func (b *BufferQueue) IssuerQueueWork(issuerID iotago.AccountID) iotago.WorkScor
 }
 
 // IssuerQueueSize returns the number of blocks in the queue for the corresponding issuer.
-func (b *BufferQueue) IssuerQueueBlockCount(issuerID iotago.AccountID) int {
+func (b *BasicBuffer) IssuerQueueBlockCount(issuerID iotago.AccountID) int {
 	issuerQueue := b.IssuerQueue(issuerID)
 	if issuerQueue == nil {
 		return 0
@@ -96,14 +96,14 @@ func (b *BufferQueue) IssuerQueueBlockCount(issuerID iotago.AccountID) int {
 	return issuerQueue.Size()
 }
 
-func (b *BufferQueue) CreateIssuerQueue(issuerID iotago.AccountID) *IssuerQueue {
+func (b *BasicBuffer) CreateIssuerQueue(issuerID iotago.AccountID) *IssuerQueue {
 	issuerQueue := NewIssuerQueue(issuerID)
 	b.activeIssuers.Set(issuerID, b.ringInsert(issuerQueue))
 
 	return issuerQueue
 }
 
-func (b *BufferQueue) GetOrCreateIssuerQueue(issuerID iotago.AccountID) *IssuerQueue {
+func (b *BasicBuffer) GetOrCreateIssuerQueue(issuerID iotago.AccountID) *IssuerQueue {
 	element, issuerActive := b.activeIssuers.Get(issuerID)
 	if !issuerActive {
 		// create new issuer queue
@@ -118,7 +118,7 @@ func (b *BufferQueue) GetOrCreateIssuerQueue(issuerID iotago.AccountID) *IssuerQ
 }
 
 // RemoveIssuerQueue removes all blocks (submitted and ready) for the given issuer and deletes the issuer queue.
-func (b *BufferQueue) RemoveIssuerQueue(issuerID iotago.AccountID) {
+func (b *BasicBuffer) RemoveIssuerQueue(issuerID iotago.AccountID) {
 	element, ok := b.activeIssuers.Get(issuerID)
 	if !ok {
 		return
@@ -134,7 +134,7 @@ func (b *BufferQueue) RemoveIssuerQueue(issuerID iotago.AccountID) {
 }
 
 // RemoveIssuerQueueIfEmpty removes all blocks (submitted and ready) for the given issuer and deletes the issuer queue if it is empty.
-func (b *BufferQueue) RemoveIssuerQueueIfEmpty(issuerID iotago.AccountID) {
+func (b *BasicBuffer) RemoveIssuerQueueIfEmpty(issuerID iotago.AccountID) {
 	element, ok := b.activeIssuers.Get(issuerID)
 	if !ok {
 		return
@@ -152,7 +152,7 @@ func (b *BufferQueue) RemoveIssuerQueueIfEmpty(issuerID iotago.AccountID) {
 
 // Submit submits a block. Return blocks dropped from the scheduler to make room for the submitted block.
 // The submitted block can also be returned as dropped if the issuer does not have enough mana.
-func (b *BufferQueue) Submit(blk *blocks.Block, issuerQueue *IssuerQueue, quantumFunc func(iotago.AccountID) Deficit, maxBuffer int) ([]*blocks.Block, bool) {
+func (b *BasicBuffer) Submit(blk *blocks.Block, issuerQueue *IssuerQueue, quantumFunc func(iotago.AccountID) Deficit, maxBuffer int) ([]*blocks.Block, bool) {
 	// first we submit the block, and if it turns out that the issuer doesn't have enough bandwidth to submit, it will be removed by dropTail
 	if !issuerQueue.Submit(blk) {
 		return nil, false
@@ -170,8 +170,8 @@ func (b *BufferQueue) Submit(blk *blocks.Block, issuerQueue *IssuerQueue, quantu
 
 // Unsubmit removes a block from the submitted blocks.
 // If that block is already marked as ready, Unsubmit has no effect.
-func (b *BufferQueue) Unsubmit(block *blocks.Block) bool {
-	issuerID := block.ProtocolBlock().Header.IssuerID
+func (b *BasicBuffer) Unsubmit(block *blocks.Block) bool {
+	issuerID := block.IssuerID()
 
 	issuerQueue := b.IssuerQueue(issuerID)
 	if issuerQueue == nil {
@@ -188,8 +188,8 @@ func (b *BufferQueue) Unsubmit(block *blocks.Block) bool {
 }
 
 // Ready marks a previously submitted block as ready to be scheduled.
-func (b *BufferQueue) Ready(block *blocks.Block) bool {
-	issuerQueue := b.IssuerQueue(block.ProtocolBlock().Header.IssuerID)
+func (b *BasicBuffer) Ready(block *blocks.Block) bool {
+	issuerQueue := b.IssuerQueue(block.IssuerID())
 	if issuerQueue == nil {
 		return false
 	}
@@ -198,7 +198,7 @@ func (b *BufferQueue) Ready(block *blocks.Block) bool {
 }
 
 // ReadyBlocksCount returns the number of ready blocks in the buffer.
-func (b *BufferQueue) ReadyBlocksCount() (readyBlocksCount int) {
+func (b *BasicBuffer) ReadyBlocksCount() (readyBlocksCount int) {
 	start := b.Current()
 	if start == nil {
 		return
@@ -216,7 +216,7 @@ func (b *BufferQueue) ReadyBlocksCount() (readyBlocksCount int) {
 }
 
 // TotalBlocksCount returns the number of blocks in the buffer.
-func (b *BufferQueue) TotalBlocksCount() (blocksCount int) {
+func (b *BasicBuffer) TotalBlocksCount() (blocksCount int) {
 	start := b.Current()
 	if start == nil {
 		return
@@ -234,7 +234,7 @@ func (b *BufferQueue) TotalBlocksCount() (blocksCount int) {
 }
 
 // Next returns the next IssuerQueue in round-robin order.
-func (b *BufferQueue) Next() *IssuerQueue {
+func (b *BasicBuffer) Next() *IssuerQueue {
 	if b.ring != nil {
 		b.ring = b.ring.Next()
 		if issuerQueue, isIQ := b.ring.Value.(*IssuerQueue); isIQ {
@@ -246,7 +246,7 @@ func (b *BufferQueue) Next() *IssuerQueue {
 }
 
 // Current returns the current IssuerQueue in round-robin order.
-func (b *BufferQueue) Current() *IssuerQueue {
+func (b *BasicBuffer) Current() *IssuerQueue {
 	if b.ring == nil {
 		return nil
 	}
@@ -258,7 +258,7 @@ func (b *BufferQueue) Current() *IssuerQueue {
 }
 
 // PopFront removes the first ready block from the queue of the current issuer.
-func (b *BufferQueue) PopFront() *blocks.Block {
+func (b *BasicBuffer) PopFront() *blocks.Block {
 	q := b.Current()
 	if q == nil {
 		return nil
@@ -275,7 +275,7 @@ func (b *BufferQueue) PopFront() *blocks.Block {
 }
 
 // IssuerIDs returns the issuerIDs of all issuers.
-func (b *BufferQueue) IssuerIDs() []iotago.AccountID {
+func (b *BasicBuffer) IssuerIDs() []iotago.AccountID {
 	var issuerIDs []iotago.AccountID
 	start := b.Current()
 	if start == nil {
@@ -292,7 +292,7 @@ func (b *BufferQueue) IssuerIDs() []iotago.AccountID {
 	return issuerIDs
 }
 
-func (b *BufferQueue) dropTail(quantumFunc func(iotago.AccountID) Deficit, maxBuffer int) (droppedBlocks []*blocks.Block) {
+func (b *BasicBuffer) dropTail(quantumFunc func(iotago.AccountID) Deficit, maxBuffer int) (droppedBlocks []*blocks.Block) {
 	// remove as many blocks as necessary to stay within max buffer size
 	for b.Size() > maxBuffer {
 		// find the longest mana-scaled queue
@@ -308,7 +308,7 @@ func (b *BufferQueue) dropTail(quantumFunc func(iotago.AccountID) Deficit, maxBu
 	return droppedBlocks
 }
 
-func (b *BufferQueue) longestQueueIssuerID(quantumFunc func(iotago.AccountID) Deficit) iotago.AccountID {
+func (b *BasicBuffer) longestQueueIssuerID(quantumFunc func(iotago.AccountID) Deficit) iotago.AccountID {
 	start := b.Current()
 	ringStart := b.ring
 	maxScale := math.Inf(-1)
@@ -335,7 +335,7 @@ func (b *BufferQueue) longestQueueIssuerID(quantumFunc func(iotago.AccountID) De
 	return maxIssuerID
 }
 
-func (b *BufferQueue) ringRemove(r *ring.Ring) {
+func (b *BasicBuffer) ringRemove(r *ring.Ring) {
 	n := b.ring.Next()
 	if r == b.ring {
 		if n == b.ring {
@@ -347,7 +347,7 @@ func (b *BufferQueue) ringRemove(r *ring.Ring) {
 	r.Prev().Link(n)
 }
 
-func (b *BufferQueue) ringInsert(v interface{}) *ring.Ring {
+func (b *BasicBuffer) ringInsert(v interface{}) *ring.Ring {
 	p := ring.New(1)
 	p.Value = v
 	if b.ring == nil {
@@ -358,13 +358,13 @@ func (b *BufferQueue) ringInsert(v interface{}) *ring.Ring {
 	return p.Link(b.ring)
 }
 
-func (b *BufferQueue) waitTime(rate float64, block *blocks.Block) time.Duration {
+func (b *BasicBuffer) waitTime(rate float64, block *blocks.Block) time.Duration {
 	tokensRequired := float64(block.WorkScore()) - (b.tokenBucket + rate*time.Since(b.lastScheduleTime).Seconds())
 
 	return lo.Max(0, time.Duration(tokensRequired/rate))
 }
 
-func (b *BufferQueue) updateTokenBucket(rate float64, tokenBucketSize float64) {
+func (b *BasicBuffer) updateTokenBucket(rate float64, tokenBucketSize float64) {
 	b.tokenBucket = lo.Min(
 		tokenBucketSize,
 		b.tokenBucket+rate*time.Since(b.lastScheduleTime).Seconds(),
@@ -372,7 +372,7 @@ func (b *BufferQueue) updateTokenBucket(rate float64, tokenBucketSize float64) {
 	b.lastScheduleTime = time.Now()
 }
 
-func (b *BufferQueue) deductTokens(tokens float64) {
+func (b *BasicBuffer) deductTokens(tokens float64) {
 	b.tokenBucket -= tokens
 }
 

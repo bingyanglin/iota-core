@@ -169,6 +169,10 @@ func (b *Block) ForEachParent(consumer func(parent iotago.Parent)) {
 	b.modelBlock.ProtocolBlock().ForEachParent(consumer)
 }
 
+func (b *Block) IssuerID() iotago.AccountID {
+	return b.modelBlock.ProtocolBlock().Header.IssuerID
+}
+
 func (b *Block) IsRootBlock() bool {
 	return b.rootBlock != nil
 }
@@ -189,12 +193,20 @@ func (b *Block) SignedTransaction() (tx *iotago.SignedTransaction, hasTransactio
 	return b.modelBlock.SignedTransaction()
 }
 
+func (b *Block) IsBasicBlock() bool {
+	return lo.Return2(b.BasicBlock())
+}
+
 func (b *Block) BasicBlock() (basicBlock *iotago.BasicBlockBody, isBasicBlock bool) {
 	if b.modelBlock == nil {
 		return nil, false
 	}
 
 	return b.modelBlock.BasicBlock()
+}
+
+func (b *Block) IsValidationBlock() bool {
+	return lo.Return2(b.ValidationBlock())
 }
 
 func (b *Block) ValidationBlock() (validationBlock *iotago.ValidationBlockBody, isValidationBlock bool) {

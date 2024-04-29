@@ -758,7 +758,7 @@ func (l *Ledger) resolveState(stateRef mempool.StateReference) *promise.Promise[
 }
 
 func (l *Ledger) blockPreAccepted(block *blocks.Block) {
-	if _, isValidationBlock := block.ValidationBlock(); !isValidationBlock {
+	if !block.IsValidationBlock() {
 		return
 	}
 
@@ -769,7 +769,7 @@ func (l *Ledger) blockPreAccepted(block *blocks.Block) {
 		panic("committee should exist because we pre-accepted the block")
 	}
 
-	seat, exists := committee.GetSeat(block.ProtocolBlock().Header.IssuerID)
+	seat, exists := committee.GetSeat(block.IssuerID())
 	if !exists {
 		return
 	}

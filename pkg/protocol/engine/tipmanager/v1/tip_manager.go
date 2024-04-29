@@ -217,7 +217,7 @@ func (t *TipManager) trackTipMetadata(tipMetadata *TipMetadata) {
 
 // trackLatestValidationBlock tracks the latest validator block and takes care of marking the corresponding TipMetadata.
 func (t *TipManager) trackLatestValidationBlock(tipMetadata *TipMetadata) (teardown func()) {
-	if _, isValidationBlock := tipMetadata.Block().ValidationBlock(); !isValidationBlock {
+	if !tipMetadata.Block().IsValidationBlock() {
 		return nil
 	}
 
@@ -226,7 +226,7 @@ func (t *TipManager) trackLatestValidationBlock(tipMetadata *TipMetadata) (teard
 		return nil
 	}
 
-	seat, exists := committee.GetSeat(tipMetadata.Block().ProtocolBlock().Header.IssuerID)
+	seat, exists := committee.GetSeat(tipMetadata.Block().IssuerID())
 	if !exists {
 		return nil
 	}
