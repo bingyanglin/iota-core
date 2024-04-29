@@ -129,7 +129,7 @@ func (q *IssuerQueue) PopFront() *blocks.Block {
 
 	heapElement, isHeapElement := heap.Pop(&q.readyHeap).(*generalheap.HeapElement[timed.HeapKey, *blocks.Block])
 	if !isHeapElement {
-		panic("Unable to pop from a non-empty heap.")
+		panic("unable to pop from a non-empty heap.")
 	}
 	blk := heapElement.Value
 	q.size.Dec()
@@ -157,13 +157,13 @@ func (q *IssuerQueue) RemoveTail() *blocks.Block {
 		}
 	} else if heapTailIndex < 0 { // the heap is empty
 		// should never happen that the oldest submitted block does not exist and the heap is empty.
-		panic("Heap tail and oldest submitted block do not exist. Trying to remove tail of an empty queue?")
+		panic("heap tail and oldest submitted block do not exist. Trying to remove tail of an empty queue?")
 	}
 
 	// if the oldest ready block is older than the oldest non-ready block, drop it
 	heapElement, isHeapElement := heap.Remove(&q.readyHeap, heapTailIndex).(*generalheap.HeapElement[timed.HeapKey, *blocks.Block])
 	if !isHeapElement {
-		panic("Trying to remove a heap element that does not exist.")
+		panic("trying to remove a heap element that does not exist.")
 	}
 	blk := heapElement.Value
 	q.size.Dec()
