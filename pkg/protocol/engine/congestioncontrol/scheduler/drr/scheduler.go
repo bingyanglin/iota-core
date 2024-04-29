@@ -292,11 +292,7 @@ func (s *Scheduler) enqueueValidationBlock(block *blocks.Block) {
 	s.bufferMutex.Lock()
 	defer s.bufferMutex.Unlock()
 
-	_, exists := s.validatorBuffer.Get(block.IssuerID())
-	if !exists {
-		s.addValidator(block.IssuerID())
-	}
-	droppedBlock, submitted := s.validatorBuffer.Submit(block, int(s.apiProvider.CommittedAPI().ProtocolParameters().CongestionControlParameters().MaxValidationBufferSize))
+	droppedBlock, submitted := s.getOrCreateValidatorQueue(block.IssuerID()).Submit(block, int(s.apiProvider.CommittedAPI().ProtocolParameters().CongestionControlParameters().MaxValidationBufferSize))
 	if !submitted {
 		return
 	}
@@ -727,11 +723,11 @@ func (s *Scheduler) deficitFromWork(work iotago.WorkScore) Deficit {
 	return Deficit(work) * deficitScaleFactor
 }
 
-func (s *Scheduler) addValidator(accountID iotago.AccountID) *ValidatorQueue {
-	validatorQueue := NewValidatorQueue(accountID)
-	s.validatorBuffer.Set(accountID, validatorQueue)
-	s.workersWg.Add(1)
-	go s.validatorLoop(validatorQueue)
+func (s *Scheduler) getOrCreateValidatorQueue(accountID iotago.AccountID) *ValidatorQueue {
+	validatorQueue := s.validatorBuffer.GetOrCreate(accountID, func(queue *ValidatorQueue) {
+		s.workersWg.Add(1)
+		go s.validatorLoop(queue)
+	})
 
 	return validatorQueue
 }

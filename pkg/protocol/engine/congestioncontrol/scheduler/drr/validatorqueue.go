@@ -17,7 +17,9 @@ import (
 )
 
 type ValidatorQueue struct {
-	accountID iotago.AccountID
+	accountID       iotago.AccountID
+	sizeChangedFunc func(totalSizeDelta int64)
+
 	submitted *shrinkingmap.ShrinkingMap[iotago.BlockID, *blocks.Block]
 	inbox     generalheap.Heap[timed.HeapKey, *blocks.Block]
 	size      atomic.Int64
@@ -29,8 +31,8 @@ type ValidatorQueue struct {
 	shutdownSignal chan struct{}
 }
 
-func NewValidatorQueue(accountID iotago.AccountID) *ValidatorQueue {
-	return &ValidatorQueue{
+func NewValidatorQueue(accountID iotago.AccountID, sizeChangedCallback func(totalSizeDelta int64)) *ValidatorQueue {
+	queue := &ValidatorQueue{
 		accountID:        accountID,
 		submitted:        shrinkingmap.New[iotago.BlockID, *blocks.Block](),
 		blockChan:        make(chan *blocks.Block, 1),
@@ -38,6 +40,15 @@ func NewValidatorQueue(accountID iotago.AccountID) *ValidatorQueue {
 		tokenBucket:      1,
 		lastScheduleTime: time.Now(),
 	}
+	queue.sizeChangedFunc = func(totalSizeDelta int64) {
+		queue.size.Add(totalSizeDelta)
+
+		if sizeChangedCallback != nil {
+			sizeChangedCallback(totalSizeDelta)
+		}
+	}
+
+	return queue
 }
 
 func (q *ValidatorQueue) Size() int {
@@ -62,7 +73,7 @@ func (q *ValidatorQueue) Submit(block *blocks.Block, maxBuffer int) (*blocks.Blo
 	}
 
 	q.submitted.Set(block.ID(), block)
-	q.size.Inc()
+	q.sizeChangedFunc(1)
 
 	if int(q.size.Load()) > maxBuffer {
 		return q.RemoveTail(), true
@@ -71,13 +82,13 @@ func (q *ValidatorQueue) Submit(block *blocks.Block, maxBuffer int) (*blocks.Blo
 	return nil, true
 }
 
-func (q *ValidatorQueue) Unsubmit(block *blocks.Block) bool {
+func (q *ValidatorQueue) unsubmit(block *blocks.Block) bool {
 	if _, submitted := q.submitted.Get(block.ID()); !submitted {
 		return false
 	}
 
 	q.submitted.Delete(block.ID())
-	q.size.Dec()
+	q.sizeChangedFunc(-1)
 
 	return true
 }
@@ -104,7 +115,7 @@ func (q *ValidatorQueue) PopFront() *blocks.Block {
 		return nil
 	}
 	blk := heapElement.Value
-	q.size.Dec()
+	q.sizeChangedFunc(-1)
 
 	return blk
 }
@@ -122,7 +133,7 @@ func (q *ValidatorQueue) RemoveTail() *blocks.Block {
 	tail := q.tail()
 	// if heap tail does not exist or tail is newer than oldest submitted block, unsubmit oldest block
 	if oldestSubmittedBlock != nil && (tail < 0 || q.inbox[tail].Key.CompareTo(timed.HeapKey(oldestSubmittedBlock.IssuingTime())) > 0) {
-		q.Unsubmit(oldestSubmittedBlock)
+		q.unsubmit(oldestSubmittedBlock)
 
 		return oldestSubmittedBlock
 	} else if tail < 0 {
@@ -136,7 +147,7 @@ func (q *ValidatorQueue) RemoveTail() *blocks.Block {
 		return nil
 	}
 	blk := heapElement.Value
-	q.size.Dec()
+	q.sizeChangedFunc(-1)
 
 	return blk
 }
@@ -180,6 +191,8 @@ func (q *ValidatorQueue) Clear() {
 	for q.inbox.Len() > 0 {
 		_ = heap.Pop(&q.inbox)
 	}
+
+	q.sizeChangedFunc(-int64(q.Size()))
 }
 
 // Shutdown stops the queue and clears all blocks.
@@ -210,6 +223,23 @@ func (b *ValidatorBuffer) Size() int {
 
 func (b *ValidatorBuffer) Get(accountID iotago.AccountID) (*ValidatorQueue, bool) {
 	return b.buffer.Get(accountID)
+}
+
+func (b *ValidatorBuffer) GetOrCreate(accountID iotago.AccountID, onCreateCallback func(*ValidatorQueue)) *ValidatorQueue {
+	return b.buffer.Compute(accountID, func(currentValue *ValidatorQueue, exists bool) *ValidatorQueue {
+		if exists {
+			return currentValue
+		}
+
+		queue := NewValidatorQueue(accountID, func(totalSizeDelta int64) {
+			b.size.Add(totalSizeDelta)
+		})
+		if onCreateCallback != nil {
+			onCreateCallback(queue)
+		}
+
+		return queue
+	})
 }
 
 func (b *ValidatorBuffer) Set(accountID iotago.AccountID, validatorQueue *ValidatorQueue) bool {
