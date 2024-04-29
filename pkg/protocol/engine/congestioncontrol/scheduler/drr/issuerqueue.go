@@ -18,19 +18,36 @@ import (
 
 // IssuerQueue keeps the submitted blocks of an issuer.
 type IssuerQueue struct {
-	issuerID    iotago.AccountID
-	nonReadyMap *shrinkingmap.ShrinkingMap[iotago.BlockID, *blocks.Block]
-	readyHeap   generalheap.Heap[timed.HeapKey, *blocks.Block]
-	size        atomic.Int64
-	work        atomic.Int64
+	issuerID        iotago.AccountID
+	nonReadyMap     *shrinkingmap.ShrinkingMap[iotago.BlockID, *blocks.Block]
+	sizeChangedFunc func(totalSizeDelta int64, readySizeDelta int64, workDelta int64)
+
+	readyHeap generalheap.Heap[timed.HeapKey, *blocks.Block]
+	size      atomic.Int64
+	work      atomic.Int64
 }
 
 // NewIssuerQueue returns a new IssuerQueue.
-func NewIssuerQueue(issuerID iotago.AccountID) *IssuerQueue {
-	return &IssuerQueue{
+func NewIssuerQueue(issuerID iotago.AccountID, sizeChangedCallback func(totalSizeDelta int64, readySizeDelta int64)) *IssuerQueue {
+	queue := &IssuerQueue{
 		issuerID:    issuerID,
 		nonReadyMap: shrinkingmap.New[iotago.BlockID, *blocks.Block](),
 	}
+
+	queue.sizeChangedFunc = func(totalSizeDelta int64, readySizeDelta int64, workDelta int64) {
+		if totalSizeDelta != 0 {
+			queue.size.Add(totalSizeDelta)
+		}
+		if workDelta != 0 {
+			queue.work.Add(workDelta)
+		}
+
+		if sizeChangedCallback != nil {
+			sizeChangedCallback(totalSizeDelta, readySizeDelta)
+		}
+	}
+
+	return queue
 }
 
 // Size returns the total number of blocks in the queue.
@@ -70,21 +87,19 @@ func (q *IssuerQueue) Submit(element *blocks.Block) bool {
 	}
 
 	q.nonReadyMap.Set(element.ID(), element)
-	q.size.Inc()
-	q.work.Add(int64(element.WorkScore()))
+	q.sizeChangedFunc(1, 0, int64(element.WorkScore()))
 
 	return true
 }
 
-// Unsubmit removes a previously submitted block from the queue.
-func (q *IssuerQueue) Unsubmit(block *blocks.Block) bool {
+// unsubmit removes a previously submitted block from the queue.
+func (q *IssuerQueue) unsubmit(block *blocks.Block) bool {
 	if _, submitted := q.nonReadyMap.Get(block.ID()); !submitted {
 		return false
 	}
 
 	q.nonReadyMap.Delete(block.ID())
-	q.size.Dec()
-	q.work.Sub(int64(block.WorkScore()))
+	q.sizeChangedFunc(-1, 0, -int64(block.WorkScore()))
 
 	return true
 }
@@ -98,6 +113,8 @@ func (q *IssuerQueue) Ready(block *blocks.Block) bool {
 	q.nonReadyMap.Delete(block.ID())
 	heap.Push(&q.readyHeap, &generalheap.HeapElement[timed.HeapKey, *blocks.Block]{Value: block, Key: timed.HeapKey(block.IssuingTime())})
 
+	q.sizeChangedFunc(0, 1, 0)
+
 	return true
 }
 
@@ -110,6 +127,18 @@ func (q *IssuerQueue) IDs() (ids []iotago.BlockID) {
 	}
 
 	return ids
+}
+
+// Clear removes all blocks from the queue.
+func (q *IssuerQueue) Clear() {
+	readyBlocksCount := int64(q.readyHeap.Len())
+
+	q.nonReadyMap.Clear()
+	for q.readyHeap.Len() > 0 {
+		_ = q.readyHeap.Pop()
+	}
+
+	q.sizeChangedFunc(-int64(q.Size()), -readyBlocksCount, -int64(q.Work()))
 }
 
 // Front returns the first ready block in the queue.
@@ -132,8 +161,7 @@ func (q *IssuerQueue) PopFront() *blocks.Block {
 		panic("unable to pop from a non-empty heap.")
 	}
 	blk := heapElement.Value
-	q.size.Dec()
-	q.work.Sub(int64(blk.WorkScore()))
+	q.sizeChangedFunc(-1, -1, -int64(blk.WorkScore()))
 
 	return blk
 }
@@ -152,7 +180,7 @@ func (q *IssuerQueue) RemoveTail() *blocks.Block {
 	heapTailIndex := q.heapTail()
 	// if heap tail (oldest ready block) does not exist or is newer than oldest non-ready block, unsubmit the oldest non-ready block
 	if oldestNonReadyBlock != nil && (heapTailIndex < 0 || q.readyHeap[heapTailIndex].Key.CompareTo(timed.HeapKey(oldestNonReadyBlock.IssuingTime())) > 0) {
-		if q.Unsubmit(oldestNonReadyBlock) {
+		if q.unsubmit(oldestNonReadyBlock) {
 			return oldestNonReadyBlock
 		}
 	} else if heapTailIndex < 0 { // the heap is empty
@@ -166,8 +194,7 @@ func (q *IssuerQueue) RemoveTail() *blocks.Block {
 		panic("trying to remove a heap element that does not exist.")
 	}
 	blk := heapElement.Value
-	q.size.Dec()
-	q.work.Sub(int64(blk.WorkScore()))
+	q.sizeChangedFunc(-1, -1, -int64(blk.WorkScore()))
 
 	return blk
 }

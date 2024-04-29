@@ -2,6 +2,7 @@ package drr
 
 import (
 	"container/ring"
+	"fmt"
 	"math"
 	"time"
 
@@ -20,8 +21,9 @@ import (
 type BasicBuffer struct {
 	activeIssuers *shrinkingmap.ShrinkingMap[iotago.AccountID, *ring.Ring]
 	ring          *ring.Ring
-	// size is the number of blocks in the buffer.
-	size atomic.Int64
+
+	readyBlocksCount atomic.Int64
+	totalBlocksCount atomic.Int64
 
 	tokenBucket      float64
 	lastScheduleTime time.Time
@@ -55,11 +57,6 @@ func (b *BasicBuffer) Clear() {
 
 		return true
 	})
-}
-
-// Size returns the total number of blocks in BasicBuffer.
-func (b *BasicBuffer) Size() int {
-	return int(b.size.Load())
 }
 
 // IssuerQueue returns the queue for the corresponding issuer.
@@ -97,8 +94,25 @@ func (b *BasicBuffer) IssuerQueueBlockCount(issuerID iotago.AccountID) int {
 }
 
 func (b *BasicBuffer) CreateIssuerQueue(issuerID iotago.AccountID) *IssuerQueue {
-	issuerQueue := NewIssuerQueue(issuerID)
-	b.activeIssuers.Set(issuerID, b.ringInsert(issuerQueue))
+	element := b.activeIssuers.Compute(issuerID, func(currentValue *ring.Ring, exists bool) *ring.Ring {
+		if exists {
+			panic(fmt.Sprintf("issuer queue already exists: %s", issuerID.String()))
+		}
+
+		return b.ringInsert(NewIssuerQueue(issuerID, func(totalSizeDelta int64, readySizeDelta int64) {
+			if totalSizeDelta != 0 {
+				b.totalBlocksCount.Add(int64(totalSizeDelta))
+			}
+			if readySizeDelta != 0 {
+				b.readyBlocksCount.Add(int64(readySizeDelta))
+			}
+		}))
+	})
+
+	issuerQueue, isIQ := element.Value.(*IssuerQueue)
+	if !isIQ {
+		panic("buffer contains elements that are not issuer queues")
+	}
 
 	return issuerQueue
 }
@@ -127,7 +141,7 @@ func (b *BasicBuffer) RemoveIssuerQueue(issuerID iotago.AccountID) {
 	if !isIQ {
 		panic("buffer contains elements that are not issuer queues")
 	}
-	b.size.Sub(int64(issuerQueue.Size()))
+	issuerQueue.Clear()
 
 	b.ringRemove(element)
 	b.activeIssuers.Delete(issuerID)
@@ -158,10 +172,8 @@ func (b *BasicBuffer) Submit(blk *blocks.Block, issuerQueue *IssuerQueue, quantu
 		return nil, false
 	}
 
-	b.size.Inc()
-
 	// if max buffer size exceeded, drop from tail of the longest mana-scaled queue
-	if b.Size() > maxBuffer {
+	if b.TotalBlocksCount() > maxBuffer {
 		return b.dropTail(quantumFunc, maxBuffer), true
 	}
 
@@ -178,40 +190,14 @@ func (b *BasicBuffer) Ready(block *blocks.Block) bool {
 	return issuerQueue.Ready(block)
 }
 
-// ReadyBlocksCount returns the number of ready blocks in the buffer.
-func (b *BasicBuffer) ReadyBlocksCount() (readyBlocksCount int) {
-	start := b.Current()
-	if start == nil {
-		return
-	}
-
-	for q := start; ; {
-		readyBlocksCount += q.readyHeap.Len()
-		q = b.Next()
-		if q == start {
-			break
-		}
-	}
-
-	return
-}
-
 // TotalBlocksCount returns the number of blocks in the buffer.
 func (b *BasicBuffer) TotalBlocksCount() (blocksCount int) {
-	start := b.Current()
-	if start == nil {
-		return
-	}
-	for q := start; ; {
-		blocksCount += q.readyHeap.Len()
-		blocksCount += q.nonReadyMap.Size()
-		q = b.Next()
-		if q == start {
-			break
-		}
-	}
+	return int(b.totalBlocksCount.Load())
+}
 
-	return
+// ReadyBlocksCount returns the number of ready blocks in the buffer.
+func (b *BasicBuffer) ReadyBlocksCount() (readyBlocksCount int) {
+	return int(b.readyBlocksCount.Load())
 }
 
 // Next returns the next IssuerQueue in round-robin order.
@@ -250,8 +236,6 @@ func (b *BasicBuffer) PopFront() *blocks.Block {
 		return nil
 	}
 
-	b.size.Dec()
-
 	return block
 }
 
@@ -275,7 +259,7 @@ func (b *BasicBuffer) IssuerIDs() []iotago.AccountID {
 
 func (b *BasicBuffer) dropTail(quantumFunc func(iotago.AccountID) Deficit, maxBuffer int) (droppedBlocks []*blocks.Block) {
 	// remove as many blocks as necessary to stay within max buffer size
-	for b.Size() > maxBuffer {
+	for b.TotalBlocksCount() > maxBuffer {
 		// find the longest mana-scaled queue
 		maxIssuerID := b.mustLongestQueueIssuerID(quantumFunc)
 		longestQueue := b.IssuerQueue(maxIssuerID)
@@ -288,7 +272,6 @@ func (b *BasicBuffer) dropTail(quantumFunc func(iotago.AccountID) Deficit, maxBu
 			panic("buffer is full, but tail of longest queue does not exist")
 		}
 
-		b.size.Dec()
 		droppedBlocks = append(droppedBlocks, tail)
 	}
 

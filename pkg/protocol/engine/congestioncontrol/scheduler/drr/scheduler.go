@@ -168,6 +168,7 @@ func (s *Scheduler) shutdown() {
 // Start starts the scheduler.
 func (s *Scheduler) Start() {
 	s.shutdownSignal = make(chan struct{}, 1)
+
 	s.workersWg.Add(1)
 	go s.basicBlockLoop()
 
@@ -196,7 +197,7 @@ func (s *Scheduler) ValidatorQueueBlockCount(issuerID iotago.AccountID) int {
 
 // BasicBufferSize returns the current buffer size of the Scheduler as block count.
 func (s *Scheduler) BasicBufferSize() int {
-	return s.basicBuffer.Size()
+	return s.basicBuffer.TotalBlocksCount()
 }
 
 func (s *Scheduler) ValidatorBufferSize() int {
@@ -221,7 +222,7 @@ func (s *Scheduler) IsBlockIssuerReady(accountID iotago.AccountID, workScores ..
 	defer s.bufferMutex.RUnlock()
 
 	// if the buffer is completely empty, any issuer can issue a block.
-	if s.basicBuffer.Size() == 0 {
+	if s.basicBuffer.TotalBlocksCount() == 0 {
 		return true
 	}
 
