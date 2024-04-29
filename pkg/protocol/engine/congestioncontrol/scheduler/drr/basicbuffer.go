@@ -290,7 +290,6 @@ func (b *BasicBuffer) dropTail(quantumFunc func(iotago.AccountID) Deficit, maxBu
 
 		b.size.Dec()
 		droppedBlocks = append(droppedBlocks, tail)
-
 	}
 
 	return droppedBlocks
