@@ -770,53 +770,59 @@ func (e *Engine) attachEngineLogs() (teardown func()) {
 					logMessage("SpendDAG.SpenderAccepted", "conflictID", conflictID)
 				}).Unhook,
 
-				e.Ledger.OnTransactionAttached(func(transactionMetadata mempool.TransactionMetadata) {
-					logMessage("Ledger.TransactionAttached", "tx", transactionMetadata.ID())
+				e.ConstructedEvent().WithNonEmptyValue(func(_ bool) func() {
+					return e.Ledger.InitializedEvent().WithNonEmptyValue(func(_ bool) func() {
+						return lo.Batch(
+							e.Ledger.OnTransactionAttached(func(transactionMetadata mempool.TransactionMetadata) {
+								logMessage("Ledger.TransactionAttached", "tx", transactionMetadata.ID())
 
-					transactionMetadata.OnSolid(func() {
-						logMessage("MemPool.TransactionSolid", "tx", transactionMetadata.ID())
+								transactionMetadata.OnSolid(func() {
+									logMessage("MemPool.TransactionSolid", "tx", transactionMetadata.ID())
+								})
+
+								transactionMetadata.OnExecuted(func() {
+									logMessage("MemPool.TransactionExecuted", "tx", transactionMetadata.ID())
+								})
+
+								transactionMetadata.OnBooked(func() {
+									logMessage("MemPool.TransactionBooked", "tx", transactionMetadata.ID())
+								})
+
+								transactionMetadata.OnAccepted(func() {
+									logMessage("MemPool.TransactionAccepted", "tx", transactionMetadata.ID())
+								})
+
+								transactionMetadata.OnRejected(func() {
+									logMessage("MemPool.TransactionRejected", "tx", transactionMetadata.ID())
+								})
+
+								transactionMetadata.OnInvalid(func(err error) {
+									logMessage("MemPool.TransactionInvalid", "tx", transactionMetadata.ID(), "err", err)
+								})
+
+								transactionMetadata.OnOrphanedSlotUpdated(func(slot iotago.SlotIndex) {
+									logMessage("MemPool.TransactionOrphanedSlotUpdated", "tx", transactionMetadata.ID(), "slot", slot)
+								})
+
+								transactionMetadata.OnCommittedSlotUpdated(func(slot iotago.SlotIndex) {
+									logMessage("MemPool.TransactionCommittedSlotUpdated", "tx", transactionMetadata.ID(), "slot", slot)
+								})
+
+								transactionMetadata.OnEvicted(func() {
+									logMessage("MemPool.TransactionEvicted", "tx", transactionMetadata.ID())
+								})
+							}).Unhook,
+
+							e.Ledger.MemPool().OnSignedTransactionAttached(
+								func(signedTransactionMetadata mempool.SignedTransactionMetadata) {
+									signedTransactionMetadata.OnSignaturesInvalid(func(err error) {
+										logMessage("MemPool.SignedTransactionSignaturesInvalid", "signedTx", signedTransactionMetadata.ID(), "tx", signedTransactionMetadata.TransactionMetadata().ID(), "err", err)
+									})
+								},
+							).Unhook,
+						)
 					})
-
-					transactionMetadata.OnExecuted(func() {
-						logMessage("MemPool.TransactionExecuted", "tx", transactionMetadata.ID())
-					})
-
-					transactionMetadata.OnBooked(func() {
-						logMessage("MemPool.TransactionBooked", "tx", transactionMetadata.ID())
-					})
-
-					transactionMetadata.OnAccepted(func() {
-						logMessage("MemPool.TransactionAccepted", "tx", transactionMetadata.ID())
-					})
-
-					transactionMetadata.OnRejected(func() {
-						logMessage("MemPool.TransactionRejected", "tx", transactionMetadata.ID())
-					})
-
-					transactionMetadata.OnInvalid(func(err error) {
-						logMessage("MemPool.TransactionInvalid", "tx", transactionMetadata.ID(), "err", err)
-					})
-
-					transactionMetadata.OnOrphanedSlotUpdated(func(slot iotago.SlotIndex) {
-						logMessage("MemPool.TransactionOrphanedSlotUpdated", "tx", transactionMetadata.ID(), "slot", slot)
-					})
-
-					transactionMetadata.OnCommittedSlotUpdated(func(slot iotago.SlotIndex) {
-						logMessage("MemPool.TransactionCommittedSlotUpdated", "tx", transactionMetadata.ID(), "slot", slot)
-					})
-
-					transactionMetadata.OnEvicted(func() {
-						logMessage("MemPool.TransactionEvicted", "tx", transactionMetadata.ID())
-					})
-				}).Unhook,
-
-				e.Ledger.MemPool().OnSignedTransactionAttached(
-					func(signedTransactionMetadata mempool.SignedTransactionMetadata) {
-						signedTransactionMetadata.OnSignaturesInvalid(func(err error) {
-							logMessage("MemPool.SignedTransactionSignaturesInvalid", "signedTx", signedTransactionMetadata.ID(), "tx", signedTransactionMetadata.TransactionMetadata().ID(), "err", err)
-						})
-					},
-				).Unhook,
+				}),
 			)
 		}),
 
