@@ -5,8 +5,10 @@ import (
 	"sort"
 
 	"github.com/iotaledger/hive.go/ads"
+	"github.com/iotaledger/hive.go/core/safemath"
 	"github.com/iotaledger/hive.go/ierrors"
 	"github.com/iotaledger/hive.go/kvstore/mapdb"
+	"github.com/iotaledger/hive.go/lo"
 	"github.com/iotaledger/hive.go/runtime/module"
 	"github.com/iotaledger/hive.go/runtime/options"
 	"github.com/iotaledger/hive.go/runtime/syncutils"
@@ -152,7 +154,9 @@ func (o *SybilProtection) CommitSlot(slot iotago.SlotIndex) (committeeRoot iotag
 	timeProvider := apiForSlot.TimeProvider()
 	currentEpoch := timeProvider.EpochFromSlot(slot)
 	nextEpoch := currentEpoch + 1
+	prevEpoch := lo.Return1(safemath.SafeSub(currentEpoch, 1))
 	currentEpochEndSlot := timeProvider.EpochEnd(currentEpoch)
+	isEpochEndSlot := slot == currentEpochEndSlot
 	maxCommittableAge := apiForSlot.ProtocolParameters().MaxCommittableAge()
 
 	// Determine the committee root.
@@ -188,7 +192,7 @@ func (o *SybilProtection) CommitSlot(slot iotago.SlotIndex) (committeeRoot iotag
 
 	// Handle performance tracking for the current epoch.
 	{
-		if slot == currentEpochEndSlot {
+		if isEpochEndSlot {
 			committee, exists := o.performanceTracker.LoadCommitteeForEpoch(currentEpoch)
 			if !exists {
 				return iotago.Identifier{}, iotago.Identifier{}, ierrors.Wrapf(err, "committee for a finished epoch %d not found", currentEpoch)
@@ -203,9 +207,11 @@ func (o *SybilProtection) CommitSlot(slot iotago.SlotIndex) (committeeRoot iotag
 
 	// Determine the rewards root.
 	{
-		targetRewardsEpoch := currentEpoch
-		if slot == currentEpochEndSlot {
-			targetRewardsEpoch = nextEpoch
+		// We only update the rewards root if the slot is the last slot of the epoch.
+		// Otherwise, we reuse the rewards root from the previous epoch.
+		targetRewardsEpoch := prevEpoch
+		if isEpochEndSlot {
+			targetRewardsEpoch = currentEpoch
 		}
 
 		rewardsRoot, err = o.performanceTracker.RewardsRoot(targetRewardsEpoch)
