@@ -73,6 +73,7 @@ func (m *Manager) Start(ctx context.Context, networkID string, bootstrapPeers []
 			dht.ProtocolExtension(extension),
 			dht.AddressFilter(m.addrFilter),
 			dht.BootstrapPeers(bootstrapPeers...),
+			dht.MaxRecordAge(10*time.Minute),
 		)
 		if innerErr != nil {
 			err = innerErr
