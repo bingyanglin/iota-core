@@ -276,19 +276,23 @@ func (t *Tracker) exportPoolRewards(writer io.WriteSeeker, targetEpoch iotago.Ep
 
 	protocolParams := t.apiProvider.APIForEpoch(targetEpoch).ProtocolParameters()
 	retentionPeriod := iotago.EpochIndex(protocolParams.RewardsParameters().RetentionPeriod)
+	earliestRewardEpoch := iotago.EpochIndex(0)
+	if targetEpoch > retentionPeriod {
+		earliestRewardEpoch = targetEpoch - retentionPeriod
+	}
 
 	if err := stream.WriteCollection(writer, serializer.SeriLengthPrefixTypeAsUint32, func() (int, error) {
 		var epochCount int
 		// Here underflow will not happen because we will stop iterating for epoch 0, because 0 is not greater than zero.
 		// Use safemath here anyway to avoid hard to trace problems stemming from an accidental underflow.
-		for epoch := targetEpoch; epoch > lo.Max(0, targetEpoch-retentionPeriod); epoch = lo.PanicOnErr(safemath.SafeSub(epoch, 1)) {
+		for epoch := targetEpoch; epoch > earliestRewardEpoch; epoch = lo.PanicOnErr(safemath.SafeSub(epoch, 1)) {
 			rewardsMap, err := t.rewardsMap(epoch)
 			if err != nil {
 				return 0, ierrors.Wrapf(err, "unable to get rewards tree for epoch %d", epoch)
 			}
-			// if the map was not present in storage we can skip this epoch and the previous ones, as we never stored any rewards
+			// if the map was not present in storage we can skip this epoch
 			if !rewardsMap.WasRestoredFromStorage() {
-				break
+				continue
 			}
 
 			if err := stream.Write(writer, epoch); err != nil {
