@@ -15,7 +15,6 @@ import (
 	"github.com/iotaledger/hive.go/app"
 	"github.com/iotaledger/hive.go/app/configuration"
 	hivep2p "github.com/iotaledger/hive.go/crypto/p2p"
-	"github.com/iotaledger/hive.go/db"
 	"github.com/iotaledger/hive.go/ierrors"
 	"github.com/iotaledger/iota-core/pkg/daemon"
 	"github.com/iotaledger/iota-core/pkg/network"
@@ -25,13 +24,12 @@ import (
 
 func init() {
 	Component = &app.Component{
-		Name:             "P2P",
-		DepsFunc:         func(cDeps dependencies) { deps = cDeps },
-		Params:           params,
-		InitConfigParams: initConfigParams,
-		Provide:          provide,
-		Configure:        configure,
-		Run:              run,
+		Name:      "P2P",
+		DepsFunc:  func(cDeps dependencies) { deps = cDeps },
+		Params:    params,
+		Provide:   provide,
+		Configure: configure,
+		Run:       run,
 	}
 }
 
@@ -46,23 +44,6 @@ type dependencies struct {
 	PeeringConfigManager *p2p.ConfigManager
 	NetworkManager       network.Manager
 	Protocol             *protocol.Protocol
-}
-
-func initConfigParams(c *dig.Container) error {
-	type cfgResult struct {
-		dig.Out
-		P2PBindMultiAddresses []string `name:"p2pBindMultiAddresses"`
-	}
-
-	if err := c.Provide(func() cfgResult {
-		return cfgResult{
-			P2PBindMultiAddresses: ParamsP2P.BindMultiAddresses,
-		}
-	}); err != nil {
-		Component.LogPanic(err.Error())
-	}
-
-	return nil
 }
 
 func provide(c *dig.Container) error {
@@ -137,19 +118,13 @@ func provide(c *dig.Container) error {
 		Component.LogPanic(err.Error())
 	}
 
-	type p2pDeps struct {
-		dig.In
-		DatabaseEngine        db.Engine `name:"databaseEngine"`
-		P2PBindMultiAddresses []string  `name:"p2pBindMultiAddresses"`
-	}
-
 	type p2pResult struct {
 		dig.Out
 		NodePrivateKey crypto.PrivKey `name:"nodePrivateKey"`
 		Host           host.Host
 	}
 
-	if err := c.Provide(func(deps p2pDeps) p2pResult {
+	if err := c.Provide(func() p2pResult {
 		res := p2pResult{}
 
 		// make sure nobody copies around the peer store since it contains the private key of the node
