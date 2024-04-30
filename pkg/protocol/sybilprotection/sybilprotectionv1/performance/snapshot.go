@@ -13,11 +13,6 @@ import (
 	iotago "github.com/iotaledger/iota.go/v4"
 )
 
-const (
-	// TODO: should be addressed in issue #300.
-	daysInYear = 365
-)
-
 func (t *Tracker) Import(reader io.ReadSeeker) error {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
@@ -279,11 +274,14 @@ func (t *Tracker) exportPoolRewards(writer io.WriteSeeker, targetEpoch iotago.Ep
 	// export all stored pools
 	// in theory we could save the epoch count only once, because stats and rewards should be the same length
 
+	protocolParams := t.apiProvider.APIForEpoch(targetEpoch).ProtocolParameters()
+	retentionPeriod := iotago.EpochIndex(protocolParams.RewardsParameters().RetentionPeriod)
+
 	if err := stream.WriteCollection(writer, serializer.SeriLengthPrefixTypeAsUint32, func() (int, error) {
 		var epochCount int
 		// Here underflow will not happen because we will stop iterating for epoch 0, because 0 is not greater than zero.
 		// Use safemath here anyway to avoid hard to trace problems stemming from an accidental underflow.
-		for epoch := targetEpoch; epoch > iotago.EpochIndex(lo.Max(0, int(targetEpoch)-daysInYear)); epoch = lo.PanicOnErr(safemath.SafeSub(epoch, 1)) {
+		for epoch := targetEpoch; epoch > lo.Max(0, targetEpoch-retentionPeriod); epoch = lo.PanicOnErr(safemath.SafeSub(epoch, 1)) {
 			rewardsMap, err := t.rewardsMap(epoch)
 			if err != nil {
 				return 0, ierrors.Wrapf(err, "unable to get rewards tree for epoch %d", epoch)
