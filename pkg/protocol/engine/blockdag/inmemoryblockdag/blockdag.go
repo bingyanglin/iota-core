@@ -213,7 +213,7 @@ func (b *BlockDAG) shouldAppend(modelBlock *model.Block) (shouldAppend bool, err
 func (b *BlockDAG) canAppendToParents(modelBlock *model.Block) (parentsValid bool, err error) {
 	for _, parent := range modelBlock.ProtocolBlock().ParentsWithType() {
 		if isBelowRange, isInRange := b.evictionState.BelowOrInActiveRootBlockRange(parent.ID); isBelowRange || isInRange && !b.evictionState.IsActiveRootBlock(parent.ID) {
-			return false, ierrors.Errorf("parent %s with type %s of block %s is too old", parent.ID, parent.Type, modelBlock.ID())
+			return false, ierrors.Errorf("parent %s with type %s of block %s is too old (isBelowRange: %t, isInRange: %t, isActiveRootBlock: %t)", parent.ID, parent.Type, modelBlock.ID(), isBelowRange, isInRange, b.evictionState.IsActiveRootBlock(parent.ID))
 		}
 	}
 

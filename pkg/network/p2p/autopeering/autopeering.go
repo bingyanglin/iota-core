@@ -27,7 +27,6 @@ type Manager struct {
 	networkManager   network.Manager
 	logger           log.Logger
 	host             host.Host
-	peerDB           *network.DB
 	startOnce        sync.Once
 	isStarted        atomic.Bool
 	stopOnce         sync.Once
@@ -42,12 +41,11 @@ type Manager struct {
 }
 
 // NewManager creates a new autopeering manager.
-func NewManager(maxPeers int, networkManager network.Manager, host host.Host, peerDB *network.DB, addressFilter network.AddressFilter, logger log.Logger) *Manager {
+func NewManager(maxPeers int, networkManager network.Manager, host host.Host, addressFilter network.AddressFilter, logger log.Logger) *Manager {
 	return &Manager{
 		maxPeers:       maxPeers,
 		networkManager: networkManager,
 		host:           host,
-		peerDB:         peerDB,
 		logger:         logger.NewChildLogger("Autopeering"),
 		addrFilter:     addressFilter,
 	}
@@ -75,6 +73,7 @@ func (m *Manager) Start(ctx context.Context, networkID string, bootstrapPeers []
 			dht.ProtocolExtension(extension),
 			dht.AddressFilter(m.addrFilter),
 			dht.BootstrapPeers(bootstrapPeers...),
+			dht.MaxRecordAge(10*time.Minute),
 		)
 		if innerErr != nil {
 			err = innerErr
@@ -94,21 +93,6 @@ func (m *Manager) Start(ctx context.Context, networkID string, bootstrapPeers []
 
 		m.ctx = dhtCtx
 
-		for _, seedPeer := range m.peerDB.SeedPeers() {
-			addrInfo := seedPeer.ToAddrInfo()
-			if innerErr := m.host.Connect(ctx, *addrInfo); innerErr != nil {
-				m.logger.LogInfof("Failed to connect to bootstrap node, peer: %s, error: %s", seedPeer, innerErr)
-				continue
-			}
-
-			if _, innerErr := kademliaDHT.RoutingTable().TryAddPeer(addrInfo.ID, true, true); innerErr != nil {
-				m.logger.LogWarnf("Failed to add bootstrap node to routing table, error: %s", innerErr)
-				continue
-			}
-
-			m.logger.LogDebugf("Connected to bootstrap node, peer: %s", seedPeer)
-		}
-
 		m.routingDiscovery = routing.NewRoutingDiscovery(kademliaDHT)
 		m.startAdvertisingIfNeeded()
 		go m.discoveryLoop()
@@ -118,7 +102,7 @@ func (m *Manager) Start(ctx context.Context, networkID string, bootstrapPeers []
 		})
 		onGossipNeighborAddedHook := m.networkManager.OnNeighborAdded(func(neighbor network.Neighbor) {
 			m.logger.LogInfof("Gossip layer successfully connected with the peer %s", neighbor.Peer())
-			m.stopAdvertisingItNotNeeded()
+			m.stopAdvertisingIfNotNeeded()
 		})
 
 		m.stopFunc = func() {
@@ -162,7 +146,7 @@ func (m *Manager) startAdvertisingIfNeeded() {
 	}
 }
 
-func (m *Manager) stopAdvertisingItNotNeeded() {
+func (m *Manager) stopAdvertisingIfNotNeeded() {
 	if len(m.networkManager.AutopeeringNeighbors()) >= m.maxPeers {
 		m.stopAdvertising()
 	}

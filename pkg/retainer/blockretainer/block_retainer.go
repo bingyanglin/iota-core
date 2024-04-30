@@ -89,7 +89,7 @@ func NewProvider() module.Provider[*engine.Engine, retainer.BlockRetainer] {
 				if err := r.OnBlockDropped(block); err != nil {
 					r.errorHandler(ierrors.Wrap(err, "failed to store on BlockDropped in retainer"))
 				}
-			})
+			}, asyncOpt)
 
 			// this event is fired when a new commitment is detected
 			e.Events.Notarization.LatestCommitmentUpdated.Hook(func(commitment *model.Commitment) {

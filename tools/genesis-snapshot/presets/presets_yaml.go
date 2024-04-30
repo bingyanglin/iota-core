@@ -56,7 +56,7 @@ func TestnetProtocolParameters(networkName string, bech32HRP iotago.NetworkPrefi
 		iotago.WithNetworkOptions(networkName, bech32HRP),
 		iotago.WithStorageOptions(100, 1, 100, 1000, 1000, 1000),
 		iotago.WithWorkScoreOptions(500, 110_000, 7_500, 40_000, 90_000, 50_000, 40_000, 70_000, 5_000, 15_000),
-		iotago.WithTimeProviderOptions(0, time.Now().Unix(), 10, 13),
+		iotago.WithTimeProviderOptions(0, time.Now().Unix(), 10, 8),
 		iotago.WithLivenessOptions(10, 15, 4, 7, 100),
 		iotago.WithSupplyOptions(4600000000000000, 63, 1, 17, 32, 21, 70),
 		iotago.WithCongestionControlOptions(1, 1, 1, 400_000_000, 250_000_000, 50_000_000, 1000, 100),

@@ -92,7 +92,7 @@ linters:
         - importas
         - inamedparam
         #- interfacebloat
-        - intrange
+        #- intrange             # TODO: re-enable after https://github.com/ckaznocha/intrange v0.1.2 release is merged in golangci-lint
         #- ireturn
         #- lll
         - loggercheck

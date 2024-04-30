@@ -1,7 +1,7 @@
 #!/bin/bash
 
 BUILD_TAGS="rocksdb,dockertests"
-TIMEOUT=120m
+TIMEOUT=180m
 
 # Exit script on non-zero command exit status
 set -e

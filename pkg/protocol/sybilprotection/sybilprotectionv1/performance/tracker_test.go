@@ -48,7 +48,7 @@ func TestManager_Rewards(t *testing.T) {
 	}
 	ts.ApplyEpochActions(epoch, epochActions)
 	ts.AssertEpochRewards(epoch, epochActions)
-	// better performin validator should get more rewards
+	// better performing validator should get more rewards
 	ts.AssertValidatorRewardGreaterThan("A", "B", epoch, epochActions)
 
 	epoch = iotago.EpochIndex(3)

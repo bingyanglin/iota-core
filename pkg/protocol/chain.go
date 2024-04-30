@@ -20,6 +20,9 @@ type Chain struct {
 	// ParentChain contains the chain that this chain forked from.
 	ParentChain reactive.Variable[*Chain]
 
+	// DivergencePointVerified contains a flag that indicates whether the divergence point of this chain is verified.
+	DivergencePointVerified reactive.Event
+
 	// ChildChains contains the set of all chains that forked from this chain.
 	ChildChains reactive.Set[*Chain]
 
@@ -57,9 +60,6 @@ type Chain struct {
 	// IsEvicted contains a flag that indicates whether this chain was evicted.
 	IsEvicted reactive.Event
 
-	// IsSolid contains a flag that indicates whether this chain is solid (has a continuous connection to the root).
-	IsSolid reactive.Event
-
 	// shouldEvict contains a flag that indicates whether this chain should be evicted.
 	shouldEvict reactive.Event
 
@@ -78,6 +78,7 @@ func newChain(chains *Chains) *Chain {
 	c := &Chain{
 		ForkingPoint:             reactive.NewVariable[*Commitment](),
 		ParentChain:              reactive.NewVariable[*Chain](),
+		DivergencePointVerified:  reactive.NewEvent(),
 		ChildChains:              reactive.NewSet[*Chain](),
 		LatestCommitment:         reactive.NewVariable[*Commitment](),
 		LatestAttestedCommitment: reactive.NewVariable[*Commitment](),
@@ -89,7 +90,6 @@ func newChain(chains *Chains) *Chain {
 		StartEngine:              reactive.NewVariable[bool](),
 		Engine:                   reactive.NewVariable[*engine.Engine](),
 		IsEvicted:                reactive.NewEvent(),
-		IsSolid:                  reactive.NewEvent(),
 		shouldEvict:              reactive.NewEvent(),
 
 		chains:      chains,
@@ -201,7 +201,7 @@ func (c *Chain) initLogger() (shutdown func()) {
 	c.Logger = c.chains.NewChildLogger("", true)
 
 	return lo.BatchReverse(
-		c.WarpSyncMode.LogUpdates(c, log.LevelTrace, "WarpSyncMode"),
+		c.WarpSyncMode.LogUpdates(c, log.LevelDebug, "WarpSyncMode"),
 		c.LatestSyncedSlot.LogUpdates(c, log.LevelTrace, "LatestSyncedSlot"),
 		c.OutOfSyncThreshold.LogUpdates(c, log.LevelTrace, "OutOfSyncThreshold"),
 		c.ForkingPoint.LogUpdates(c, log.LevelTrace, "ForkingPoint", (*Commitment).LogName),
@@ -213,7 +213,6 @@ func (c *Chain) initLogger() (shutdown func()) {
 		c.StartEngine.LogUpdates(c, log.LevelDebug, "StartEngine"),
 		c.Engine.LogUpdates(c, log.LevelTrace, "Engine", (*engine.Engine).LogName),
 		c.IsEvicted.LogUpdates(c, log.LevelTrace, "IsEvicted"),
-		c.IsSolid.LogUpdates(c, log.LevelTrace, "IsSolid"),
 		c.shouldEvict.LogUpdates(c, log.LevelTrace, "shouldEvict"),
 
 		c.Logger.Shutdown,
@@ -238,7 +237,7 @@ func (c *Chain) initDerivedProperties() (shutdown func()) {
 						)
 					}),
 
-					c.IsSolid.InheritFrom(forkingPoint.IsSolid),
+					c.deriveDivergencePointVerified(forkingPoint),
 				)
 			}),
 		),
@@ -295,6 +294,17 @@ func (c *Chain) deriveChildChains(child *Chain) (teardown func()) {
 	}
 
 	return
+}
+
+// deriveDivergencePointVerified defines how a chain determines whether its divergence point is verified.
+func (c *Chain) deriveDivergencePointVerified(forkingPoint *Commitment) (shutdown func()) {
+	return lo.Batch(
+		c.DivergencePointVerified.InheritFrom(forkingPoint.IsRoot),
+
+		forkingPoint.Parent.WithNonEmptyValue(func(parentOfForkingPoint *Commitment) (teardown func()) {
+			return c.DivergencePointVerified.InheritFrom(parentOfForkingPoint.IsVerified)
+		}),
+	)
 }
 
 // deriveParentChain defines how a chain determines its parent chain from its forking point (it inherits the Chain from

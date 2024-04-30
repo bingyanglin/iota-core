@@ -60,10 +60,6 @@ type Commitment struct {
 	// IsRoot contains a flag indicating if this Commitment is the root of the Chain.
 	IsRoot reactive.Event
 
-	// IsSolid contains a flag indicating if this Commitment is solid (has all the commitments in its past cone until
-	// the RootCommitment).
-	IsSolid reactive.Event
-
 	// IsAttested contains a flag indicating if we have received attestations for this Commitment.
 	IsAttested reactive.Event
 
@@ -97,7 +93,7 @@ type Commitment struct {
 
 // NewCommitment creates a new Commitment from the given model.Commitment.
 func newCommitment(commitments *Commitments, model *model.Commitment) *Commitment {
-	c := &Commitment{
+	return &Commitment{
 		Commitment:                      model,
 		Parent:                          reactive.NewVariable[*Commitment](),
 		Children:                        reactive.NewSet[*Commitment](),
@@ -112,7 +108,6 @@ func newCommitment(commitments *Commitments, model *model.Commitment) *Commitmen
 		CumulativeAttestedWeight:        reactive.NewVariable[uint64](),
 		CumulativeVerifiedWeight:        reactive.NewVariable[uint64](),
 		IsRoot:                          reactive.NewEvent(),
-		IsSolid:                         reactive.NewEvent(),
 		IsAttested:                      reactive.NewEvent(),
 		IsSynced:                        reactive.NewEvent(),
 		IsCommittable:                   reactive.NewEvent(),
@@ -121,16 +116,8 @@ func newCommitment(commitments *Commitments, model *model.Commitment) *Commitmen
 		ReplayDroppedBlocks:             reactive.NewVariable[bool](),
 		IsEvicted:                       reactive.NewEvent(),
 		commitments:                     commitments,
+		Logger:                          commitments.NewChildLogger(fmt.Sprintf("Slot%d.", model.Slot()), true),
 	}
-
-	shutdown := lo.BatchReverse(
-		c.initLogger(),
-		c.initDerivedProperties(),
-	)
-
-	c.IsEvicted.OnTrigger(shutdown)
-
-	return c
 }
 
 // TargetEngine returns the engine that is responsible for booking the blocks of this Commitment.
@@ -208,10 +195,18 @@ func (c *Commitment) Less(other *Commitment) bool {
 	}
 }
 
+// initBehavior initializes the behavior of this Commitment by setting up the relations between its properties.
+func (c *Commitment) initBehavior() {
+	shutdown := lo.BatchReverse(
+		c.initLogger(),
+		c.initDerivedProperties(),
+	)
+
+	c.IsEvicted.OnTrigger(shutdown)
+}
+
 // initLogger initializes the Logger of this Commitment.
 func (c *Commitment) initLogger() (shutdown func()) {
-	c.Logger = c.commitments.NewChildLogger(fmt.Sprintf("Slot%d.", c.Slot()), true)
-
 	return lo.BatchReverse(
 		c.Parent.LogUpdates(c, log.LevelTrace, "Parent", (*Commitment).LogName),
 		c.MainChild.LogUpdates(c, log.LevelTrace, "MainChild", (*Commitment).LogName),
@@ -224,7 +219,6 @@ func (c *Commitment) initLogger() (shutdown func()) {
 		c.CumulativeAttestedWeight.LogUpdates(c, log.LevelTrace, "CumulativeAttestedWeight"),
 		c.CumulativeVerifiedWeight.LogUpdates(c, log.LevelTrace, "CumulativeVerifiedWeight"),
 		c.IsRoot.LogUpdates(c, log.LevelTrace, "IsRoot"),
-		c.IsSolid.LogUpdates(c, log.LevelTrace, "IsSolid"),
 		c.IsAttested.LogUpdates(c, log.LevelTrace, "IsAttested"),
 		c.IsSynced.LogUpdates(c, log.LevelTrace, "IsSynced"),
 		c.IsCommittable.LogUpdates(c, log.LevelTrace, "IsCommittable"),
@@ -241,7 +235,6 @@ func (c *Commitment) initDerivedProperties() (shutdown func()) {
 	return lo.BatchReverse(
 		// mark commitments that are marked as root as verified
 		c.IsVerified.InheritFrom(c.IsRoot),
-		c.IsSolid.InheritFrom(c.IsRoot),
 
 		c.IsRoot.OnTrigger(func() {
 			c.CumulativeAttestedWeight.Set(c.Commitment.CumulativeWeight())
@@ -277,8 +270,6 @@ func (c *Commitment) initDerivedProperties() (shutdown func()) {
 						}),
 					)
 				}),
-
-				c.IsSolid.InheritFrom(parent.IsSolid),
 			)
 		}),
 

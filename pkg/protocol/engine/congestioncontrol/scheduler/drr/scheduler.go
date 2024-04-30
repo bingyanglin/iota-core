@@ -1,6 +1,7 @@
 package drr
 
 import (
+	"fmt"
 	"math"
 	"sync"
 	"time"
@@ -35,7 +36,7 @@ type Scheduler struct {
 
 	seatManager seatmanager.SeatManager
 
-	basicBuffer     *BufferQueue
+	basicBuffer     *BasicBuffer
 	validatorBuffer *ValidatorBuffer
 	bufferMutex     syncutils.RWMutex
 
@@ -55,7 +56,7 @@ func NewProvider(opts ...options.Option[Scheduler]) module.Provider[*engine.Engi
 	return module.Provide(func(e *engine.Engine) scheduler.Scheduler {
 		s := New(e.NewSubModule("Scheduler"), e, opts...)
 		s.errorHandler = e.ErrorHandler("scheduler")
-		s.basicBuffer = NewBufferQueue()
+		s.basicBuffer = NewBasicBuffer()
 
 		e.ConstructedEvent().OnTrigger(func() {
 			s.latestCommittedSlot = func() iotago.SlotIndex {
@@ -78,15 +79,9 @@ func NewProvider(opts ...options.Option[Scheduler]) module.Provider[*engine.Engi
 						return
 					}
 
-					s.validatorBuffer.buffer.ForEach(func(accountID iotago.AccountID, validatorQueue *ValidatorQueue) bool {
-						if !committee.HasAccount(accountID) {
-							s.shutdownValidatorQueue(validatorQueue)
-						}
-
-						return true
+					s.validatorBuffer.Delete(func(validatorQueue *ValidatorQueue) bool {
+						return !committee.HasAccount(validatorQueue.AccountID())
 					})
-
-					s.validatorBuffer.Clear()
 				}
 			})
 			e.Ledger.InitializedEvent().OnTrigger(func() {
@@ -150,12 +145,6 @@ func (s *Scheduler) shutdown() {
 	s.bufferMutex.Lock()
 	defer s.bufferMutex.Unlock()
 
-	// validator workers need to be shut down first, otherwise they will hang on the shutdown channel.
-	s.validatorBuffer.buffer.ForEach(func(_ iotago.AccountID, validatorQueue *ValidatorQueue) bool {
-		s.shutdownValidatorQueue(validatorQueue)
-
-		return true
-	})
 	s.validatorBuffer.Clear()
 
 	close(s.shutdownSignal)
@@ -168,6 +157,7 @@ func (s *Scheduler) shutdown() {
 // Start starts the scheduler.
 func (s *Scheduler) Start() {
 	s.shutdownSignal = make(chan struct{}, 1)
+
 	s.workersWg.Add(1)
 	go s.basicBlockLoop()
 
@@ -196,7 +186,7 @@ func (s *Scheduler) ValidatorQueueBlockCount(issuerID iotago.AccountID) int {
 
 // BasicBufferSize returns the current buffer size of the Scheduler as block count.
 func (s *Scheduler) BasicBufferSize() int {
-	return s.basicBuffer.Size()
+	return s.basicBuffer.TotalBlocksCount()
 }
 
 func (s *Scheduler) ValidatorBufferSize() int {
@@ -221,7 +211,7 @@ func (s *Scheduler) IsBlockIssuerReady(accountID iotago.AccountID, workScores ..
 	defer s.bufferMutex.RUnlock()
 
 	// if the buffer is completely empty, any issuer can issue a block.
-	if s.basicBuffer.Size() == 0 {
+	if s.basicBuffer.TotalBlocksCount() == 0 {
 		return true
 	}
 
@@ -244,9 +234,9 @@ func (s *Scheduler) IsBlockIssuerReady(accountID iotago.AccountID, workScores ..
 }
 
 func (s *Scheduler) AddBlock(block *blocks.Block) {
-	if _, isValidation := block.ValidationBlock(); isValidation {
+	if block.IsValidationBlock() {
 		s.enqueueValidationBlock(block)
-	} else if _, isBasic := block.BasicBlock(); isBasic {
+	} else if block.IsBasicBlock() {
 		s.enqueueBasicBlock(block)
 	}
 }
@@ -255,13 +245,6 @@ func (s *Scheduler) AddBlock(block *blocks.Block) {
 func (s *Scheduler) Reset() {
 	s.bufferMutex.Lock()
 	defer s.bufferMutex.Unlock()
-
-	// Validator workers need to be signaled to exit.
-	s.validatorBuffer.buffer.ForEach(func(_ iotago.AccountID, validatorQueue *ValidatorQueue) bool {
-		s.shutdownValidatorQueue(validatorQueue)
-
-		return true
-	})
 
 	s.basicBuffer.Clear()
 	s.validatorBuffer.Clear()
@@ -273,7 +256,7 @@ func (s *Scheduler) enqueueBasicBlock(block *blocks.Block) {
 
 	slot := s.latestCommittedSlot()
 
-	issuerID := block.ProtocolBlock().Header.IssuerID
+	issuerID := block.IssuerID()
 	issuerQueue := s.getOrCreateIssuer(issuerID)
 
 	droppedBlocks, submitted := s.basicBuffer.Submit(
@@ -309,11 +292,7 @@ func (s *Scheduler) enqueueValidationBlock(block *blocks.Block) {
 	s.bufferMutex.Lock()
 	defer s.bufferMutex.Unlock()
 
-	_, exists := s.validatorBuffer.Get(block.ProtocolBlock().Header.IssuerID)
-	if !exists {
-		s.addValidator(block.ProtocolBlock().Header.IssuerID)
-	}
-	droppedBlock, submitted := s.validatorBuffer.Submit(block, int(s.apiProvider.CommittedAPI().ProtocolParameters().CongestionControlParameters().MaxValidationBufferSize))
+	droppedBlock, submitted := s.getOrCreateValidatorQueue(block.IssuerID()).Submit(block, int(s.apiProvider.CommittedAPI().ProtocolParameters().CongestionControlParameters().MaxValidationBufferSize))
 	if !submitted {
 		return
 	}
@@ -408,29 +387,12 @@ func (s *Scheduler) selectBlockToScheduleWithLocking() {
 	s.bufferMutex.Lock()
 	defer s.bufferMutex.Unlock()
 
-	s.validatorBuffer.buffer.ForEach(func(_ iotago.AccountID, validatorQueue *ValidatorQueue) bool {
-		if s.selectValidationBlockWithoutLocking(validatorQueue) {
-			s.validatorBuffer.size.Dec()
-		}
-
+	s.validatorBuffer.ForEachValidatorQueue(func(_ iotago.AccountID, validatorQueue *ValidatorQueue) bool {
+		validatorQueue.ScheduleNext()
 		return true
 	})
+
 	s.selectBasicBlockWithoutLocking()
-}
-
-func (s *Scheduler) selectValidationBlockWithoutLocking(validatorQueue *ValidatorQueue) bool {
-	// already a block selected to be scheduled.
-	if len(validatorQueue.blockChan) > 0 {
-		return false
-	}
-
-	if blockToSchedule := validatorQueue.PopFront(); blockToSchedule != nil {
-		validatorQueue.blockChan <- blockToSchedule
-
-		return true
-	}
-
-	return false
 }
 
 func (s *Scheduler) selectBasicBlockWithoutLocking() {
@@ -492,7 +454,7 @@ func (s *Scheduler) selectBasicBlockWithoutLocking() {
 
 	// remove the block from the buffer and adjust issuer's deficit
 	block := s.basicBuffer.PopFront()
-	issuerID := block.ProtocolBlock().Header.IssuerID
+	issuerID := block.IssuerID()
 	if _, err := s.updateDeficit(issuerID, -s.deficitFromWork(block.WorkScore())); err != nil {
 		// if something goes wrong with deficit update, drop the block instead of scheduling it.
 		block.SetDropped()
@@ -526,7 +488,7 @@ func (s *Scheduler) selectIssuer(start *IssuerQueue, slot iotago.SlotIndex) (Def
 				continue
 			}
 
-			issuerID := block.ProtocolBlock().Header.IssuerID
+			issuerID := block.IssuerID()
 
 			// compute how often the deficit needs to be incremented until the block can be scheduled
 			deficit, exists := s.deficits.Get(issuerID)
@@ -580,15 +542,15 @@ func (s *Scheduler) selectIssuer(start *IssuerQueue, slot iotago.SlotIndex) (Def
 
 func (s *Scheduler) removeIssuer(issuerID iotago.AccountID, err error) {
 	q := s.basicBuffer.IssuerQueue(issuerID)
-	q.submitted.ForEach(func(_ iotago.BlockID, block *blocks.Block) bool {
+	q.nonReadyMap.ForEach(func(_ iotago.BlockID, block *blocks.Block) bool {
 		block.SetDropped()
 		s.events.BlockDropped.Trigger(block, err)
 
 		return true
 	})
 
-	for q.inbox.Len() > 0 {
-		block := q.PopFront()
+	for i := 0; i < q.readyHeap.Len(); i++ {
+		block := q.readyHeap[i].Value
 		block.SetDropped()
 		s.events.BlockDropped.Trigger(block, err)
 	}
@@ -606,7 +568,14 @@ func (s *Scheduler) getOrCreateIssuer(accountID iotago.AccountID) *IssuerQueue {
 
 func (s *Scheduler) createIssuer(accountID iotago.AccountID) *IssuerQueue {
 	issuerQueue := s.basicBuffer.CreateIssuerQueue(accountID)
-	s.deficits.Set(accountID, 0)
+	s.deficits.Compute(accountID, func(_ Deficit, exists bool) Deficit {
+		if exists {
+			panic(fmt.Sprintf("issuer already exists: %s", accountID.String()))
+		}
+
+		// if the issuer is new, we need to set the deficit to 0.
+		return 0
+	})
 
 	return issuerQueue
 }
@@ -680,24 +649,14 @@ func (s *Scheduler) isReady(block *blocks.Block) bool {
 // tryReady tries to set the given block as ready.
 func (s *Scheduler) tryReady(block *blocks.Block) {
 	if s.isReady(block) {
-		s.ready(block)
+		s.basicBuffer.Ready(block)
 	}
 }
 
 // tryReadyValidator tries to set the given validation block as ready.
 func (s *Scheduler) tryReadyValidationBlock(block *blocks.Block) {
 	if s.isReady(block) {
-		s.readyValidationBlock(block)
-	}
-}
-
-func (s *Scheduler) ready(block *blocks.Block) {
-	s.basicBuffer.Ready(block)
-}
-
-func (s *Scheduler) readyValidationBlock(block *blocks.Block) {
-	if validatorQueue, exists := s.validatorBuffer.Get(block.ProtocolBlock().Header.IssuerID); exists {
-		validatorQueue.Ready(block)
+		s.validatorBuffer.Ready(block)
 	}
 }
 
@@ -715,11 +674,12 @@ func (s *Scheduler) updateChildrenWithLocking(block *blocks.Block) {
 func (s *Scheduler) updateChildrenWithoutLocking(block *blocks.Block) {
 	block.Children().Range(func(childBlock *blocks.Block) {
 		if _, childBlockExists := s.blockCache.Block(childBlock.ID()); childBlockExists && childBlock.IsEnqueued() {
-			if _, isBasic := childBlock.BasicBlock(); isBasic {
+			switch {
+			case childBlock.IsBasicBlock():
 				s.tryReady(childBlock)
-			} else if _, isValidation := childBlock.ValidationBlock(); isValidation {
+			case childBlock.IsValidationBlock():
 				s.tryReadyValidationBlock(childBlock)
-			} else {
+			default:
 				panic("invalid block type")
 			}
 		}
@@ -736,15 +696,11 @@ func (s *Scheduler) deficitFromWork(work iotago.WorkScore) Deficit {
 	return Deficit(work) * deficitScaleFactor
 }
 
-func (s *Scheduler) addValidator(accountID iotago.AccountID) *ValidatorQueue {
-	validatorQueue := NewValidatorQueue(accountID)
-	s.validatorBuffer.Set(accountID, validatorQueue)
-	s.workersWg.Add(1)
-	go s.validatorLoop(validatorQueue)
+func (s *Scheduler) getOrCreateValidatorQueue(accountID iotago.AccountID) *ValidatorQueue {
+	validatorQueue := s.validatorBuffer.GetOrCreate(accountID, func(queue *ValidatorQueue) {
+		s.workersWg.Add(1)
+		go s.validatorLoop(queue)
+	})
 
 	return validatorQueue
-}
-
-func (s *Scheduler) shutdownValidatorQueue(validatorQueue *ValidatorQueue) {
-	close(validatorQueue.shutdownSignal)
 }

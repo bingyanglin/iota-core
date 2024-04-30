@@ -362,23 +362,22 @@ func (s *Settings) SetLatestIssuedValidationBlock(block *model.Block) (err error
 }
 
 func (s *Settings) Export(writer io.WriteSeeker, targetCommitment *iotago.Commitment) error {
-	var commitmentBytes []byte
-	var err error
-	if targetCommitment != nil {
-		// We always know the version of the target commitment, so there can be no error.
-		commitmentBytes, err = lo.PanicOnErr(s.apiProvider.APIForVersion(targetCommitment.ProtocolVersion)).Encode(targetCommitment)
-		if err != nil {
-			return ierrors.Wrap(err, "failed to encode target commitment")
-		}
-	} else {
-		commitmentBytes = s.LatestCommitment().Data()
+	// We always know the version of the target commitment, so there can be no error.
+	commitmentBytes, err := lo.PanicOnErr(s.apiProvider.APIForVersion(targetCommitment.ProtocolVersion)).Encode(targetCommitment)
+	if err != nil {
+		return ierrors.Wrap(err, "failed to encode target commitment")
 	}
 
 	if err := stream.WriteBytesWithSize(writer, commitmentBytes, serializer.SeriLengthPrefixTypeAsUint16); err != nil {
 		return ierrors.Wrap(err, "failed to write commitment")
 	}
 
-	if err := stream.Write(writer, s.LatestFinalizedSlot()); err != nil {
+	latestFinalizedSlot := s.LatestFinalizedSlot()
+	if latestFinalizedSlot > targetCommitment.Slot {
+		latestFinalizedSlot = targetCommitment.Slot
+	}
+
+	if err := stream.Write(writer, latestFinalizedSlot); err != nil {
 		return ierrors.Wrap(err, "failed to write latest finalized slot")
 	}
 

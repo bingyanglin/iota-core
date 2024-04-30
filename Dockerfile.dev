@@ -52,7 +52,7 @@ RUN --mount=type=cache,target=/go go build -o /app/iota-core -tags="$BUILD_TAGS"
 RUN cp ./config_defaults.json /app/config.json
 RUN cp ./peering.json /app/peering.json
 
-RUN mkdir -p /app/data/peerdb
+RUN mkdir -p /app/data/p2p
 
 ############################
 # Runtime Image

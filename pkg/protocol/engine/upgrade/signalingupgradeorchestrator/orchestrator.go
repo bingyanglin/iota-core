@@ -163,7 +163,7 @@ func (o *Orchestrator) TrackValidationBlock(block *blocks.Block) {
 		return
 	}
 
-	seat, exists := committee.GetSeat(block.ProtocolBlock().Header.IssuerID)
+	seat, exists := committee.GetSeat(block.IssuerID())
 	if !exists {
 		return
 	}

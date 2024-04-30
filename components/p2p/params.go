@@ -6,8 +6,7 @@ import (
 
 const (
 	// CfgPeers defines the static peers this node should retain a connection to (CLI).
-	CfgPeers                   = "peers"
-	IdentityPrivateKeyFileName = "identity.key"
+	CfgPeers = "peers"
 )
 
 // ParametersP2P contains the definition of configuration parameters used by the p2p plugin.
@@ -25,6 +24,9 @@ type ParametersP2P struct {
 	// Defines the private key used to derive the node identity (optional).
 	IdentityPrivateKey string `default:"" usage:"private key used to derive the node identity (optional)"`
 
+	// Defines the file path to the private key used to derive the node identity.
+	IdentityPrivateKeyFilePath string `default:"testnet/p2p/identity.key" usage:"the file path to the private key used to derive the node identity"`
+
 	Autopeering struct {
 		// MaxPeers defines the max number of auto-peer connections. Set to 0 to disable auto-peering.
 		MaxPeers int `default:"5" usage:"the max number of auto-peer connections. Set to 0 to disable auto-peering."`
@@ -38,11 +40,6 @@ type ParametersP2P struct {
 		// ExternalMultiAddress defines additional p2p multiaddresses to be advertised via DHT.
 		ExternalMultiAddresses []string `default:"" usage:"external reacheable multi addresses advertised to the network"`
 	}
-
-	Database struct {
-		// Defines the path to the p2p database.
-		Path string `default:"testnet/p2pstore" usage:"the path to the p2p database"`
-	} `name:"db"`
 }
 
 // ParametersPeers contains the definition of the parameters used by peers.

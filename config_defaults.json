@@ -22,14 +22,12 @@
       "lowWatermark": 5
     },
     "identityPrivateKey": "",
+    "identityPrivateKeyFilePath": "testnet/p2p/identity.key",
     "autopeering": {
       "maxPeers": 5,
       "bootstrapPeers": [],
       "allowLocalIPs": false,
       "externalMultiAddresses": []
-    },
-    "db": {
-      "path": "testnet/p2pstore"
     }
   },
   "profiling": {

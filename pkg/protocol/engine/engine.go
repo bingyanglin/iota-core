@@ -21,6 +21,7 @@ import (
 	"github.com/iotaledger/hive.go/runtime/options"
 	"github.com/iotaledger/hive.go/runtime/syncutils"
 	"github.com/iotaledger/hive.go/runtime/workerpool"
+	"github.com/iotaledger/iota-core/pkg/core/account"
 	"github.com/iotaledger/iota-core/pkg/model"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/attestation"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/blockdag"
@@ -34,6 +35,7 @@ import (
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/filter/postsolidfilter"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/filter/presolidfilter"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/ledger"
+	"github.com/iotaledger/iota-core/pkg/protocol/engine/mempool"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/notarization"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/syncmanager"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/tipmanager"
@@ -138,12 +140,13 @@ func New(
 			RootCommitment:   reactive.NewVariable[*model.Commitment](),
 			LatestCommitment: reactive.NewVariable[*model.Commitment](),
 			Workers:          workers,
+			Module:           module.New(logger.NewChildLogger("Engine", true)),
 
 			optsSnapshotPath:    "snapshot.bin",
 			optsSnapshotDepth:   5,
 			optsCheckCommitment: true,
 		}, opts, func(e *Engine) {
-			e.Module = e.initReactiveModule(logger)
+			e.initModule()
 
 			e.errorHandler = func(err error) {
 				e.LogError("engine error", "err", err)
@@ -478,7 +481,7 @@ func (e *Engine) Export(writer io.WriteSeeker, targetSlot iotago.SlotIndex) (err
 		return ierrors.Wrap(err, "failed to export ledger")
 	} else if err := e.SybilProtection.Export(writer, targetSlot); err != nil {
 		return ierrors.Wrap(err, "failed to export sybil protection")
-	} else if err = e.EvictionState.Export(writer, e.Storage.Settings().LatestFinalizedSlot(), targetSlot); err != nil {
+	} else if err = e.EvictionState.Export(writer, targetSlot); err != nil {
 		// The rootcommitment is determined from the rootblocks. Therefore, we need to export starting from the last finalized slot.
 		return ierrors.Wrap(err, "failed to export eviction state")
 	} else if err = e.Attestations.Export(writer, targetSlot); err != nil {
@@ -648,15 +651,10 @@ func (e *Engine) initLatestCommitment() {
 	})
 }
 
-func (e *Engine) initReactiveModule(parentLogger log.Logger) (reactiveModule module.Module) {
-	reactiveModule = module.New(parentLogger.NewChildLogger("Engine", true))
+func (e *Engine) initModule() {
+	detachEngineLogs := e.attachEngineLogs()
 
-	e.RootCommitment.LogUpdates(reactiveModule, log.LevelTrace, "RootCommitment")
-	e.LatestCommitment.LogUpdates(reactiveModule, log.LevelTrace, "LatestCommitment")
-
-	reactiveModule.ShutdownEvent().OnTrigger(func() {
-		reactiveModule.LogDebug("shutting down")
-
+	e.ShutdownEvent().OnTrigger(func() {
 		e.BlockRequester.Shutdown()
 
 		e.shutdownSubModules()
@@ -666,10 +664,240 @@ func (e *Engine) initReactiveModule(parentLogger log.Logger) (reactiveModule mod
 
 		e.StoppedEvent().Trigger()
 
-		reactiveModule.LogDebug("stopped")
+		detachEngineLogs()
 	})
+}
 
-	return reactiveModule
+func (e *Engine) attachEngineLogs() (teardown func()) {
+	return lo.Batch(
+		e.ConstructedEvent().LogUpdates(e, log.LevelTrace, "Constructed"),
+		e.InitializedEvent().LogUpdates(e, log.LevelInfo, "Initialized"),
+		e.ShutdownEvent().LogUpdates(e, log.LevelInfo, "Shutdown"),
+		e.StoppedEvent().LogUpdates(e, log.LevelInfo, "Stopped"),
+
+		e.RootCommitment.LogUpdates(e, log.LevelTrace, "RootCommitment"),
+		e.LatestCommitment.LogUpdates(e, log.LevelTrace, "LatestCommitment"),
+
+		e.OnLogLevelActive(log.LevelTrace, func() (shutdown func()) {
+			logMessage := e.LogTrace
+
+			return lo.BatchReverse(
+				e.Events.BlockDAG.BlockAppended.Hook(func(block *blocks.Block) {
+					logMessage("BlockDAG.BlockAppended", "block", block.ID())
+				}).Unhook,
+
+				e.Events.BlockDAG.BlockSolid.Hook(func(block *blocks.Block) {
+					logMessage("BlockDAG.BlockSolid", "block", block.ID())
+				}).Unhook,
+
+				e.Events.SeatManager.BlockProcessed.Hook(func(block *blocks.Block) {
+					logMessage("SeatManager.BlockProcessed", "block", block.ID())
+				}).Unhook,
+
+				e.Events.Booker.BlockBooked.Hook(func(block *blocks.Block) {
+					logMessage("Booker.BlockBooked", "block", block.ID())
+				}).Unhook,
+
+				e.Events.Scheduler.BlockScheduled.Hook(func(block *blocks.Block) {
+					logMessage("Scheduler.BlockScheduled", "block", block.ID())
+				}).Unhook,
+
+				e.Events.Scheduler.BlockEnqueued.Hook(func(block *blocks.Block) {
+					logMessage("Scheduler.BlockEnqueued", "block", block.ID())
+				}).Unhook,
+
+				e.Events.Scheduler.BlockSkipped.Hook(func(block *blocks.Block) {
+					logMessage("Scheduler.BlockSkipped", "block", block.ID())
+				}).Unhook,
+
+				e.Events.Clock.AcceptedTimeUpdated.Hook(func(newTime time.Time) {
+					logMessage("Clock.AcceptedTimeUpdated", "time", newTime, "slot", e.LatestAPI().TimeProvider().SlotFromTime(newTime))
+				}).Unhook,
+
+				e.Events.Clock.ConfirmedTimeUpdated.Hook(func(newTime time.Time) {
+					logMessage("Clock.ConfirmedTimeUpdated", "time", newTime, "slot", e.LatestAPI().TimeProvider().SlotFromTime(newTime))
+				}).Unhook,
+
+				e.Events.PreSolidFilter.BlockPreAllowed.Hook(func(block *model.Block) {
+					logMessage("PreSolidFilter.BlockPreAllowed", "block", block.ID())
+				}).Unhook,
+
+				e.Events.PostSolidFilter.BlockAllowed.Hook(func(block *blocks.Block) {
+					logMessage("PostSolidFilter.BlockAllowed", "block", block.ID())
+				}).Unhook,
+
+				e.Events.BlockRequester.Tick.Hook(func(blockID iotago.BlockID) {
+					logMessage("BlockRequester.Tick", "block", blockID)
+				}).Unhook,
+
+				e.Events.BlockProcessed.Hook(func(blockID iotago.BlockID) {
+					logMessage("BlockProcessed", "block", blockID)
+				}).Unhook,
+
+				e.Events.BlockRetainer.BlockRetained.Hook(func(block *blocks.Block) {
+					logMessage("Retainer.BlockRetained", "block", block.ID())
+				}).Unhook,
+
+				e.Events.TransactionRetainer.TransactionRetained.Hook(func(txID iotago.TransactionID) {
+					logMessage("Retainer.TransactionRetained", "transaction", txID)
+				}).Unhook,
+
+				e.Events.BlockGadget.BlockPreAccepted.Hook(func(block *blocks.Block) {
+					logMessage("BlockGadget.BlockPreAccepted", "block", block.ID(), "slotCommitmentID", block.ProtocolBlock().Header.SlotCommitmentID)
+				}).Unhook,
+
+				e.Events.BlockGadget.BlockPreConfirmed.Hook(func(block *blocks.Block) {
+					logMessage("BlockGadget.BlockPreConfirmed", "block", block.ID(), "slotCommitmentID", block.ProtocolBlock().Header.SlotCommitmentID)
+				}).Unhook,
+
+				e.Events.Notarization.LatestCommitmentUpdated.Hook(func(commitment *model.Commitment) {
+					logMessage("NotarizationManager.LatestCommitmentUpdated", "commitment", commitment.ID())
+				}).Unhook,
+
+				e.Events.SpendDAG.SpenderCreated.Hook(func(conflictID iotago.TransactionID) {
+					logMessage("SpendDAG.SpenderCreated", "conflictID", conflictID)
+				}).Unhook,
+
+				e.Events.SpendDAG.SpenderEvicted.Hook(func(conflictID iotago.TransactionID) {
+					logMessage("SpendDAG.SpenderEvicted", "conflictID", conflictID)
+				}).Unhook,
+
+				e.Events.SpendDAG.SpenderRejected.Hook(func(conflictID iotago.TransactionID) {
+					logMessage("SpendDAG.SpenderRejected", "conflictID", conflictID)
+				}).Unhook,
+
+				e.Events.SpendDAG.SpenderAccepted.Hook(func(conflictID iotago.TransactionID) {
+					logMessage("SpendDAG.SpenderAccepted", "conflictID", conflictID)
+				}).Unhook,
+
+				e.ConstructedEvent().WithNonEmptyValue(func(_ bool) func() {
+					return e.Ledger.InitializedEvent().WithNonEmptyValue(func(_ bool) func() {
+						return lo.Batch(
+							e.Ledger.OnTransactionAttached(func(transactionMetadata mempool.TransactionMetadata) {
+								logMessage("Ledger.TransactionAttached", "tx", transactionMetadata.ID())
+
+								transactionMetadata.OnSolid(func() {
+									logMessage("MemPool.TransactionSolid", "tx", transactionMetadata.ID())
+								})
+
+								transactionMetadata.OnExecuted(func() {
+									logMessage("MemPool.TransactionExecuted", "tx", transactionMetadata.ID())
+								})
+
+								transactionMetadata.OnBooked(func() {
+									logMessage("MemPool.TransactionBooked", "tx", transactionMetadata.ID())
+								})
+
+								transactionMetadata.OnAccepted(func() {
+									logMessage("MemPool.TransactionAccepted", "tx", transactionMetadata.ID())
+								})
+
+								transactionMetadata.OnRejected(func() {
+									logMessage("MemPool.TransactionRejected", "tx", transactionMetadata.ID())
+								})
+
+								transactionMetadata.OnInvalid(func(err error) {
+									logMessage("MemPool.TransactionInvalid", "tx", transactionMetadata.ID(), "err", err)
+								})
+
+								transactionMetadata.OnOrphanedSlotUpdated(func(slot iotago.SlotIndex) {
+									logMessage("MemPool.TransactionOrphanedSlotUpdated", "tx", transactionMetadata.ID(), "slot", slot)
+								})
+
+								transactionMetadata.OnCommittedSlotUpdated(func(slot iotago.SlotIndex) {
+									logMessage("MemPool.TransactionCommittedSlotUpdated", "tx", transactionMetadata.ID(), "slot", slot)
+								})
+
+								transactionMetadata.OnEvicted(func() {
+									logMessage("MemPool.TransactionEvicted", "tx", transactionMetadata.ID())
+								})
+							}).Unhook,
+
+							e.Ledger.MemPool().OnSignedTransactionAttached(
+								func(signedTransactionMetadata mempool.SignedTransactionMetadata) {
+									signedTransactionMetadata.OnSignaturesInvalid(func(err error) {
+										logMessage("MemPool.SignedTransactionSignaturesInvalid", "signedTx", signedTransactionMetadata.ID(), "tx", signedTransactionMetadata.TransactionMetadata().ID(), "err", err)
+									})
+								},
+							).Unhook,
+						)
+					})
+				}),
+			)
+		}),
+
+		e.OnLogLevelActive(log.LevelDebug, func() (shutdown func()) {
+			logMessage := e.LogDebug
+
+			return lo.Batch(
+				e.Events.BlockDAG.BlockMissing.Hook(func(block *blocks.Block) {
+					logMessage("BlockDAG.BlockMissing", "block", block.ID())
+				}).Unhook,
+
+				e.Events.BlockDAG.MissingBlockAppended.Hook(func(block *blocks.Block) {
+					logMessage("BlockDAG.MissingBlockAppended", "block", block.ID())
+				}).Unhook,
+
+				e.Events.BlockDAG.BlockInvalid.Hook(func(block *blocks.Block, err error) {
+					logMessage("BlockDAG.BlockInvalid", "block", block.ID(), "err", err)
+				}).Unhook,
+
+				e.Events.PreSolidFilter.BlockPreFiltered.Hook(func(event *presolidfilter.BlockPreFilteredEvent) {
+					logMessage("PreSolidFilter.BlockPreFiltered", "block", event.Block.ID(), "err", event.Reason)
+				}).Unhook,
+
+				e.Events.PostSolidFilter.BlockFiltered.Hook(func(event *postsolidfilter.BlockFilteredEvent) {
+					logMessage("PostSolidFilter.BlockFiltered", "block", event.Block.ID(), "err", event.Reason)
+				}).Unhook,
+
+				e.Events.Booker.BlockInvalid.Hook(func(block *blocks.Block, err error) {
+					logMessage("Booker.BlockInvalid", "block", block.ID(), "err", err)
+				}).Unhook,
+
+				e.Events.Booker.TransactionInvalid.Hook(func(metadata mempool.TransactionMetadata, err error) {
+					logMessage("Booker.TransactionInvalid", "tx", metadata.ID(), "err", err)
+				}).Unhook,
+
+				e.Events.Scheduler.BlockDropped.Hook(func(block *blocks.Block, err error) {
+					logMessage("Scheduler.BlockDropped", "block", block.ID(), "err", err)
+				}).Unhook,
+
+				e.Events.BlockGadget.BlockAccepted.Hook(func(block *blocks.Block) {
+					logMessage("BlockGadget.BlockAccepted", "block", block.ID(), "slotCommitmentID", block.ProtocolBlock().Header.SlotCommitmentID)
+				}).Unhook,
+
+				e.Events.BlockGadget.BlockConfirmed.Hook(func(block *blocks.Block) {
+					logMessage("BlockGadget.BlockConfirmed", "block", block.ID(), "slotCommitmentID", block.ProtocolBlock().Header.SlotCommitmentID)
+				}).Unhook,
+
+				e.Events.SlotGadget.SlotFinalized.Hook(func(slot iotago.SlotIndex) {
+					logMessage("SlotGadget.SlotFinalized", "slot", slot)
+				}).Unhook,
+
+				e.Events.Notarization.SlotCommitted.Hook(func(details *notarization.SlotCommittedDetails) {
+					logMessage("NotarizationManager.SlotCommitted", "commitment", details.Commitment.ID(), "acceptedBlocks count", details.AcceptedBlocks.Size(), "accepted transactions", len(details.Mutations))
+				}).Unhook,
+
+				e.Events.SeatManager.OnlineCommitteeSeatAdded.Hook(func(seat account.SeatIndex, accountID iotago.AccountID) {
+					logMessage("SybilProtection.OnlineCommitteeSeatAdded", "seat", seat, "accountID", accountID)
+				}).Unhook,
+
+				e.Events.SeatManager.OnlineCommitteeSeatRemoved.Hook(func(seat account.SeatIndex) {
+					logMessage("SybilProtection.OnlineCommitteeSeatRemoved", "seat", seat)
+				}).Unhook,
+			)
+		}),
+
+		e.OnLogLevelActive(log.LevelInfo, func() (shutdown func()) {
+			logMessage := e.LogInfo
+
+			return lo.Batch(
+				e.Events.SybilProtection.CommitteeSelected.Hook(func(committee *account.SeatedAccounts, epoch iotago.EpochIndex) {
+					logMessage("SybilProtection.CommitteeSelected", "epoch", epoch, "committee", committee.IDs())
+				}).Unhook,
+			)
+		}),
+	)
 }
 
 func (e *Engine) shutdownSubModules() {
