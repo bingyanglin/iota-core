@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	FlagToolDatabasePath = "databasePath"
+	FlagToolIdentityPrivateKeyFilePath = "identityPrivateKeyFilePath"
 
 	FlagToolOutputPath = "outputPath"
 
@@ -40,8 +40,8 @@ const (
 )
 
 const (
-	DefaultValueAPIJWTTokenSalt = "IOTA"
-	DefaultValueP2PDatabasePath = "testnet/p2pstore"
+	DefaultValueAPIJWTTokenSalt            = "IOTA"
+	DefaultValueIdentityPrivateKeyFilePath = "testnet/p2p/identity.key"
 )
 
 // ShouldHandleTools checks if tools were requested.

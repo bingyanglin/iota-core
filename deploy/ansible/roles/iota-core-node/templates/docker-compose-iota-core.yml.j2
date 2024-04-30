@@ -41,7 +41,7 @@ services:
       --p2p.peers=/dns/node-01.feature/tcp/15600/p2p/12D3KooWCrjmh4dUCWfGVQT6ivzArieJB9Z3eKdy2mdEEN95NDPS
       --p2p.externalMultiAddresses={{ ips | join(',') }}
       --p2p.identityPrivateKey={{p2pIdentityPrvKey}}
-      --p2p.db.path=/app/data/peerdb
+      --p2p.identityPrivateKeyFilePath=/app/data/p2p/identity.key",
       --profiling.enabled=true
       --profiling.bindAddress=0.0.0.0:6061
       --restAPI.bindAddress=0.0.0.0:14265

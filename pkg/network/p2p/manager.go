@@ -2,11 +2,11 @@ package p2p
 
 import (
 	"context"
+	"time"
 
 	"github.com/libp2p/go-libp2p/core/host"
 	p2pnetwork "github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/multiformats/go-multiaddr"
 	"google.golang.org/protobuf/proto"
 
@@ -37,7 +37,6 @@ type Manager struct {
 	neighborRemoved *event.Event1[network.Neighbor]
 
 	libp2pHost host.Host
-	peerDB     *network.DB
 
 	ctx context.Context
 
@@ -58,11 +57,10 @@ type Manager struct {
 var _ network.Manager = (*Manager)(nil)
 
 // NewManager creates a new Manager.
-func NewManager(logger log.Logger, libp2pHost host.Host, peerDB *network.DB, maxAutopeeringPeers int, allowLocalAutopeering bool, onBlockSentCallback func()) *Manager {
+func NewManager(logger log.Logger, libp2pHost host.Host, maxAutopeeringPeers int, allowLocalAutopeering bool, onBlockSentCallback func()) *Manager {
 	m := &Manager{
 		logger:              logger,
 		libp2pHost:          libp2pHost,
-		peerDB:              peerDB,
 		neighborAdded:       event.New1[network.Neighbor](),
 		neighborRemoved:     event.New1[network.Neighbor](),
 		neighbors:           shrinkingmap.New[peer.ID, *neighbor](),
@@ -70,7 +68,7 @@ func NewManager(logger log.Logger, libp2pHost host.Host, peerDB *network.DB, max
 		addrFilter:          network.PublicOnlyAddressesFilter(allowLocalAutopeering),
 	}
 
-	m.autoPeering = autopeering.NewManager(maxAutopeeringPeers, m, libp2pHost, peerDB, m.addrFilter, logger)
+	m.autoPeering = autopeering.NewManager(maxAutopeeringPeers, m, libp2pHost, m.addrFilter, logger)
 	m.manualPeering = manualpeering.NewManager(m, logger)
 
 	return m
@@ -124,8 +122,6 @@ func (m *Manager) DialPeer(ctx context.Context, peer *network.Peer) error {
 		return ierrors.WithMessagef(network.ErrMaxAutopeeringPeersReached, "peer %s is not allowed", peer.ID.String())
 	}
 
-	// Adds the peer's multiaddresses to the peerstore, so that they can be used for dialing.
-	m.libp2pHost.Peerstore().AddAddrs(peer.ID, m.addrFilter(peer.PeerAddresses), peerstore.ConnectedAddrTTL)
 	cancelCtx := ctx
 
 	stream, err := m.P2PHost().NewStream(cancelCtx, peer.ID, network.CoreProtocolID)
@@ -141,12 +137,6 @@ func (m *Manager) DialPeer(ctx context.Context, peer *network.Peer) error {
 	}
 
 	m.logger.LogDebugf("outgoing stream negotiated, id: %s, addr: %s, proto: %s", peer.ID, ps.Conn().RemoteMultiaddr(), network.CoreProtocolID)
-
-	if err := m.peerDB.UpdatePeer(peer); err != nil {
-		m.closeStream(stream)
-
-		return ierrors.Wrapf(err, "failed to update peer %s", peer.ID.String())
-	}
 
 	if err := m.addNeighbor(peer, ps, m.onBlockSentCallback); err != nil {
 		m.closeStream(stream)
@@ -350,13 +340,6 @@ func (m *Manager) handleStream(stream p2pnetwork.Stream) {
 	}
 
 	networkPeer := network.NewPeerFromAddrInfo(peerAddrInfo)
-	if err := m.peerDB.UpdatePeer(networkPeer); err != nil {
-		m.logger.LogErrorf("failed to update peer in peer database, peerID: %s, error: %s", peerID.String(), err.Error())
-		m.closeStream(stream)
-
-		return
-	}
-
 	if err := m.addNeighbor(networkPeer, ps, m.onBlockSentCallback); err != nil {
 		m.logger.LogErrorf("failed to add neighbor, peerID: %s, error: %s", peerID.String(), err.Error())
 		m.closeStream(stream)
