@@ -122,8 +122,6 @@ func (m *Manager) DialPeer(ctx context.Context, peer *network.Peer) error {
 		return ierrors.WithMessagef(network.ErrMaxAutopeeringPeersReached, "peer %s is not allowed", peer.ID.String())
 	}
 
-	// Set the current peer's multiaddresses to the peerstore, so that they can be used for dialing.
-	m.libp2pHost.Peerstore().SetAddrs(peer.ID, m.addrFilter(peer.PeerAddresses), 10*time.Minute)
 	cancelCtx := ctx
 
 	stream, err := m.P2PHost().NewStream(cancelCtx, peer.ID, network.CoreProtocolID)

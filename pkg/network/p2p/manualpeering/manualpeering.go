@@ -79,6 +79,8 @@ func (m *Manager) RemovePeer(peerID peer.ID) error {
 		return ierrors.Wrapf(err, "failed to drop known peer %s in the gossip layer", peerID.String())
 	}
 
+	m.networkManager.P2PHost().Peerstore().RemovePeer(peerID)
+
 	return nil
 }
 
@@ -178,6 +180,9 @@ func (m *Manager) AddPeer(multiAddr multiaddr.Multiaddr) (*network.Peer, error) 
 	if peer, exists := m.knownPeers[newPeer.ID]; exists {
 		return peer, nil
 	}
+
+	// Set the current peer's multiaddresses to the peerstore, so that they can be used for dialing.
+	m.networkManager.P2PHost().Peerstore().SetAddrs(newPeer.ID, newPeer.PeerAddresses, 10*time.Minute)
 
 	m.logger.LogInfof("Adding new peer to the list of known peers in manual peering %s", newPeer)
 	m.knownPeers[newPeer.ID] = newPeer
