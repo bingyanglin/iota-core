@@ -16,13 +16,12 @@ import (
 	hivecrypto "github.com/iotaledger/hive.go/crypto"
 	"github.com/iotaledger/hive.go/crypto/pem"
 	"github.com/iotaledger/hive.go/ierrors"
-	"github.com/iotaledger/iota-core/components/p2p"
 	"github.com/iotaledger/iota.go/v4/hexutil"
 )
 
 func generateP2PIdentity(args []string) error {
 	fs := configuration.NewUnsortedFlagSet("", flag.ContinueOnError)
-	databasePathFlag := fs.String(FlagToolOutputPath, DefaultValueP2PDatabasePath, "the path to the output folder")
+	privKeyFilePath := fs.String(FlagToolIdentityPrivateKeyFilePath, DefaultValueIdentityPrivateKeyFilePath, "the file path to the identity private key file")
 	privateKeyFlag := fs.String(FlagToolPrivateKey, "", "the p2p private key")
 	outputJSONFlag := fs.Bool(FlagToolOutputJSON, false, FlagToolDescriptionOutputJSON)
 
@@ -31,8 +30,8 @@ func generateP2PIdentity(args []string) error {
 		fs.PrintDefaults()
 		println(fmt.Sprintf("\nexample: %s --%s %s --%s %s",
 			ToolP2PIdentityGen,
-			FlagToolDatabasePath,
-			DefaultValueP2PDatabasePath,
+			FlagToolIdentityPrivateKeyFilePath,
+			DefaultValueIdentityPrivateKeyFilePath,
 			FlagToolPrivateKey,
 			"[PRIVATE_KEY]",
 		))
@@ -42,28 +41,25 @@ func generateP2PIdentity(args []string) error {
 		return err
 	}
 
-	if len(*databasePathFlag) == 0 {
-		return ierrors.Errorf("'%s' not specified", FlagToolDatabasePath)
+	if len(*privKeyFilePath) == 0 {
+		return ierrors.Errorf("'%s' not specified", FlagToolIdentityPrivateKeyFilePath)
 	}
 
-	databasePath := *databasePathFlag
-	privKeyFilePath := filepath.Join(databasePath, p2p.IdentityPrivateKeyFileName)
-
-	if err := os.MkdirAll(databasePath, 0700); err != nil {
-		return ierrors.Wrapf(err, "could not create peer store database dir '%s'", databasePath)
+	if err := os.MkdirAll(filepath.Dir(*privKeyFilePath), 0700); err != nil {
+		return ierrors.Wrapf(err, "could not create peer store database dir '%s'", filepath.Dir(*privKeyFilePath))
 	}
 
-	_, err := os.Stat(privKeyFilePath)
+	_, err := os.Stat(*privKeyFilePath)
 	switch {
 	case err == nil || os.IsExist(err):
 		// private key file already exists
-		return ierrors.Errorf("private key file (%s) already exists", privKeyFilePath)
+		return ierrors.Errorf("private key file (%s) already exists", *privKeyFilePath)
 
 	case os.IsNotExist(err):
 		// private key file does not exist, create a new one
 
 	default:
-		return ierrors.Wrapf(err, "unable to check private key file (%s)", privKeyFilePath)
+		return ierrors.Wrapf(err, "unable to check private key file (%s)", *privKeyFilePath)
 	}
 
 	var privKey ed25519.PrivateKey
@@ -85,7 +81,7 @@ func generateP2PIdentity(args []string) error {
 		return ierrors.Wrapf(err, "unable to convert given private key '%s'", hexutil.EncodeHex(privKey))
 	}
 
-	if err := pem.WriteEd25519PrivateKeyToPEMFile(privKeyFilePath, privKey); err != nil {
+	if err := pem.WriteEd25519PrivateKeyToPEMFile(*privKeyFilePath, privKey); err != nil {
 		return ierrors.Wrap(err, "writing private key file for peer identity failed")
 	}
 

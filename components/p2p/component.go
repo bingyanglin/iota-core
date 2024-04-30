@@ -2,7 +2,6 @@ package p2p
 
 import (
 	"context"
-	"path/filepath"
 
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/crypto"
@@ -18,7 +17,6 @@ import (
 	hivep2p "github.com/iotaledger/hive.go/crypto/p2p"
 	"github.com/iotaledger/hive.go/db"
 	"github.com/iotaledger/hive.go/ierrors"
-	"github.com/iotaledger/hive.go/kvstore"
 	"github.com/iotaledger/iota-core/pkg/daemon"
 	"github.com/iotaledger/iota-core/pkg/network"
 	"github.com/iotaledger/iota-core/pkg/network/p2p"
@@ -47,21 +45,17 @@ type dependencies struct {
 	PeeringConfig        *configuration.Configuration `name:"peeringConfig"`
 	PeeringConfigManager *p2p.ConfigManager
 	NetworkManager       network.Manager
-	PeerDB               *network.DB
 	Protocol             *protocol.Protocol
-	PeerDBKVSTore        kvstore.KVStore `name:"peerDBKVStore"`
 }
 
 func initConfigParams(c *dig.Container) error {
 	type cfgResult struct {
 		dig.Out
-		P2PDatabasePath       string   `name:"p2pDatabasePath"`
 		P2PBindMultiAddresses []string `name:"p2pBindMultiAddresses"`
 	}
 
 	if err := c.Provide(func() cfgResult {
 		return cfgResult{
-			P2PDatabasePath:       ParamsP2P.Database.Path,
 			P2PBindMultiAddresses: ParamsP2P.BindMultiAddresses,
 		}
 	}); err != nil {
@@ -72,27 +66,6 @@ func initConfigParams(c *dig.Container) error {
 }
 
 func provide(c *dig.Container) error {
-	type peerDatabaseResult struct {
-		dig.Out
-
-		PeerDB        *network.DB
-		PeerDBKVSTore kvstore.KVStore `name:"peerDBKVStore"`
-	}
-
-	if err := c.Provide(func() peerDatabaseResult {
-		peerDB, peerDBKVStore, err := initPeerDB()
-		if err != nil {
-			Component.LogFatal(err.Error())
-		}
-
-		return peerDatabaseResult{
-			PeerDB:        peerDB,
-			PeerDBKVSTore: peerDBKVStore,
-		}
-	}); err != nil {
-		return err
-	}
-
 	type configManagerDeps struct {
 		dig.In
 		PeeringConfig         *configuration.Configuration `name:"peeringConfig"`
@@ -167,7 +140,6 @@ func provide(c *dig.Container) error {
 	type p2pDeps struct {
 		dig.In
 		DatabaseEngine        db.Engine `name:"databaseEngine"`
-		P2PDatabasePath       string    `name:"p2pDatabasePath"`
 		P2PBindMultiAddresses []string  `name:"p2pBindMultiAddresses"`
 	}
 
@@ -180,22 +152,20 @@ func provide(c *dig.Container) error {
 	if err := c.Provide(func(deps p2pDeps) p2pResult {
 		res := p2pResult{}
 
-		privKeyFilePath := filepath.Join(deps.P2PDatabasePath, IdentityPrivateKeyFileName)
-
 		// make sure nobody copies around the peer store since it contains the private key of the node
-		Component.LogInfof(`WARNING: never share your "%s" folder as it contains your node's private key!`, deps.P2PDatabasePath)
+		Component.LogInfof(`WARNING: never share the file "%s" as it contains your node's private key!`, ParamsP2P.IdentityPrivateKeyFilePath)
 
 		// load up the previously generated identity or create a new one
-		nodePrivateKey, newlyCreated, err := hivep2p.LoadOrCreateIdentityPrivateKey(privKeyFilePath, ParamsP2P.IdentityPrivateKey)
+		nodePrivateKey, newlyCreated, err := hivep2p.LoadOrCreateIdentityPrivateKey(ParamsP2P.IdentityPrivateKeyFilePath, ParamsP2P.IdentityPrivateKey)
 		if err != nil {
 			Component.LogPanic(err.Error())
 		}
 		res.NodePrivateKey = nodePrivateKey
 
 		if newlyCreated {
-			Component.LogInfof(`stored new private key for peer identity under "%s"`, privKeyFilePath)
+			Component.LogInfof(`stored new private key for peer identity under "%s"`, ParamsP2P.IdentityPrivateKeyFilePath)
 		} else {
-			Component.LogInfof(`loaded existing private key for peer identity from "%s"`, privKeyFilePath)
+			Component.LogInfof(`loaded existing private key for peer identity from "%s"`, ParamsP2P.IdentityPrivateKeyFilePath)
 		}
 
 		connManager, err := connmgr.NewConnManager(
@@ -238,7 +208,6 @@ func provide(c *dig.Container) error {
 	type p2pManagerDeps struct {
 		dig.In
 		Host       host.Host
-		PeerDB     *network.DB
 		P2PMetrics *p2p.Metrics
 	}
 
@@ -247,31 +216,11 @@ func provide(c *dig.Container) error {
 			inDeps.P2PMetrics.OutgoingBlocks.Add(1)
 		}
 
-		return p2p.NewManager(Component.Logger, inDeps.Host, inDeps.PeerDB, ParamsP2P.Autopeering.MaxPeers, ParamsP2P.Autopeering.AllowLocalIPs, onBlockSentCallback)
+		return p2p.NewManager(Component.Logger, inDeps.Host, ParamsP2P.Autopeering.MaxPeers, ParamsP2P.Autopeering.AllowLocalIPs, onBlockSentCallback)
 	})
 }
 
 func configure() error {
-	if err := Component.Daemon().BackgroundWorker("Close p2p peer database", func(ctx context.Context) {
-		<-ctx.Done()
-
-		closeDatabases := func() error {
-			if err := deps.PeerDBKVSTore.Flush(); err != nil {
-				return err
-			}
-
-			return deps.PeerDBKVSTore.Close()
-		}
-
-		Component.LogInfo("Syncing p2p peer database to disk ...")
-		if err := closeDatabases(); err != nil {
-			Component.LogPanicf("Syncing p2p peer database to disk ... failed: %s", err)
-		}
-		Component.LogInfo("Syncing p2p peer database to disk ... done")
-	}, daemon.PriorityCloseDatabase); err != nil {
-		Component.LogPanicf("failed to start worker: %s", err)
-	}
-
 	// log the p2p events
 	deps.NetworkManager.OnNeighborAdded(func(neighbor network.Neighbor) {
 		Component.LogInfof("neighbor added: %s / %s", neighbor.Peer().PeerAddresses, neighbor.Peer().ID)
