@@ -6,7 +6,6 @@
     {%- set _ = ips.append("/ip4/" + interface_details.ipv4.address + "/tcp/15600") -%}
   {%- endif -%}
 {% endfor -%}
-version: '3.3'
 
 services:
 
