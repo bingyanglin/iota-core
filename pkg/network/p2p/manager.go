@@ -2,7 +2,6 @@ package p2p
 
 import (
 	"context"
-	"time"
 
 	"github.com/libp2p/go-libp2p/core/host"
 	p2pnetwork "github.com/libp2p/go-libp2p/core/network"
