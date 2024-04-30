@@ -19,12 +19,13 @@ import (
 // IssuerQueue keeps the submitted blocks of an issuer.
 type IssuerQueue struct {
 	issuerID        iotago.AccountID
-	nonReadyMap     *shrinkingmap.ShrinkingMap[iotago.BlockID, *blocks.Block]
 	sizeChangedFunc func(totalSizeDelta int64, readySizeDelta int64, workDelta int64)
 
-	readyHeap generalheap.Heap[timed.HeapKey, *blocks.Block]
-	size      atomic.Int64
-	work      atomic.Int64
+	nonReadyMap *shrinkingmap.ShrinkingMap[iotago.BlockID, *blocks.Block]
+	readyHeap   generalheap.Heap[timed.HeapKey, *blocks.Block]
+
+	size atomic.Int64
+	work atomic.Int64
 }
 
 // NewIssuerQueue returns a new IssuerQueue.

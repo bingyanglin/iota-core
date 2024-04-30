@@ -387,7 +387,10 @@ func (s *Scheduler) selectBlockToScheduleWithLocking() {
 	s.bufferMutex.Lock()
 	defer s.bufferMutex.Unlock()
 
-	s.validatorBuffer.ScheduleNext()
+	s.validatorBuffer.ForEachValidatorQueue(func(_ iotago.AccountID, validatorQueue *ValidatorQueue) bool {
+		validatorQueue.ScheduleNext()
+		return true
+	})
 
 	s.selectBasicBlockWithoutLocking()
 }
