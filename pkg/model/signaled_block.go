@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/iotaledger/hive.go/lo"
+	"github.com/iotaledger/hive.go/stringify"
 	iotago "github.com/iotaledger/iota.go/v4"
 )
 
@@ -59,4 +60,13 @@ func SignaledBlockFromBytesFunc(decodeAPI iotago.API) func([]byte) (*SignaledBlo
 
 		return signaledBlock, consumedBytes, nil
 	}
+}
+
+func (s *SignaledBlock) String() string {
+	return stringify.Struct("SignaledBlock",
+		stringify.NewStructField("ID", s.ID),
+		stringify.NewStructField("IssuingTime", s.IssuingTime),
+		stringify.NewStructField("HighestSupportedVersion", s.HighestSupportedVersion),
+		stringify.NewStructField("ProtocolParametersHash", s.ProtocolParametersHash),
+	)
 }

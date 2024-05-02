@@ -4,6 +4,7 @@ import (
 	"github.com/iotaledger/hive.go/ierrors"
 	"github.com/iotaledger/hive.go/serializer/v2"
 	"github.com/iotaledger/hive.go/serializer/v2/stream"
+	"github.com/iotaledger/hive.go/stringify"
 	iotago "github.com/iotaledger/iota.go/v4"
 )
 
@@ -21,6 +22,13 @@ func NewBlockIssuanceCredits(value iotago.BlockIssuanceCredits, updateTime iotag
 		Value:      value,
 		UpdateSlot: updateTime,
 	}
+}
+
+func (c *BlockIssuanceCredits) String() string {
+	return stringify.Struct("BlockIssuanceCredits",
+		stringify.NewStructField("Value", c.Value),
+		stringify.NewStructField("UpdateSlot", c.UpdateSlot),
+	)
 }
 
 // Bytes returns a serialized version of the Credits.

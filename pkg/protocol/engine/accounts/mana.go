@@ -2,6 +2,7 @@ package accounts
 
 import (
 	"github.com/iotaledger/hive.go/runtime/syncutils"
+	"github.com/iotaledger/hive.go/stringify"
 	iotago "github.com/iotaledger/iota.go/v4"
 )
 
@@ -41,4 +42,15 @@ func (m *Mana) UpdateTime() iotago.SlotIndex {
 	defer m.mutex.RUnlock()
 
 	return m.updateTime
+}
+
+func (m *Mana) String() string {
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+
+	return stringify.Struct("Mana",
+		stringify.NewStructField("Value", m.value),
+		stringify.NewStructField("ExcessBaseTokens", m.excessBaseTokens),
+		stringify.NewStructField("UpdateTime", m.updateTime),
+	)
 }

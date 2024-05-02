@@ -6,6 +6,7 @@ import (
 	"github.com/iotaledger/hive.go/ierrors"
 	"github.com/iotaledger/hive.go/lo"
 	"github.com/iotaledger/hive.go/serializer/v2/stream"
+	"github.com/iotaledger/hive.go/stringify"
 	iotago "github.com/iotaledger/iota.go/v4"
 )
 
@@ -72,6 +73,26 @@ func (d *AccountDiff) Clone() *AccountDiff {
 		NewLatestSupportedVersionAndHash:  d.NewLatestSupportedVersionAndHash,
 		PrevLatestSupportedVersionAndHash: d.PrevLatestSupportedVersionAndHash,
 	}
+}
+
+func (d *AccountDiff) String() string {
+	builder := stringify.NewStructBuilder("AccountDiff")
+	builder.AddField(stringify.NewStructField("BICChange", d.BICChange))
+	builder.AddField(stringify.NewStructField("PreviousUpdatedSlot", d.PreviousUpdatedSlot))
+	builder.AddField(stringify.NewStructField("NewExpirySlot", d.NewExpirySlot))
+	builder.AddField(stringify.NewStructField("PreviousExpirySlot", d.PreviousExpirySlot))
+	builder.AddField(stringify.NewStructField("NewOutputID", d.NewOutputID))
+	builder.AddField(stringify.NewStructField("PreviousOutputID", d.PreviousOutputID))
+	builder.AddField(stringify.NewStructField("BlockIssuerKeysAdded", d.BlockIssuerKeysAdded))
+	builder.AddField(stringify.NewStructField("BlockIssuerKeysRemoved", d.BlockIssuerKeysRemoved))
+	builder.AddField(stringify.NewStructField("ValidatorStakeChange", d.ValidatorStakeChange))
+	builder.AddField(stringify.NewStructField("DelegationStakeChange", d.DelegationStakeChange))
+	builder.AddField(stringify.NewStructField("FixedCostChange", d.FixedCostChange))
+	builder.AddField(stringify.NewStructField("StakeEndEpochChange", d.StakeEndEpochChange))
+	builder.AddField(stringify.NewStructField("NewLatestSupportedVersionAndHash", d.NewLatestSupportedVersionAndHash))
+	builder.AddField(stringify.NewStructField("PrevLatestSupportedVersionAndHash", d.PrevLatestSupportedVersionAndHash))
+
+	return builder.String()
 }
 
 func (d *AccountDiff) Bytes() ([]byte, error) {
