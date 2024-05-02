@@ -49,8 +49,8 @@ func (m *Mana) String() string {
 	defer m.mutex.RUnlock()
 
 	return stringify.Struct("Mana",
-		stringify.NewStructField("Value", m.value),
-		stringify.NewStructField("ExcessBaseTokens", m.excessBaseTokens),
-		stringify.NewStructField("UpdateTime", m.updateTime),
+		stringify.NewStructField("Value", uint64(m.value)),
+		stringify.NewStructField("ExcessBaseTokens", uint64(m.excessBaseTokens)),
+		stringify.NewStructField("UpdateTime", uint32(m.updateTime)),
 	)
 }

@@ -77,10 +77,10 @@ func (d *AccountDiff) Clone() *AccountDiff {
 
 func (d *AccountDiff) String() string {
 	builder := stringify.NewStructBuilder("AccountDiff")
-	builder.AddField(stringify.NewStructField("BICChange", d.BICChange))
-	builder.AddField(stringify.NewStructField("PreviousUpdatedSlot", d.PreviousUpdatedSlot))
-	builder.AddField(stringify.NewStructField("NewExpirySlot", d.NewExpirySlot))
-	builder.AddField(stringify.NewStructField("PreviousExpirySlot", d.PreviousExpirySlot))
+	builder.AddField(stringify.NewStructField("BICChange", int64(d.BICChange)))
+	builder.AddField(stringify.NewStructField("PreviousUpdatedSlot", uint32(d.PreviousUpdatedSlot)))
+	builder.AddField(stringify.NewStructField("NewExpirySlot", uint32(d.NewExpirySlot)))
+	builder.AddField(stringify.NewStructField("PreviousExpirySlot", uint32(d.PreviousExpirySlot)))
 	builder.AddField(stringify.NewStructField("NewOutputID", d.NewOutputID))
 	builder.AddField(stringify.NewStructField("PreviousOutputID", d.PreviousOutputID))
 	builder.AddField(stringify.NewStructField("BlockIssuerKeysAdded", d.BlockIssuerKeysAdded))

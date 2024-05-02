@@ -62,8 +62,8 @@ func (p *PoolsStats) Bytes() ([]byte, error) {
 
 func (p *PoolsStats) String() string {
 	return stringify.Struct("PoolsStats",
-		stringify.NewStructField("TotalStake", p.TotalStake),
-		stringify.NewStructField("TotalValidatorStake", p.TotalValidatorStake),
+		stringify.NewStructField("TotalStake", uint64(p.TotalStake)),
+		stringify.NewStructField("TotalValidatorStake", uint64(p.TotalValidatorStake)),
 		stringify.NewStructField("ProfitMargin", p.ProfitMargin),
 	)
 }
@@ -123,8 +123,8 @@ func (p *PoolRewards) Bytes() ([]byte, error) {
 
 func (p *PoolRewards) String() string {
 	return stringify.Struct("PoolRewards",
-		stringify.NewStructField("PoolStake", p.PoolStake),
-		stringify.NewStructField("PoolRewards", p.PoolRewards),
-		stringify.NewStructField("FixedCost", p.FixedCost),
+		stringify.NewStructField("PoolStake", uint64(p.PoolStake)),
+		stringify.NewStructField("PoolRewards", uint64(p.PoolRewards)),
+		stringify.NewStructField("FixedCost", uint64(p.FixedCost)),
 	)
 }

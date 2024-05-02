@@ -170,13 +170,13 @@ func (a *AccountData) String() string {
 	return stringify.Struct("AccountData",
 		stringify.NewStructField("ID", a.ID),
 		stringify.NewStructField("Credits", a.Credits),
-		stringify.NewStructField("ExpirySlot", a.ExpirySlot),
+		stringify.NewStructField("ExpirySlot", uint32(a.ExpirySlot)),
 		stringify.NewStructField("OutputID", a.OutputID),
 		stringify.NewStructField("BlockIssuerKeys", a.BlockIssuerKeys),
-		stringify.NewStructField("ValidatorStake", a.ValidatorStake),
-		stringify.NewStructField("DelegationStake", a.DelegationStake),
-		stringify.NewStructField("FixedCost", a.FixedCost),
-		stringify.NewStructField("StakeEndEpoch", a.StakeEndEpoch),
+		stringify.NewStructField("ValidatorStake", uint64(a.ValidatorStake)),
+		stringify.NewStructField("DelegationStake", uint64(a.DelegationStake)),
+		stringify.NewStructField("FixedCost", uint64(a.FixedCost)),
+		stringify.NewStructField("StakeEndEpoch", uint64(a.StakeEndEpoch)),
 		stringify.NewStructField("LatestSupportedProtocolVersionAndHash", a.LatestSupportedProtocolVersionAndHash),
 	)
 }

@@ -26,8 +26,8 @@ func NewBlockIssuanceCredits(value iotago.BlockIssuanceCredits, updateTime iotag
 
 func (c *BlockIssuanceCredits) String() string {
 	return stringify.Struct("BlockIssuanceCredits",
-		stringify.NewStructField("Value", c.Value),
-		stringify.NewStructField("UpdateSlot", c.UpdateSlot),
+		stringify.NewStructField("Value", int64(c.Value)),
+		stringify.NewStructField("UpdateSlot", uint32(c.UpdateSlot)),
 	)
 }
 

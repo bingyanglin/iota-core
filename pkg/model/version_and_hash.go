@@ -36,7 +36,7 @@ func VersionAndHashFromBytes(bytes []byte) (VersionAndHash, int, error) {
 
 func (v VersionAndHash) String() string {
 	return stringify.Struct("VersionAndHash",
-		stringify.NewStructField("Version", v.Version),
+		stringify.NewStructField("Version", byte(v.Version)),
 		stringify.NewStructField("Hash", v.Hash),
 	)
 }
