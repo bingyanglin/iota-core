@@ -95,6 +95,8 @@ func (t *Tracker) importPerformanceFactor(reader io.ReadSeeker) error {
 				return ierrors.Wrapf(err, "unable to store performance factor for account %s and slot index %d", accountID, slot)
 			}
 
+			t.LogDebug("Importing performance factor", "accountID", accountID, "slot", slot, "performanceFactor", performanceFactor)
+
 			return nil
 		}); err != nil {
 			return ierrors.Wrapf(err, "unable to read performance factors for slot %d", slot)
@@ -130,6 +132,8 @@ func (t *Tracker) importPoolRewards(reader io.ReadSeeker) error {
 			if err != nil {
 				return ierrors.Wrapf(err, "unable to read reward for account %s and epoch index %d", accountID, epoch)
 			}
+
+			t.LogDebug("Importing reward", "accountID", accountID, "epoch", epoch, "reward", reward)
 
 			if err = rewardsTree.Set(accountID, reward); err != nil {
 				return ierrors.Wrapf(err, "unable to set reward for account %s and epoch index %d", accountID, epoch)
@@ -168,6 +172,8 @@ func (t *Tracker) importPoolsStats(reader io.ReadSeeker) error {
 			return ierrors.Wrapf(err, "unable to store pool stats for the epoch index %d", epoch)
 		}
 
+		t.LogDebug("Importing pool stats", "epoch", epoch, "poolStats", poolStats)
+
 		return nil
 	}); err != nil {
 		return ierrors.Wrap(err, "unable to read pool stats collection")
@@ -205,6 +211,8 @@ func (t *Tracker) importCommittees(reader io.ReadSeeker) error {
 		if isReused {
 			committee.SetReused()
 		}
+
+		t.LogDebug("Importing committee", "epoch", epoch, "committee", committee)
 
 		if err = t.committeeStore.Store(epoch, committee); err != nil {
 			return ierrors.Wrap(err, "unable to store committee")
@@ -246,6 +254,8 @@ func (t *Tracker) exportPerformanceFactor(writer io.WriteSeeker, startSlot iotag
 					if err := stream.WriteObject(writer, pf, (*model.ValidatorPerformance).Bytes); err != nil {
 						return ierrors.Wrapf(err, "unable to write performance factor for accountID %s and slot index %d", accountID, currentSlot)
 					}
+
+					t.LogDebug("Exporting performance factor", "accountID", accountID, "slot", currentSlot, "performanceFactor", pf)
 
 					accountsCount++
 
@@ -292,8 +302,11 @@ func (t *Tracker) exportPoolRewards(writer io.WriteSeeker, targetEpoch iotago.Ep
 			}
 			// if the map was not present in storage we can skip this epoch
 			if !rewardsMap.WasRestoredFromStorage() {
+				t.LogDebug("Skipping epoch", "epoch", epoch, "reason", "not restored from storage")
 				continue
 			}
+
+			t.LogDebug("Exporting Pool Rewards", "epoch", epoch)
 
 			if err := stream.Write(writer, epoch); err != nil {
 				return 0, ierrors.Wrapf(err, "unable to write epoch index for epoch index %d", epoch)
@@ -310,6 +323,8 @@ func (t *Tracker) exportPoolRewards(writer io.WriteSeeker, targetEpoch iotago.Ep
 					if err := stream.WriteObject(writer, value, (*model.PoolRewards).Bytes); err != nil {
 						return ierrors.Wrapf(err, "unable to write account rewards for epoch index %d and accountID %s", epoch, key)
 					}
+
+					t.LogDebug("Exporting Pool Reward", "epoch", epoch, "accountID", key, "rewards", value)
 
 					accountCount++
 
@@ -347,6 +362,7 @@ func (t *Tracker) exportPoolsStats(writer io.WriteSeeker, targetEpoch iotago.Epo
 
 			if epoch > targetEpoch {
 				// continue
+				t.LogDebug("Skipping epoch", "epoch", epoch, "reason", "epoch is greater than target epoch")
 				return nil
 			}
 
@@ -357,6 +373,8 @@ func (t *Tracker) exportPoolsStats(writer io.WriteSeeker, targetEpoch iotago.Epo
 			if err := stream.WriteBytes(writer, value); err != nil {
 				return ierrors.Wrapf(err, "unable to write pools stats for epoch %d", epoch)
 			}
+
+			t.LogDebug("Exporting Pool Stats", "epoch", epoch, "poolStats", lo.Return1(model.PoolsStatsFromBytes(value)))
 
 			epochCount++
 
@@ -399,6 +417,7 @@ func (t *Tracker) exportCommittees(writer io.WriteSeeker, targetSlot iotago.Slot
 			// - we were able to rotate a committee, then we export it
 			// - we were not able to rotate a committee (reused), then we don't export it
 			if epoch > epochFromTargetSlot && targetSlot < pointOfNoReturn && committee.IsReused() {
+				t.LogDebug("Skipping committee", "epoch", epoch, "reason", "epoch is greater than target epoch and committee is reused")
 				return nil
 			}
 
@@ -426,6 +445,8 @@ func (t *Tracker) exportCommittees(writer io.WriteSeeker, targetSlot iotago.Slot
 			if err := stream.Write[bool](writer, committee.IsReused()); err != nil {
 				return ierrors.Wrapf(err, "unable to write reused flag for epoch %d", epoch)
 			}
+
+			t.LogDebug("Exporting committee", "epoch", epoch, "committee", committee)
 
 			epochCount++
 

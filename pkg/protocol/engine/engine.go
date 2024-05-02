@@ -253,6 +253,18 @@ func New(
 			e.InitializedEvent().Trigger()
 
 			e.LogTrace("initialized", "settings", e.Storage.Settings().String())
+
+			latestCommitment := e.Storage.Settings().LatestCommitment()
+			e.LogInfo("LatestCommitment", "slot", latestCommitment.Slot(), "ID", latestCommitment.ID())
+			e.LogInfo("Ledger state", "AccountRoot", e.Ledger.AccountRoot(), "latestCommitment.Slot", latestCommitment.Slot())
+
+			currentEpoch := e.CommittedAPI().TimeProvider().EpochFromSlot(latestCommitment.Slot())
+			e.LogInfo("Rewards state", "RewardsRoot", lo.PanicOnErr(e.SybilProtection.RewardsRoot(currentEpoch)), "epoch", currentEpoch, "latestCommitment.Slot", latestCommitment.Slot())
+
+			if currentEpoch > 0 {
+				prevEpoch := currentEpoch - 1
+				e.LogInfo("Rewards state", "RewardsRoot", lo.PanicOnErr(e.SybilProtection.RewardsRoot(prevEpoch)), "epoch", prevEpoch, "lastSlot", e.CommittedAPI().TimeProvider().EpochEnd(prevEpoch))
+			}
 		},
 	)
 }

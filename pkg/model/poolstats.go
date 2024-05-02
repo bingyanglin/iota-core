@@ -5,6 +5,7 @@ import (
 
 	"github.com/iotaledger/hive.go/ierrors"
 	"github.com/iotaledger/hive.go/serializer/v2/stream"
+	"github.com/iotaledger/hive.go/stringify"
 	iotago "github.com/iotaledger/iota.go/v4"
 )
 
@@ -59,6 +60,14 @@ func (p *PoolsStats) Bytes() ([]byte, error) {
 	return byteBuffer.Bytes()
 }
 
+func (p *PoolsStats) String() string {
+	return stringify.Struct("PoolsStats",
+		stringify.NewStructField("TotalStake", uint64(p.TotalStake)),
+		stringify.NewStructField("TotalValidatorStake", uint64(p.TotalValidatorStake)),
+		stringify.NewStructField("ProfitMargin", p.ProfitMargin),
+	)
+}
+
 type PoolRewards struct {
 	// Total stake of the validator including delegations
 	PoolStake iotago.BaseToken
@@ -110,4 +119,12 @@ func (p *PoolRewards) Bytes() ([]byte, error) {
 	}
 
 	return byteBuffer.Bytes()
+}
+
+func (p *PoolRewards) String() string {
+	return stringify.Struct("PoolRewards",
+		stringify.NewStructField("PoolStake", uint64(p.PoolStake)),
+		stringify.NewStructField("PoolRewards", uint64(p.PoolRewards)),
+		stringify.NewStructField("FixedCost", uint64(p.FixedCost)),
+	)
 }

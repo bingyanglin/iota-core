@@ -5,6 +5,7 @@ import (
 
 	"github.com/iotaledger/hive.go/ierrors"
 	"github.com/iotaledger/hive.go/serializer/v2/stream"
+	"github.com/iotaledger/hive.go/stringify"
 )
 
 type ValidatorPerformance struct {
@@ -65,4 +66,12 @@ func (p *ValidatorPerformance) Bytes() ([]byte, error) {
 	}
 
 	return byteBuffer.Bytes()
+}
+
+func (p *ValidatorPerformance) String() string {
+	return stringify.Struct("ValidatorPerformance",
+		stringify.NewStructField("SlotActivityVector", p.SlotActivityVector),
+		stringify.NewStructField("BlocksIssuedCount", p.BlocksIssuedCount),
+		stringify.NewStructField("HighestSupportedVersionAndHash", p.HighestSupportedVersionAndHash),
+	)
 }
