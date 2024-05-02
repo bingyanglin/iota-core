@@ -273,6 +273,19 @@ func (d *DockerTestFramework) AwaitFinalization(targetSlot iotago.SlotIndex) {
 	})
 }
 
+func (d *DockerTestFramework) AwaitNextEpoch() {
+	//nolint:lostcancel
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+
+	info, err := d.defaultWallet.Client.Info(ctx)
+	require.NoError(d.Testing, err)
+
+	currentEpoch := d.defaultWallet.Client.CommittedAPI().TimeProvider().EpochFromSlot(info.Status.LatestFinalizedSlot)
+
+	// await the start slot of the next epoch
+	d.AwaitFinalization(d.defaultWallet.Client.CommittedAPI().TimeProvider().EpochStart(currentEpoch + 1))
+}
+
 func (d *DockerTestFramework) AwaitAddressUnspentOutputAccepted(ctx context.Context, wallet *mock.Wallet, addr iotago.Address) (outputID iotago.OutputID, output iotago.Output, err error) {
 	indexerClt, err := wallet.Client.Indexer(ctx)
 	require.NoError(d.Testing, err)

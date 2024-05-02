@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/exec"
@@ -32,7 +33,7 @@ import (
 
 var (
 	// need to build snapshotfile in tools/docker-network.
-	snapshotFilePath = "../docker-network.snapshot"
+	snapshotFilePath = "../docker-network-snapshots/snapshot.bin"
 	keyManager       = func() *wallet.KeyManager {
 		genesisSeed, err := base58.Decode("7R1itJx5hVuo9w9hjg5cwKFmek4HMSoBDgJZN8hKGxih")
 		if err != nil {
@@ -55,6 +56,8 @@ type Node struct {
 	ContainerConfigs      string
 	PrivateKey            string
 	IssueCandidacyPayload bool
+	DatabasePath          string
+	SnapshotPath          string
 }
 
 func (n *Node) AccountAddress(t *testing.T) *iotago.AccountAddress {
@@ -145,6 +148,14 @@ func (d *DockerTestFramework) DockerComposeUp(detach ...bool) error {
 	cmd.Env = os.Environ()
 	for _, node := range d.Nodes() {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("ISSUE_CANDIDACY_PAYLOAD_%s=%t", node.Name, node.IssueCandidacyPayload))
+		if node.DatabasePath != "" {
+			fmt.Println("Setting Database Path for", node.Name, " to", node.DatabasePath)
+			cmd.Env = append(cmd.Env, fmt.Sprintf("DB_PATH_%s=%s", node.Name, node.DatabasePath))
+		}
+		if node.SnapshotPath != "" {
+			fmt.Println("Setting snapshot path for", node.Name, " to", node.SnapshotPath)
+			cmd.Env = append(cmd.Env, fmt.Sprintf("SNAPSHOT_PATH_%s=%s", node.Name, node.SnapshotPath))
+		}
 	}
 
 	var out strings.Builder
@@ -345,6 +356,30 @@ func (d *DockerTestFramework) Node(name string) *Node {
 	require.True(d.Testing, exist)
 
 	return node
+}
+
+func (d *DockerTestFramework) ModifyNode(name string, fun func(*Node)) {
+	d.nodesLock.Lock()
+	defer d.nodesLock.Unlock()
+
+	node, exist := d.nodes[name]
+	require.True(d.Testing, exist)
+
+	fun(node)
+}
+
+// Restarts a node with another database path, conceptually deleting the database and
+// restarts it with the given snapshot path.
+func (d *DockerTestFramework) ResetNode(alias string, newSnapshotPath string) {
+	fmt.Println("Reset node", alias)
+
+	d.ModifyNode(alias, func(n *Node) {
+		n.DatabasePath = fmt.Sprintf("/app/database/database%d", rand.Int())
+		n.SnapshotPath = newSnapshotPath
+	})
+	d.DockerComposeUp(true)
+	d.DumpContainerLog(d.Node(alias).ContainerName, "reset1")
+	d.WaitUntilSync()
 }
 
 func (d *DockerTestFramework) Clients(names ...string) map[string]mock.Client {
@@ -785,15 +820,25 @@ func (d *DockerTestFramework) DumpContainerLogsToFiles() {
 			continue
 		}
 
-		filePath := fmt.Sprintf("%s/%s.log", d.logDirectoryPath, name)
-		// dump logs to file if the file does not exist, which means the container is just started.
-		// logs should exist for the already running containers.
-		_, err := os.Stat(filePath)
-		if os.IsNotExist(err) {
-			logCmd := fmt.Sprintf("docker logs -f %s > %s 2>&1 &", name, filePath)
-			err := exec.Command("bash", "-c", logCmd).Run()
-			require.NoError(d.Testing, err)
-		}
+		d.DumpContainerLog(name)
+	}
+}
+
+func (d *DockerTestFramework) DumpContainerLog(name string, optLogNameExtension ...string) {
+	var filePath string
+	if len(optLogNameExtension) > 0 {
+		filePath = fmt.Sprintf("%s/%s-%s.log", d.logDirectoryPath, name, optLogNameExtension[0])
+	} else {
+		filePath = fmt.Sprintf("%s/%s.log", d.logDirectoryPath, name)
+	}
+
+	// dump logs to file if the file does not exist, which means the container is just started.
+	// logs should exist for the already running containers.
+	_, err := os.Stat(filePath)
+	if os.IsNotExist(err) {
+		logCmd := fmt.Sprintf("docker logs -f %s > %s 2>&1 &", name, filePath)
+		err := exec.Command("bash", "-c", logCmd).Run()
+		require.NoError(d.Testing, err)
 	}
 }
 
