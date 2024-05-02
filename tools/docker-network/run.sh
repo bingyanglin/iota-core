@@ -41,7 +41,7 @@ fi
 docker compose pull inx-indexer inx-mqtt inx-blockissuer inx-faucet inx-validator-1 inx-dashboard-1
 
 # Remove old snapshot file
-rm *.snapshot
+rm docker-network-snapshots/*.snapshot
 
 # create snapshot file
 echo "Create snapshot"
@@ -58,12 +58,12 @@ docker run --rm \
   golang:1.22-bookworm go run -tags=rocksdb . --config docker --seed 7R1itJx5hVuo9w9hjg5cwKFmek4HMSoBDgJZN8hKGxih
 
 # Move and set permissions for the .snapshot file
-if ! mv -f ../genesis-snapshot/*.snapshot .; then
+if ! mv -f ../genesis-snapshot/docker-network.snapshot docker-network-snapshots/snapshot.bin; then
   echo "Failed to create or move snapshot file"
   exit 1
 fi
 
-chmod o+r *.snapshot
+chmod o+r docker-network-snapshots/snapshot.bin
 
 echo "Run iota-core network"
 # IOTA_CORE_PEER_REPLICAS is used in docker-compose.yml to determine how many replicas to create
