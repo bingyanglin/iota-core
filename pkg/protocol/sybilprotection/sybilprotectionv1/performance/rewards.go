@@ -18,7 +18,17 @@ func (t *Tracker) RewardsRoot(epoch iotago.EpochIndex) (iotago.Identifier, error
 		return iotago.Identifier{}, err
 	}
 
-	return m.Root(), nil
+	root := m.Root()
+
+	t.LogDebug("RewardsRoot", "epoch", epoch, "root", root, "WasRestoredFromStorage", m.WasRestoredFromStorage())
+	if err := m.Stream(func(accountID iotago.AccountID, poolRewards *model.PoolRewards) error {
+		t.LogDebug("RewardsRoot", "accountID", accountID, "poolRewards", poolRewards)
+		return nil
+	}); err != nil {
+		panic(err)
+	}
+
+	return root, nil
 }
 
 func (t *Tracker) ValidatorReward(validatorID iotago.AccountID, stakingFeature *iotago.StakingFeature, claimingEpoch iotago.EpochIndex) (validatorReward iotago.Mana, firstRewardEpoch iotago.EpochIndex, lastRewardEpoch iotago.EpochIndex, err error) {

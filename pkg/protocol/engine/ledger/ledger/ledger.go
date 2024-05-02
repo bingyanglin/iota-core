@@ -221,6 +221,10 @@ func (l *Ledger) CommitSlot(slot iotago.SlotIndex) (stateRoot iotago.Identifier,
 	return stateTreeRoot, stateDiff.Mutations().Root(), l.accountsLedger.AccountsTreeRoot(), outputs, spenders, mutations, nil
 }
 
+func (l *Ledger) AccountRoot() iotago.Identifier {
+	return l.accountsLedger.AccountsTreeRoot()
+}
+
 func (l *Ledger) AddAccount(output *utxoledger.Output, blockIssuanceCredits iotago.BlockIssuanceCredits) error {
 	return l.accountsLedger.AddAccount(output, blockIssuanceCredits)
 }

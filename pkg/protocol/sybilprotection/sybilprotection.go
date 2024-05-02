@@ -39,5 +39,7 @@ type SybilProtection interface {
 	// Reset resets the component to a clean state as if it was created at the last commitment.
 	Reset()
 
+	RewardsRoot(epoch iotago.EpochIndex) (rewardsRoot iotago.Identifier, err error)
+
 	module.Module
 }

@@ -225,6 +225,10 @@ func (o *SybilProtection) CommitSlot(slot iotago.SlotIndex) (committeeRoot iotag
 	return committeeRoot, rewardsRoot, nil
 }
 
+func (o *SybilProtection) RewardsRoot(epoch iotago.EpochIndex) (rewardsRoot iotago.Identifier, err error) {
+	return o.performanceTracker.RewardsRoot(epoch)
+}
+
 func (o *SybilProtection) committeeRoot(targetCommitteeEpoch iotago.EpochIndex) (committeeRoot iotago.Identifier, err error) {
 	committee, exists := o.performanceTracker.LoadCommitteeForEpoch(targetCommitteeEpoch)
 	if !exists {
