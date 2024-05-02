@@ -27,7 +27,7 @@ func (m *Manager) Import(reader io.ReadSeeker) error {
 			return ierrors.Wrapf(err, "unable to set account %s", accountData.ID)
 		}
 
-		m.LogDebug("Imported account", "accountID", accountData.ID, "outputID", accountData.OutputID, "credits.value", accountData.Credits.Value, "credits.updateSlot", accountData.Credits.UpdateSlot)
+		m.LogDebug("Imported account", "accountData", accountData)
 
 		return nil
 	}); err != nil {
@@ -189,6 +189,8 @@ func (m *Manager) readSlotDiffs(reader io.ReadSeeker) error {
 				accountDiff = model.NewAccountDiff()
 			}
 
+			m.LogDebug("Imported account diff", "slot", slot, "accountID", accountID, "destroyed", destroyed, "accountDiff", accountDiff)
+
 			if err := diffStore.Store(accountID, accountDiff, destroyed); err != nil {
 				return ierrors.Wrapf(err, "unable to store slot diff for accountID %s", accountID)
 			}
@@ -249,6 +251,8 @@ func (m *Manager) writeSlotDiffs(writer io.WriteSeeker, targetSlot iotago.SlotIn
 						return false
 					}
 				}
+
+				m.LogDebug("Exported account diff", "slot", slot, "accountID", accountID, "destroyed", destroyed, "accountDiff", accountDiff)
 
 				accountsInDiffCount++
 
