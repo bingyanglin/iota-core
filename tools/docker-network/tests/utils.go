@@ -252,13 +252,14 @@ func (d *DockerTestFramework) AwaitCommitment(targetSlot iotago.SlotIndex) {
 	currentCommittedSlot := d.NodeStatus("V1").LatestCommitmentID.Slot()
 
 	for t := currentCommittedSlot; t <= targetSlot; t++ {
-		latestCommittedSlot := d.NodeStatus("V1").LatestCommitmentID.Slot()
+		for {
+			latestCommittedSlot := d.NodeStatus("V1").LatestCommitmentID.Slot()
 
-		if targetSlot <= latestCommittedSlot {
-			return
+			if latestCommittedSlot >= t {
+				break
+			}
+			time.Sleep(2 * time.Second)
 		}
-
-		time.Sleep(10 * time.Second)
 	}
 }
 
