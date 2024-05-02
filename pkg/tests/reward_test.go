@@ -124,7 +124,7 @@ func Test_Delegation_DelayedClaimingDestroyOutputWithoutRewards(t *testing.T) {
 		delegationEndEpoch = futureBoundedEpochIndex + 1
 	}
 
-	tx2 := ts.DefaultWallet().DelayedClaimingTransition("TX2",  ts.DefaultWallet().OutputData("TX1:0"), delegationEndEpoch)
+	tx2 := ts.DefaultWallet().DelayedClaimingTransition("TX2", ts.DefaultWallet().OutputData("TX1:0"), delegationEndEpoch)
 	block2 := lo.PanicOnErr(ts.IssueBasicBlockWithOptions("block2", ts.DefaultWallet(), tx2, mock.WithStrongParents(block1.ID())))
 	latestParents := ts.CommitUntilSlot(block1_2Slot, block2.ID())
 
@@ -351,7 +351,7 @@ func Test_Account_StakeAmountCalculation(t *testing.T) {
 	)
 	block5 := lo.PanicOnErr(ts.IssueBasicBlockWithOptions("block5", ts.DefaultWallet(), tx5, mock.WithStrongParents(latestParents...)))
 	blockIssuanceResp = ts.DefaultWallet().GetNewBlockIssuanceResponse()
-	tx6 := ts.DefaultWallet().DelayedClaimingTransition("TX6",  ts.DefaultWallet().OutputData("TX5:0"), ts.DefaultWallet().DelegationEndFromSlot(block5_6Slot, blockIssuanceResp.LatestCommitment.Slot))
+	tx6 := ts.DefaultWallet().DelayedClaimingTransition("TX6", ts.DefaultWallet().OutputData("TX5:0"), ts.DefaultWallet().DelegationEndFromSlot(block5_6Slot, blockIssuanceResp.LatestCommitment.Slot))
 	block6 := lo.PanicOnErr(ts.IssueBasicBlockWithOptions("block6", ts.DefaultWallet(), tx6, mock.WithStrongParents(block5.ID())))
 
 	latestParents = ts.CommitUntilSlot(block5_6Slot, block6.ID())
@@ -387,7 +387,7 @@ func Test_Account_StakeAmountCalculation(t *testing.T) {
 	// STEP 6: REMOVE A DELEGATION BY TRANSITIONING TO DELAYED CLAIMING.
 	block9Slot := ts.CurrentSlot()
 	blockIssuanceResp = ts.DefaultWallet().GetNewBlockIssuanceResponse()
-	tx9 := ts.DefaultWallet().DelayedClaimingTransition("TX9",  ts.DefaultWallet().OutputData("TX4:0"), ts.DefaultWallet().DelegationEndFromSlot(block9Slot, blockIssuanceResp.LatestCommitment.Slot))
+	tx9 := ts.DefaultWallet().DelayedClaimingTransition("TX9", ts.DefaultWallet().OutputData("TX4:0"), ts.DefaultWallet().DelegationEndFromSlot(block9Slot, blockIssuanceResp.LatestCommitment.Slot))
 	block9 := lo.PanicOnErr(ts.IssueBasicBlockWithOptions("block9", ts.DefaultWallet(), tx9, mock.WithStrongParents(latestParents...)))
 	// Commit until the claiming epoch so we can remove the staking feature from the account in the next step.
 	latestParents = ts.CommitUntilSlot(block9Slot, block9.ID())
@@ -418,7 +418,7 @@ func Test_Account_StakeAmountCalculation(t *testing.T) {
 
 	block12Slot := ts.CurrentSlot()
 	blockIssuanceResp = ts.DefaultWallet().GetNewBlockIssuanceResponse()
-	tx12 := ts.DefaultWallet().DelayedClaimingTransition("TX12",  ts.DefaultWallet().OutputData("TX2:0"), ts.DefaultWallet().DelegationEndFromSlot(block12Slot, blockIssuanceResp.LatestCommitment.Slot))
+	tx12 := ts.DefaultWallet().DelayedClaimingTransition("TX12", ts.DefaultWallet().OutputData("TX2:0"), ts.DefaultWallet().DelegationEndFromSlot(block12Slot, blockIssuanceResp.LatestCommitment.Slot))
 	block12 := lo.PanicOnErr(ts.IssueBasicBlockWithOptions("block12", ts.DefaultWallet(), tx12, mock.WithStrongParents(latestParents...)))
 	ts.CommitUntilSlot(block12Slot, block12.ID())
 
