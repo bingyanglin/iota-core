@@ -27,19 +27,26 @@ func (r *RequestHandler) CongestionByAccountAddress(accountAddress *iotago.Accou
 	}
 
 	accountID := accountAddress.AccountID()
-	acc, exists, err := r.protocol.Engines.Main.Get().Ledger.Account(accountID, commitment.Slot())
+	targetSlot := commitment.Slot()
+	maxCommittableAge := r.protocol.APIForSlot(targetSlot).ProtocolParameters().MaxCommittableAge()
+	latestCommittedSlot := r.protocol.Engines.Main.Get().SyncManager.LatestCommitment().Slot()
+
+	if latestCommittedSlot >= maxCommittableAge && targetSlot+maxCommittableAge < latestCommittedSlot {
+		return nil, ierrors.Errorf("can't calculate account, target slot index older than allowed (%d<%d)", targetSlot, latestCommittedSlot-maxCommittableAge)
+	}
+
+	acc, exists, err := r.protocol.Engines.Main.Get().Ledger.Account(accountID, targetSlot)
 	if err != nil {
 		return nil, ierrors.WithMessagef(echo.ErrInternalServerError, "failed to get account %s from the Ledger: %w", accountID.ToHex(), err)
-	}
-	if !exists {
+	} else if !exists {
 		return nil, ierrors.WithMessagef(echo.ErrNotFound, "account %s not found", accountID.ToHex())
 	}
 
 	blockIssuanceCredits := acc.Credits.Value
 	// Apply decay to BIC if the value is positive
 	if blockIssuanceCredits > 0 {
-		manaDecayProvider := r.APIProvider().APIForSlot(commitment.Slot()).ManaDecayProvider()
-		decayedBIC, err := manaDecayProvider.DecayManaBySlots(iotago.Mana(acc.Credits.Value), acc.Credits.UpdateSlot, commitment.Slot())
+		manaDecayProvider := r.APIProvider().APIForSlot(targetSlot).ManaDecayProvider()
+		decayedBIC, err := manaDecayProvider.DecayManaBySlots(iotago.Mana(acc.Credits.Value), acc.Credits.UpdateSlot, targetSlot)
 		if err != nil {
 			return nil, ierrors.WithMessagef(echo.ErrInternalServerError, "failed to decay BIC for account %s: %w", accountID.ToHex(), err)
 		}
@@ -47,7 +54,7 @@ func (r *RequestHandler) CongestionByAccountAddress(accountAddress *iotago.Accou
 	}
 
 	return &api.CongestionResponse{
-		Slot:                 commitment.Slot(),
+		Slot:                 targetSlot,
 		Ready:                r.protocol.Engines.Main.Get().Scheduler.IsBlockIssuerReady(accountID, workScores...),
 		ReferenceManaCost:    commitment.ReferenceManaCost(),
 		BlockIssuanceCredits: blockIssuanceCredits,

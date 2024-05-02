@@ -200,12 +200,6 @@ func (m *Manager) Account(accountID iotago.AccountID, targetSlot iotago.SlotInde
 }
 
 func (m *Manager) account(accountID iotago.AccountID, targetSlot iotago.SlotIndex) (accountData *accounts.AccountData, exists bool, err error) {
-	// if m.latestCommittedSlot < maxCommittableAge we should have all history
-	maxCommittableAge := m.apiProvider.APIForSlot(targetSlot).ProtocolParameters().MaxCommittableAge()
-	if m.latestCommittedSlot >= maxCommittableAge && targetSlot+maxCommittableAge < m.latestCommittedSlot {
-		return nil, false, ierrors.Errorf("can't calculate account, target slot index older than allowed (%d<%d)", targetSlot, m.latestCommittedSlot-maxCommittableAge)
-	}
-
 	if targetSlot > m.latestCommittedSlot {
 		return nil, false, ierrors.Errorf("can't retrieve account, slot %d is not committed yet, latest committed slot: %d", targetSlot, m.latestCommittedSlot)
 	}
