@@ -225,6 +225,10 @@ func (o *SybilProtection) CommitSlot(slot iotago.SlotIndex) (committeeRoot iotag
 	return committeeRoot, rewardsRoot, nil
 }
 
+func (o *SybilProtection) RewardsRoot(epoch iotago.EpochIndex) (rewardsRoot iotago.Identifier, err error) {
+	return o.performanceTracker.RewardsRoot(epoch)
+}
+
 func (o *SybilProtection) committeeRoot(targetCommitteeEpoch iotago.EpochIndex) (committeeRoot iotago.Identifier, err error) {
 	committee, exists := o.performanceTracker.LoadCommitteeForEpoch(targetCommitteeEpoch)
 	if !exists {
@@ -298,7 +302,7 @@ func (o *SybilProtection) slotFinalized(slot iotago.SlotIndex) {
 	// Otherwise, skip committee selection because it's too late and the committee has been reused.
 	epochEndSlot := timeProvider.EpochEnd(epoch)
 	if slot+apiForSlot.ProtocolParameters().EpochNearingThreshold() == epochEndSlot &&
-		epochEndSlot > o.lastCommittedSlot+apiForSlot.ProtocolParameters().MaxCommittableAge() {
+		o.lastCommittedSlot < epochEndSlot-apiForSlot.ProtocolParameters().MaxCommittableAge() {
 		newCommittee, err := o.selectNewCommittee(slot)
 		if err != nil {
 			panic(ierrors.Wrap(err, "error while selecting new committee"))

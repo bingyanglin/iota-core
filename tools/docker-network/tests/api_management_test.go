@@ -210,16 +210,6 @@ func Test_ManagementAPI_Pruning(t *testing.T) {
 	managementClient, err := nodeClientV1.Management(getContextWithTimeout(5 * time.Second))
 	require.NoError(t, err)
 
-	awaitNextEpoch := func() {
-		info, err := nodeClientV1.Info(getContextWithTimeout(5 * time.Second))
-		require.NoError(t, err)
-
-		currentEpoch := nodeClientV1.CommittedAPI().TimeProvider().EpochFromSlot(info.Status.LatestFinalizedSlot)
-
-		// await the start slot of the next epoch
-		d.AwaitFinalization(nodeClientV1.CommittedAPI().TimeProvider().EpochStart(currentEpoch + 1))
-	}
-
 	type test struct {
 		name     string
 		testFunc func(t *testing.T)
@@ -230,9 +220,9 @@ func Test_ManagementAPI_Pruning(t *testing.T) {
 			name: "Test_PruneDatabase_ByEpoch",
 			testFunc: func(t *testing.T) {
 				// we need to wait until epoch 3 to be able to prune epoch 1
-				awaitNextEpoch()
-				awaitNextEpoch()
-				awaitNextEpoch()
+				d.AwaitNextEpoch()
+				d.AwaitNextEpoch()
+				d.AwaitNextEpoch()
 
 				// prune database by epoch
 				pruneDatabaseResponse, err := managementClient.PruneDatabaseByEpoch(getContextWithTimeout(5*time.Second), 1)
@@ -244,7 +234,7 @@ func Test_ManagementAPI_Pruning(t *testing.T) {
 			name: "Test_PruneDatabase_ByDepth",
 			testFunc: func(t *testing.T) {
 				// wait for the next epoch to start
-				awaitNextEpoch()
+				d.AwaitNextEpoch()
 
 				// prune database by depth
 				pruneDatabaseResponse, err := managementClient.PruneDatabaseByDepth(getContextWithTimeout(5*time.Second), 1)
@@ -256,7 +246,7 @@ func Test_ManagementAPI_Pruning(t *testing.T) {
 			name: "Test_PruneDatabase_BySize",
 			testFunc: func(t *testing.T) {
 				// wait for the next epoch to start
-				awaitNextEpoch()
+				d.AwaitNextEpoch()
 
 				// prune database by size
 				pruneDatabaseResponse, err := managementClient.PruneDatabaseBySize(getContextWithTimeout(5*time.Second), "5G")
@@ -300,7 +290,7 @@ func Test_ManagementAPI_Snapshots(t *testing.T) {
 	managementClient, err := nodeClientV1.Management(getContextWithTimeout(5 * time.Second))
 	require.NoError(t, err)
 
-	awaitNextEpoch := func() {
+	awaitNextCommittedEpoch := func() {
 		info, err := nodeClientV1.Info(getContextWithTimeout(5 * time.Second))
 		require.NoError(t, err)
 
@@ -320,7 +310,7 @@ func Test_ManagementAPI_Snapshots(t *testing.T) {
 			name: "Test_CreateSnapshot",
 			testFunc: func(t *testing.T) {
 				// wait for the next epoch to start
-				awaitNextEpoch()
+				awaitNextCommittedEpoch()
 
 				// create snapshot
 				snapshotResponse, err := managementClient.CreateSnapshot(getContextWithTimeout(5 * time.Second))

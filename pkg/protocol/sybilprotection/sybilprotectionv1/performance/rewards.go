@@ -1,10 +1,13 @@
 package performance
 
 import (
+	"fmt"
+
 	"github.com/iotaledger/hive.go/ads"
 	"github.com/iotaledger/hive.go/core/safemath"
 	"github.com/iotaledger/hive.go/ierrors"
 	"github.com/iotaledger/hive.go/lo"
+	"github.com/iotaledger/hive.go/stringify"
 	"github.com/iotaledger/iota-core/pkg/model"
 	iotago "github.com/iotaledger/iota.go/v4"
 )
@@ -18,7 +21,23 @@ func (t *Tracker) RewardsRoot(epoch iotago.EpochIndex) (iotago.Identifier, error
 		return iotago.Identifier{}, err
 	}
 
-	return m.Root(), nil
+	root := m.Root()
+
+	builder := stringify.NewStructBuilder("RewardsRoot")
+	builder.AddField(stringify.NewStructField("Root", root))
+	builder.AddField(stringify.NewStructField("WasRestoredFromStorage", m.WasRestoredFromStorage()))
+
+	if err := m.Stream(func(accountID iotago.AccountID, poolRewards *model.PoolRewards) error {
+		builder.AddField(stringify.NewStructField(fmt.Sprintf("account[%s]", accountID.String()), poolRewards))
+
+		return nil
+	}); err != nil {
+		panic(err)
+	}
+
+	t.LogDebug("RewardsRoot", "epoch", epoch, "rewardsMap", builder)
+
+	return root, nil
 }
 
 func (t *Tracker) ValidatorReward(validatorID iotago.AccountID, stakingFeature *iotago.StakingFeature, claimingEpoch iotago.EpochIndex) (validatorReward iotago.Mana, firstRewardEpoch iotago.EpochIndex, lastRewardEpoch iotago.EpochIndex, err error) {

@@ -2,10 +2,12 @@ package accounts
 
 import (
 	"io"
+	"strconv"
 
 	"github.com/iotaledger/hive.go/ierrors"
 	"github.com/iotaledger/hive.go/runtime/options"
 	"github.com/iotaledger/hive.go/serializer/v2/stream"
+	"github.com/iotaledger/hive.go/stringify"
 	"github.com/iotaledger/iota-core/pkg/model"
 	iotago "github.com/iotaledger/iota.go/v4"
 )
@@ -163,6 +165,21 @@ func (a *AccountData) Bytes() ([]byte, error) {
 	}
 
 	return byteBuffer.Bytes()
+}
+
+func (a *AccountData) String() string {
+	return stringify.Struct("AccountData",
+		stringify.NewStructField("ID", a.ID),
+		stringify.NewStructField("Credits", a.Credits),
+		stringify.NewStructField("ExpirySlot", uint32(a.ExpirySlot)),
+		stringify.NewStructField("OutputID", a.OutputID),
+		stringify.NewStructField("BlockIssuerKeys", func() string { return strconv.Itoa(a.BlockIssuerKeys.Size()) }()),
+		stringify.NewStructField("ValidatorStake", uint64(a.ValidatorStake)),
+		stringify.NewStructField("DelegationStake", uint64(a.DelegationStake)),
+		stringify.NewStructField("FixedCost", uint64(a.FixedCost)),
+		stringify.NewStructField("StakeEndEpoch", uint64(a.StakeEndEpoch)),
+		stringify.NewStructField("LatestSupportedProtocolVersionAndHash", a.LatestSupportedProtocolVersionAndHash),
+	)
 }
 
 func WithCredits(credits *BlockIssuanceCredits) options.Option[AccountData] {

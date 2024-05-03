@@ -43,6 +43,8 @@ type Ledger interface {
 	Export(writer io.WriteSeeker, targetSlot iotago.SlotIndex) error
 	TrackBlock(block *blocks.Block)
 
+	AccountRoot() iotago.Identifier
+
 	// Reset resets the component to a clean state as if it was created at the last commitment.
 	Reset()
 

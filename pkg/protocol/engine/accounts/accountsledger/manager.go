@@ -9,9 +9,11 @@ import (
 	"github.com/iotaledger/hive.go/ierrors"
 	"github.com/iotaledger/hive.go/kvstore"
 	"github.com/iotaledger/hive.go/lo"
+	"github.com/iotaledger/hive.go/log"
 	"github.com/iotaledger/hive.go/runtime/module"
 	"github.com/iotaledger/hive.go/runtime/options"
 	"github.com/iotaledger/hive.go/runtime/syncutils"
+	"github.com/iotaledger/hive.go/stringify"
 	"github.com/iotaledger/iota-core/pkg/model"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/accounts"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/blocks"
@@ -127,7 +129,22 @@ func (m *Manager) AccountsTreeRoot() iotago.Identifier {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 
-	return m.accountsTree.Root()
+	root := m.accountsTree.Root()
+
+	if m.LogLevel() == log.LevelTrace {
+		m.LogTrace("retrieving accounts tree", "root", root, "accounts", func() string {
+			accountsInTree := stringify.NewStructBuilder("Accounts")
+			_ = m.accountsTree.Stream(func(accountID iotago.AccountID, accountData *accounts.AccountData) error {
+				accountsInTree.AddField(stringify.NewStructField(accountID.String(), accountData))
+
+				return nil
+			})
+
+			return accountsInTree.String()
+		}())
+	}
+
+	return root
 }
 
 // ApplyDiff applies the given accountDiff to the Account tree.
@@ -200,12 +217,6 @@ func (m *Manager) Account(accountID iotago.AccountID, targetSlot iotago.SlotInde
 }
 
 func (m *Manager) account(accountID iotago.AccountID, targetSlot iotago.SlotIndex) (accountData *accounts.AccountData, exists bool, err error) {
-	// if m.latestCommittedSlot < maxCommittableAge we should have all history
-	maxCommittableAge := m.apiProvider.APIForSlot(targetSlot).ProtocolParameters().MaxCommittableAge()
-	if m.latestCommittedSlot >= maxCommittableAge && targetSlot+maxCommittableAge < m.latestCommittedSlot {
-		return nil, false, ierrors.Errorf("can't calculate account, target slot index older than allowed (%d<%d)", targetSlot, m.latestCommittedSlot-maxCommittableAge)
-	}
-
 	if targetSlot > m.latestCommittedSlot {
 		return nil, false, ierrors.Errorf("can't retrieve account, slot %d is not committed yet, latest committed slot: %d", targetSlot, m.latestCommittedSlot)
 	}
@@ -409,7 +420,9 @@ func (m *Manager) rollbackAccountTo(accountData *accounts.AccountData, targetSlo
 		}
 
 		// update the output ID of the account if it was changed
-		accountData.OutputID = diffChange.PreviousOutputID
+		if diffChange.PreviousOutputID != iotago.EmptyOutputID {
+			accountData.OutputID = diffChange.PreviousOutputID
+		}
 
 		accountData.AddBlockIssuerKeys(diffChange.BlockIssuerKeysRemoved...)
 		accountData.RemoveBlockIssuerKey(diffChange.BlockIssuerKeysAdded...)

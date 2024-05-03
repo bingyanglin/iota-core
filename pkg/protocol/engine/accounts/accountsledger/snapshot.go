@@ -27,7 +27,7 @@ func (m *Manager) Import(reader io.ReadSeeker) error {
 			return ierrors.Wrapf(err, "unable to set account %s", accountData.ID)
 		}
 
-		m.LogDebug("Imported account", "accountID", accountData.ID, "outputID", accountData.OutputID, "credits.value", accountData.Credits.Value, "credits.updateSlot", accountData.Credits.UpdateSlot)
+		m.LogDebug("Imported account", "accountData", accountData)
 
 		return nil
 	}); err != nil {
@@ -78,26 +78,25 @@ func (m *Manager) Export(writer io.WriteSeeker, targetIndex iotago.SlotIndex) er
 func (m *Manager) exportAccountTree(writer io.WriteSeeker, targetIndex iotago.SlotIndex) (int, error) {
 	var accountCount int
 
-	if err := m.accountsTree.Stream(func(accountID iotago.AccountID, accountData *accounts.AccountData) error {
-		m.LogDebug("Exporting account", "accountID", accountID, "outputID", accountData.OutputID, "credits.value", accountData.Credits.Value, "credits.updateSlot", accountData.Credits.UpdateSlot)
-
-		wasCreatedAfterTargetSlot, _, err := m.rollbackAccountTo(accountData, targetIndex)
+	if err := m.accountsTree.Stream(func(id iotago.AccountID, account *accounts.AccountData) error {
+		wasCreatedAfterTargetSlot, _, err := m.rollbackAccountTo(account, targetIndex)
 		if err != nil {
-			return ierrors.Wrapf(err, "unable to rollback account %s", accountID)
+			return ierrors.Wrapf(err, "unable to rollback account %s", id)
 		}
-
-		m.LogDebug("Exporting account after rollback", "accountID", accountID, "outputID", accountData.OutputID, "credits.value", accountData.Credits.Value, "credits.updateSlot", accountData.Credits.UpdateSlot)
 
 		// Account was created after the target slot, so we don't need to export it.
 		if wasCreatedAfterTargetSlot {
-			m.LogDebug("Exporting account was created after target slot", "accountID", accountID, "targetSlot", targetIndex)
+			m.LogTrace("account was created after target slot", "id", id, "targetSlot", targetIndex)
+
 			return nil
 		}
 
-		if err := stream.WriteObject(writer, accountData, (*accounts.AccountData).Bytes); err != nil {
-			return ierrors.Wrapf(err, "unable to write account %s", accountID)
+		if err = stream.WriteObject(writer, account, (*accounts.AccountData).Bytes); err != nil {
+			return ierrors.Wrapf(err, "unable to write account %s", id)
 		}
 		accountCount++
+
+		m.LogTrace("exported account", "id", id, "account", account)
 
 		return nil
 	}); err != nil {
@@ -189,6 +188,8 @@ func (m *Manager) readSlotDiffs(reader io.ReadSeeker) error {
 				accountDiff = model.NewAccountDiff()
 			}
 
+			m.LogDebug("Imported account diff", "slot", slot, "accountID", accountID, "destroyed", destroyed, "accountDiff", accountDiff)
+
 			if err := diffStore.Store(accountID, accountDiff, destroyed); err != nil {
 				return ierrors.Wrapf(err, "unable to store slot diff for accountID %s", accountID)
 			}
@@ -249,6 +250,8 @@ func (m *Manager) writeSlotDiffs(writer io.WriteSeeker, targetSlot iotago.SlotIn
 						return false
 					}
 				}
+
+				m.LogDebug("Exported account diff", "slot", slot, "accountID", accountID, "destroyed", destroyed, "accountDiff", accountDiff)
 
 				accountsInDiffCount++
 
