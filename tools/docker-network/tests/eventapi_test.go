@@ -156,7 +156,12 @@ func test_BasicTaggedDataBlocks(t *testing.T, e *EventAPIDockerTestFramework) {
 	// issue blocks
 	go func() {
 		for _, blk := range expectedBlocks {
-			fmt.Println("submitting a block")
+			if ctx.Err() != nil {
+				// context is canceled
+				return
+			}
+
+			fmt.Println("submitting a block: ", blk.MustID().ToHex())
 			e.dockerFramework.SubmitBlock(context.Background(), blk)
 		}
 	}()
@@ -213,6 +218,11 @@ func test_DelegationTransactionBlocks(t *testing.T, e *EventAPIDockerTestFramewo
 	// issue blocks
 	go func() {
 		for _, blk := range expectedBlocks {
+			if ctx.Err() != nil {
+				// context is canceled
+				return
+			}
+
 			fmt.Println("submitting a block: ", blk.MustID().ToHex())
 			e.dockerFramework.SubmitBlock(context.Background(), blk)
 		}
@@ -269,6 +279,11 @@ func test_AccountTransactionBlocks(t *testing.T, e *EventAPIDockerTestFramework)
 		// issue blocks
 		go func() {
 			for _, blk := range expectedBlocks {
+				if ctx.Err() != nil {
+					// context is canceled
+					return
+				}
+
 				fmt.Println("submitting a block: ", blk.MustID().ToHex())
 				e.dockerFramework.SubmitBlock(context.Background(), blk)
 			}
@@ -329,6 +344,11 @@ func test_FoundryTransactionBlocks(t *testing.T, e *EventAPIDockerTestFramework)
 		// issue blocks
 		go func() {
 			for _, blk := range expectedBlocks {
+				if ctx.Err() != nil {
+					// context is canceled
+					return
+				}
+
 				fmt.Println("submitting a block: ", blk.MustID().ToHex())
 				e.dockerFramework.SubmitBlock(context.Background(), blk)
 			}
@@ -387,6 +407,12 @@ func test_NFTTransactionBlocks(t *testing.T, e *EventAPIDockerTestFramework) {
 		// issue blocks
 		go func() {
 			for _, blk := range expectedBlocks {
+				if ctx.Err() != nil {
+					// context is canceled
+					return
+				}
+
+				fmt.Println("submitting a block: ", blk.MustID().ToHex())
 				e.dockerFramework.SubmitBlock(context.Background(), blk)
 			}
 		}()
