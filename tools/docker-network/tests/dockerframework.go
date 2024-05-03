@@ -243,7 +243,7 @@ func (d *DockerTestFramework) waitForNodesAndGetClients() error {
 }
 
 func (d *DockerTestFramework) WaitUntilNetworkReady() {
-	d.WaitUntilSync()
+	d.WaitUntilNetworkHealthy()
 
 	// inx-faucet is up only when the node and indexer are healthy, thus need to check the faucet even after nodes are synced.
 	d.WaitUntilFaucetHealthy()
@@ -275,19 +275,19 @@ func (d *DockerTestFramework) WaitUntilFaucetHealthy() {
 	}, true)
 }
 
-func (d *DockerTestFramework) WaitUntilSync() {
-	fmt.Println("Wait until the nodes are synced...")
-	defer fmt.Println("Wait until the nodes are synced......done")
+func (d *DockerTestFramework) WaitUntilNetworkHealthy() {
+	fmt.Println("Wait until the network is healthy...")
+	defer fmt.Println("Wait until the network is healthy......done")
 
 	d.Eventually(func() error {
 		for _, node := range d.Nodes() {
 			for {
-				synced, err := d.Client(node.Name).Health(context.TODO())
+				info, err := d.Client(node.Name).Info(context.TODO())
 				if err != nil {
 					return err
 				}
 
-				if synced {
+				if info.Status.IsNetworkHealthy {
 					fmt.Println("Node", node.Name, "is synced")
 					break
 				}
@@ -379,7 +379,7 @@ func (d *DockerTestFramework) ResetNode(alias string, newSnapshotPath string) {
 	})
 	d.DockerComposeUp(true)
 	d.DumpContainerLog(d.Node(alias).ContainerName, "reset1")
-	d.WaitUntilSync()
+	d.WaitUntilNetworkHealthy()
 }
 
 func (d *DockerTestFramework) Clients(names ...string) map[string]mock.Client {
