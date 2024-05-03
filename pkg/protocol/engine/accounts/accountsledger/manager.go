@@ -406,8 +406,13 @@ func (m *Manager) rollbackAccountTo(accountData *accounts.AccountData, targetSlo
 			return false, false, ierrors.Wrapf(err, "can't retrieve account, could not load diff for account %s in slot %d", accountData.ID, diffSlot)
 		}
 
+		m.LogDebug("Rolling back account", "accountID", accountData.ID, "slot", diffSlot, "accountData", accountData, "diffChange", diffChange, "destroyed", destroyed)
+
 		// update the account data with the diff
-		accountData.Credits.Update(-diffChange.BICChange, diffChange.PreviousUpdatedSlot)
+		if diffChange.BICChange != 0 {
+			accountData.Credits.Update(-diffChange.BICChange, diffChange.PreviousUpdatedSlot)
+		}
+
 		// update the expiry slot of the account if it was changed
 		if diffChange.PreviousExpirySlot != diffChange.NewExpirySlot {
 			accountData.ExpirySlot = diffChange.PreviousExpirySlot
@@ -564,7 +569,9 @@ func (m *Manager) commitAccountTree(slot iotago.SlotIndex, accountDiffChanges ma
 				diffChange.BICChange -= accountData.Credits.Value - iotago.BlockIssuanceCredits(decayedPreviousCredits)
 			}
 
-			accountData.Credits.Update(diffChange.BICChange, slot)
+			if diffChange.BICChange != 0 {
+				accountData.Credits.Update(diffChange.BICChange, slot)
+			}
 		}
 
 		// update the expiry slot of the account if it changed
