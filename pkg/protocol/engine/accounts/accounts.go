@@ -2,6 +2,7 @@ package accounts
 
 import (
 	"io"
+	"strconv"
 
 	"github.com/iotaledger/hive.go/ierrors"
 	"github.com/iotaledger/hive.go/runtime/options"
@@ -172,7 +173,7 @@ func (a *AccountData) String() string {
 		stringify.NewStructField("Credits", a.Credits),
 		stringify.NewStructField("ExpirySlot", uint32(a.ExpirySlot)),
 		stringify.NewStructField("OutputID", a.OutputID),
-		stringify.NewStructField("BlockIssuerKeys", a.BlockIssuerKeys),
+		stringify.NewStructField("BlockIssuerKeys", func() string { return strconv.Itoa(a.BlockIssuerKeys.Size()) }()),
 		stringify.NewStructField("ValidatorStake", uint64(a.ValidatorStake)),
 		stringify.NewStructField("DelegationStake", uint64(a.DelegationStake)),
 		stringify.NewStructField("FixedCost", uint64(a.FixedCost)),
