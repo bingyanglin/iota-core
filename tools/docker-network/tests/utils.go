@@ -161,22 +161,15 @@ func (d *DockerTestFramework) AssertFinalizedSlot(condition func(iotago.SlotInde
 	}
 }
 
-// Eventually asserts that given condition will be met in opts.waitFor time,
-// periodically checking target function each opts.tick.
-//
-//	assert.Eventually(t, func() bool { return true; }, time.Second, 10*time.Millisecond)
-func (d *DockerTestFramework) Eventually(condition func() error, waitForSync ...bool) {
+// EventuallyWithDurations asserts that given condition will be met in deadline time,
+// periodically checking target function each tick.
+func (d *DockerTestFramework) EventuallyWithDurations(condition func() error, deadline time.Duration, tick time.Duration, waitForSync ...bool) {
 	ch := make(chan error, 1)
-
-	deadline := d.optsWaitFor
-	if len(waitForSync) > 0 && waitForSync[0] {
-		deadline = d.optsWaitForSync
-	}
 
 	timer := time.NewTimer(deadline)
 	defer timer.Stop()
 
-	ticker := time.NewTicker(d.optsTick)
+	ticker := time.NewTicker(tick)
 	defer ticker.Stop()
 
 	var lastErr error
@@ -195,6 +188,19 @@ func (d *DockerTestFramework) Eventually(condition func() error, waitForSync ...
 			tick = ticker.C
 		}
 	}
+}
+
+// Eventually asserts that given condition will be met in opts.waitFor time,
+// periodically checking target function each opts.tick.
+//
+//	assert.Eventually(t, func() bool { return true; }, time.Second, 10*time.Millisecond)
+func (d *DockerTestFramework) Eventually(condition func() error, waitForSync ...bool) {
+	deadline := d.optsWaitFor
+	if len(waitForSync) > 0 && waitForSync[0] {
+		deadline = d.optsWaitForSync
+	}
+
+	d.EventuallyWithDurations(condition, deadline, d.optsTick)
 }
 
 func (d *DockerTestFramework) AwaitTransactionPayloadAccepted(ctx context.Context, txID iotago.TransactionID) {
@@ -251,16 +257,23 @@ func (d *DockerTestFramework) AwaitTransactionFailure(ctx context.Context, txID 
 func (d *DockerTestFramework) AwaitCommitment(targetSlot iotago.SlotIndex) {
 	currentCommittedSlot := d.NodeStatus("V1").LatestCommitmentID.Slot()
 
-	for t := currentCommittedSlot; t <= targetSlot; t++ {
-		for {
-			latestCommittedSlot := d.NodeStatus("V1").LatestCommitmentID.Slot()
-
-			if latestCommittedSlot >= t {
-				break
-			}
-			time.Sleep(2 * time.Second)
-		}
+	// we wait at max "targetSlot - currentCommittedSlot" times * slot duration
+	deadline := time.Duration(d.defaultWallet.Client.CommittedAPI().ProtocolParameters().SlotDurationInSeconds()) * time.Second
+	if currentCommittedSlot < targetSlot {
+		deadline *= time.Duration(targetSlot - currentCommittedSlot)
 	}
+
+	// give some extra time for peering etc
+	deadline += 30 * time.Second
+
+	d.EventuallyWithDurations(func() error {
+		latestCommittedSlot := d.NodeStatus("V1").LatestCommitmentID.Slot()
+		if targetSlot > latestCommittedSlot {
+			return ierrors.Errorf("committed slot %d is not reached yet, current committed slot %d", targetSlot, latestCommittedSlot)
+		}
+
+		return nil
+	}, deadline, 1*time.Second)
 }
 
 func (d *DockerTestFramework) AwaitFinalization(targetSlot iotago.SlotIndex) {
