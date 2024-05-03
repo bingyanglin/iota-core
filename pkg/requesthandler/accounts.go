@@ -170,8 +170,8 @@ func (r *RequestHandler) RewardsByOutputID(outputID iotago.OutputID, optSlot ...
 		//nolint:forcetypeassert
 		stakingFeature := feature.(*iotago.StakingFeature)
 
-		futureBoundedSlotIndex := slot + apiForSlot.ProtocolParameters().MinCommittableAge()
-		claimingEpoch := apiForSlot.TimeProvider().EpochFromSlot(futureBoundedSlotIndex)
+		futureBoundedSlot := slot + apiForSlot.ProtocolParameters().MinCommittableAge()
+		claimingEpoch := apiForSlot.TimeProvider().EpochFromSlot(futureBoundedSlot)
 
 		stakingPoolValidatorAccountID = accountOutput.AccountID
 		// check if the account is a validator
@@ -185,8 +185,8 @@ func (r *RequestHandler) RewardsByOutputID(outputID iotago.OutputID, optSlot ...
 		//nolint:forcetypeassert
 		delegationOutput := utxoOutput.Output().(*iotago.DelegationOutput)
 		delegationEnd := delegationOutput.EndEpoch
-		futureBoundedSlotIndex := slot + apiForSlot.ProtocolParameters().MinCommittableAge()
-		claimingEpoch := apiForSlot.TimeProvider().EpochFromSlot(futureBoundedSlotIndex)
+		futureBoundedSlot := slot + apiForSlot.ProtocolParameters().MinCommittableAge()
+		claimingEpoch := apiForSlot.TimeProvider().EpochFromSlot(futureBoundedSlot)
 
 		// If Delegation ID is zeroed, the output is in delegating state, which means its End Epoch is not set and we must use the
 		// "last epoch" for the rewards calculation.
