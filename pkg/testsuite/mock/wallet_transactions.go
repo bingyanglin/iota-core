@@ -136,6 +136,15 @@ func (w *Wallet) CreateDelegationFromInput(transactionName string, input *Output
 	return signedTransaction
 }
 
+func (w *Wallet) StakingStartEpochFromSlot(latestCommitmentSlot iotago.SlotIndex) iotago.EpochIndex {
+	apiForSlot := w.Client.APIForSlot(latestCommitmentSlot)
+
+	pastBoundedSlot := latestCommitmentSlot + apiForSlot.ProtocolParameters().MaxCommittableAge()
+	pastBoundedEpoch := apiForSlot.TimeProvider().EpochFromSlot(pastBoundedSlot)
+
+	return pastBoundedEpoch
+}
+
 func (w *Wallet) DelegationStartFromSlot(slot, latestCommitmentSlot iotago.SlotIndex) iotago.EpochIndex {
 	apiForSlot := w.Client.APIForSlot(slot)
 

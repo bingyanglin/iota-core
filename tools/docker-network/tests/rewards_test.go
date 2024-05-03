@@ -52,19 +52,18 @@ func Test_ValidatorRewards(t *testing.T) {
 
 	latestCommitmentSlot := blockIssuance.LatestCommitment.Slot
 
-	pastBoundedSlot := latestCommitmentSlot + clt.CommittedAPI().ProtocolParameters().MaxCommittableAge()
-	pastBoundedEpoch := clt.CommittedAPI().TimeProvider().EpochFromSlot(pastBoundedSlot)
+	stakingStartEpoch := d.defaultWallet.StakingStartEpochFromSlot(latestCommitmentSlot)
 
 	currentEpoch := clt.CommittedAPI().TimeProvider().EpochFromSlot(latestCommitmentSlot)
 	slotsDuration := clt.CommittedAPI().ProtocolParameters().SlotDurationInSeconds()
 
 	// Set end epoch so the staking feature can be removed as soon as possible.
-	endEpoch := pastBoundedEpoch + clt.CommittedAPI().ProtocolParameters().StakingUnbondingPeriod() + 1
+	endEpoch := stakingStartEpoch + clt.CommittedAPI().ProtocolParameters().StakingUnbondingPeriod() + 1
 	// The earliest epoch in which we can remove the staking feature and claim rewards.
 	claimingSlot := clt.CommittedAPI().TimeProvider().EpochStart(endEpoch + 1)
 
 	// create accounts and continue issuing candidacy payload for account in the background
-	goodWallet, goodAccountData := d.CreateAccount(WithStakingFeature(100, 1, pastBoundedEpoch, endEpoch))
+	goodWallet, goodAccountData := d.CreateAccount(WithStakingFeature(100, 1, stakingStartEpoch, endEpoch))
 	initialMana := goodAccountData.Output.StoredMana()
 	issueCandidacyPayloadInBackground(ctx,
 		d,
@@ -73,7 +72,7 @@ func Test_ValidatorRewards(t *testing.T) {
 		claimingSlot,
 		slotsDuration)
 
-	lazyWallet, lazyAccountData := d.CreateAccount(WithStakingFeature(100, 1, pastBoundedEpoch, endEpoch))
+	lazyWallet, lazyAccountData := d.CreateAccount(WithStakingFeature(100, 1, stakingStartEpoch, endEpoch))
 	lazyInitialMana := lazyAccountData.Output.StoredMana()
 	issueCandidacyPayloadInBackground(ctx,
 		d,
