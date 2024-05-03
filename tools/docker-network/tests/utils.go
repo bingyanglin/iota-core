@@ -220,7 +220,7 @@ func (d *DockerTestFramework) AwaitTransactionPayloadAccepted(ctx context.Contex
 			}
 		}
 
-		return ierrors.Errorf("transaction %s is pending or having errors, state: %s, failure reason: %d", txID.ToHex(), resp.TransactionState.String(), resp.TransactionFailureReason)
+		return ierrors.Errorf("transaction %s is pending or having errors, state: %s, failure reason: %s, failure details: %s", txID.ToHex(), resp.TransactionState, resp.TransactionFailureReason, resp.TransactionFailureDetails)
 	})
 }
 
@@ -234,7 +234,10 @@ func (d *DockerTestFramework) AwaitTransactionState(ctx context.Context, txID io
 		if expectedState == resp.TransactionState {
 			return nil
 		} else {
-			return ierrors.Errorf("expected transaction %s to have state %s, got %s instead", txID, expectedState, resp.TransactionState)
+			if resp.TransactionState == api.TransactionStateFailed {
+				return ierrors.Errorf("expected transaction %s to have state '%s', got '%s' instead, failure reason: %s, failure details: %s", txID, expectedState, resp.TransactionState, resp.TransactionFailureReason, resp.TransactionFailureDetails)
+			}
+			return ierrors.Errorf("expected transaction %s to have state '%s', got '%s' instead", txID, expectedState, resp.TransactionState)
 		}
 	})
 }
@@ -249,7 +252,7 @@ func (d *DockerTestFramework) AwaitTransactionFailure(ctx context.Context, txID 
 		if expectedReason == resp.TransactionFailureReason {
 			return nil
 		} else {
-			return ierrors.Errorf("expected transaction %s to have failure reason %T, got %s instead, failure details: %s", txID, expectedReason, resp.TransactionState, resp.TransactionFailureDetails)
+			return ierrors.Errorf("expected transaction %s to have failure reason '%s', got '%s' instead, failure details: %s", txID, expectedReason, resp.TransactionFailureReason, resp.TransactionFailureDetails)
 		}
 	})
 }
