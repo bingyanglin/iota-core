@@ -569,7 +569,7 @@ func (m *Manager) commitAccountTree(slot iotago.SlotIndex, accountDiffChanges ma
 				diffChange.BICChange -= accountData.Credits.Value - iotago.BlockIssuanceCredits(decayedPreviousCredits)
 			}
 
-			if diffChange.BICChange != 0 {
+			if diffChange.BICChange != 0 || !exists {
 				accountData.Credits.Update(diffChange.BICChange, slot)
 			}
 		}
