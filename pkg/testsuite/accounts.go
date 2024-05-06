@@ -22,16 +22,16 @@ func (t *TestSuite) AssertAccountStake(accountID iotago.AccountID, validatorStak
 				return ierrors.Errorf("AssertAccountData: %s: account %s does not exist with latest committed slot %d", node.Name, accountID, node.Protocol.Engines.Main.Get().SyncManager.LatestCommitment().Slot())
 			}
 
-			if accountID != actualAccountData.ID {
-				return ierrors.Errorf("AssertAccountData: %s: expected %s, got %s", node.Name, accountID, actualAccountData.ID)
+			if accountID != actualAccountData.ID() {
+				return ierrors.Errorf("AssertAccountData: %s: expected %s, got %s", node.Name, accountID, actualAccountData.ID())
 			}
 
-			if validatorStake != actualAccountData.ValidatorStake {
-				return ierrors.Errorf("AssertAccountData: %s: accountID %s expected validator stake %d, got %d", node.Name, accountID, validatorStake, actualAccountData.ValidatorStake)
+			if validatorStake != actualAccountData.ValidatorStake() {
+				return ierrors.Errorf("AssertAccountData: %s: accountID %s expected validator stake %d, got %d", node.Name, accountID, validatorStake, actualAccountData.ValidatorStake())
 			}
 
-			if delegationStake != actualAccountData.DelegationStake {
-				return ierrors.Errorf("AssertAccountData: %s: accountID %s expected delegation stake %d, got %d", node.Name, accountID, delegationStake, actualAccountData.DelegationStake)
+			if delegationStake != actualAccountData.DelegationStake() {
+				return ierrors.Errorf("AssertAccountData: %s: accountID %s expected delegation stake %d, got %d", node.Name, accountID, delegationStake, actualAccountData.DelegationStake())
 			}
 
 			return nil
@@ -43,56 +43,56 @@ func (t *TestSuite) AssertAccountStake(accountID iotago.AccountID, validatorStak
 func (t *TestSuite) AssertAccountData(accountData *accounts.AccountData, nodes ...*mock.Node) {
 	for _, node := range nodes {
 		t.Eventually(func() error {
-			actualAccountData, exists, err := node.Protocol.Engines.Main.Get().Ledger.Account(accountData.ID, node.Protocol.Engines.Main.Get().SyncManager.LatestCommitment().Slot())
+			actualAccountData, exists, err := node.Protocol.Engines.Main.Get().Ledger.Account(accountData.ID(), node.Protocol.Engines.Main.Get().SyncManager.LatestCommitment().Slot())
 			if err != nil {
 				return ierrors.Wrap(err, "AssertAccountData: failed to load account data")
 			}
 			if !exists {
-				return ierrors.Errorf("AssertAccountData: %s: account %s does not exist with latest committed slot %d", node.Name, accountData.ID, node.Protocol.Engines.Main.Get().SyncManager.LatestCommitment().Slot())
+				return ierrors.Errorf("AssertAccountData: %s: account %s does not exist with latest committed slot %d", node.Name, accountData.ID(), node.Protocol.Engines.Main.Get().SyncManager.LatestCommitment().Slot())
 			}
 
-			if accountData.ID != actualAccountData.ID {
-				return ierrors.Errorf("AssertAccountData: %s: expected %s, got %s", node.Name, accountData.ID, actualAccountData.ID)
+			if accountData.ID() != actualAccountData.ID() {
+				return ierrors.Errorf("AssertAccountData: %s: expected %s, got %s", node.Name, accountData.ID(), actualAccountData.ID())
 			}
 
-			if accountData.Credits.Value != actualAccountData.Credits.Value {
-				return ierrors.Errorf("AssertAccountData: %s: accountID %s expected credits value %d, got %d", node.Name, accountData.ID, accountData.Credits.Value, actualAccountData.Credits.Value)
+			if accountData.Credits().Value() != actualAccountData.Credits().Value() {
+				return ierrors.Errorf("AssertAccountData: %s: accountID %s expected credits value %d, got %d", node.Name, accountData.ID(), accountData.Credits().Value(), actualAccountData.Credits().Value())
 			}
 
-			if accountData.Credits.UpdateSlot != actualAccountData.Credits.UpdateSlot {
-				return ierrors.Errorf("AssertAccountData: %s: accountID %s expected credits update time %d, got %d", node.Name, accountData.ID, accountData.Credits.UpdateSlot, actualAccountData.Credits.UpdateSlot)
+			if accountData.Credits().UpdateSlot() != actualAccountData.Credits().UpdateSlot() {
+				return ierrors.Errorf("AssertAccountData: %s: accountID %s expected credits update time %d, got %d", node.Name, accountData.ID(), accountData.Credits().UpdateSlot(), actualAccountData.Credits().UpdateSlot())
 			}
 
-			if accountData.OutputID != actualAccountData.OutputID {
-				return ierrors.Errorf("AssertAccountData: %s: accountID %s expected output %s, got %s", node.Name, accountData.ID, accountData.OutputID, actualAccountData.OutputID)
+			if accountData.OutputID() != actualAccountData.OutputID() {
+				return ierrors.Errorf("AssertAccountData: %s: accountID %s expected output %s, got %s", node.Name, accountData.ID(), accountData.OutputID(), actualAccountData.OutputID())
 			}
 
-			if accountData.ExpirySlot != actualAccountData.ExpirySlot {
-				return ierrors.Errorf("AssertAccountData: %s: accountID %s expected expiry slot %s, got %s", node.Name, accountData.ID, accountData.ExpirySlot, actualAccountData.ExpirySlot)
+			if accountData.ExpirySlot() != actualAccountData.ExpirySlot() {
+				return ierrors.Errorf("AssertAccountData: %s: accountID %s expected expiry slot %s, got %s", node.Name, accountData.ID(), accountData.ExpirySlot(), actualAccountData.ExpirySlot())
 			}
 
-			if !assert.Equal(t.fakeTesting, accountData.BlockIssuerKeys, actualAccountData.BlockIssuerKeys) {
-				return ierrors.Errorf("AssertAccountData: %s: accountID %s expected pub keys %s, got %s", node.Name, accountData.ID, accountData.BlockIssuerKeys, actualAccountData.BlockIssuerKeys)
+			if !assert.Equal(t.fakeTesting, accountData.BlockIssuerKeys(), actualAccountData.BlockIssuerKeys()) {
+				return ierrors.Errorf("AssertAccountData: %s: accountID %s expected pub keys %s, got %s", node.Name, accountData.ID(), accountData.BlockIssuerKeys(), actualAccountData.BlockIssuerKeys())
 			}
 
-			if accountData.StakeEndEpoch != actualAccountData.StakeEndEpoch {
-				return ierrors.Errorf("AssertAccountData: %s: accountID %s expected stake end epoch %s, got %s", node.Name, accountData.ID, accountData.StakeEndEpoch, actualAccountData.StakeEndEpoch)
+			if accountData.StakeEndEpoch() != actualAccountData.StakeEndEpoch() {
+				return ierrors.Errorf("AssertAccountData: %s: accountID %s expected stake end epoch %s, got %s", node.Name, accountData.ID(), accountData.StakeEndEpoch(), actualAccountData.StakeEndEpoch())
 			}
 
-			if accountData.FixedCost != actualAccountData.FixedCost {
-				return ierrors.Errorf("AssertAccountData: %s: accountID %s expected fixed cost %d, got %d", node.Name, accountData.ID, accountData.FixedCost, actualAccountData.FixedCost)
+			if accountData.FixedCost() != actualAccountData.FixedCost() {
+				return ierrors.Errorf("AssertAccountData: %s: accountID %s expected fixed cost %d, got %d", node.Name, accountData.ID(), accountData.FixedCost(), actualAccountData.FixedCost())
 			}
 
-			if accountData.ValidatorStake != actualAccountData.ValidatorStake {
-				return ierrors.Errorf("AssertAccountData: %s: accountID %s expected validator stake %d, got %d", node.Name, accountData.ID, accountData.ValidatorStake, actualAccountData.ValidatorStake)
+			if accountData.ValidatorStake() != actualAccountData.ValidatorStake() {
+				return ierrors.Errorf("AssertAccountData: %s: accountID %s expected validator stake %d, got %d", node.Name, accountData.ID(), accountData.ValidatorStake(), actualAccountData.ValidatorStake())
 			}
 
-			if accountData.DelegationStake != actualAccountData.DelegationStake {
-				return ierrors.Errorf("AssertAccountData: %s: accountID %s expected delegation stake %d, got %d", node.Name, accountData.ID, accountData.DelegationStake, actualAccountData.DelegationStake)
+			if accountData.DelegationStake() != actualAccountData.DelegationStake() {
+				return ierrors.Errorf("AssertAccountData: %s: accountID %s expected delegation stake %d, got %d", node.Name, accountData.ID(), accountData.DelegationStake(), actualAccountData.DelegationStake())
 			}
 
-			if accountData.LatestSupportedProtocolVersionAndHash != actualAccountData.LatestSupportedProtocolVersionAndHash {
-				return ierrors.Errorf("AssertAccountData: %s: accountID %s expected latest supported protocol version and hash %d, got %d", node.Name, accountData.ID, accountData.LatestSupportedProtocolVersionAndHash, actualAccountData.LatestSupportedProtocolVersionAndHash)
+			if accountData.LatestSupportedProtocolVersionAndHash() != actualAccountData.LatestSupportedProtocolVersionAndHash() {
+				return ierrors.Errorf("AssertAccountData: %s: accountID %s expected latest supported protocol version and hash %d, got %d", node.Name, accountData.ID(), accountData.LatestSupportedProtocolVersionAndHash(), actualAccountData.LatestSupportedProtocolVersionAndHash())
 			}
 
 			return nil

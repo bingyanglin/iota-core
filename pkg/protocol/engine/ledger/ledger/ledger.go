@@ -425,7 +425,7 @@ func (l *Ledger) prepareAccountDiffs(accountDiffs map[iotago.AccountID]*model.Ac
 		accountDiff.NewOutputID = createdOutput.OutputID()
 		accountDiff.NewExpirySlot = createdOutput.Output().FeatureSet().BlockIssuer().ExpirySlot
 
-		oldPubKeysSet := accountData.BlockIssuerKeys
+		oldPubKeysSet := accountData.BlockIssuerKeys()
 		newPubKeysSet := iotago.NewBlockIssuerKeys()
 		for _, blockIssuerKey := range createdOutput.Output().FeatureSet().BlockIssuer().BlockIssuerKeys {
 			newPubKeysSet.Add(blockIssuerKey)
@@ -449,14 +449,14 @@ func (l *Ledger) prepareAccountDiffs(accountDiffs map[iotago.AccountID]*model.Ac
 
 		if stakingFeature := createdOutput.Output().FeatureSet().Staking(); stakingFeature != nil {
 			// staking feature is created or updated - create the diff between the account data and new account
-			accountDiff.ValidatorStakeChange = int64(stakingFeature.StakedAmount) - int64(accountData.ValidatorStake)
-			accountDiff.StakeEndEpochChange = int64(stakingFeature.EndEpoch) - int64(accountData.StakeEndEpoch)
-			accountDiff.FixedCostChange = int64(stakingFeature.FixedCost) - int64(accountData.FixedCost)
+			accountDiff.ValidatorStakeChange = int64(stakingFeature.StakedAmount) - int64(accountData.ValidatorStake())
+			accountDiff.StakeEndEpochChange = int64(stakingFeature.EndEpoch) - int64(accountData.StakeEndEpoch())
+			accountDiff.FixedCostChange = int64(stakingFeature.FixedCost) - int64(accountData.FixedCost())
 		} else if consumedOutput.Output().FeatureSet().Staking() != nil {
 			// staking feature was removed from an account
-			accountDiff.ValidatorStakeChange = -int64(accountData.ValidatorStake)
-			accountDiff.StakeEndEpochChange = -int64(accountData.StakeEndEpoch)
-			accountDiff.FixedCostChange = -int64(accountData.FixedCost)
+			accountDiff.ValidatorStakeChange = -int64(accountData.ValidatorStake())
+			accountDiff.StakeEndEpochChange = -int64(accountData.StakeEndEpoch())
+			accountDiff.FixedCostChange = -int64(accountData.FixedCost())
 		}
 	}
 
@@ -675,15 +675,15 @@ func (l *Ledger) processStateDiffTransactions(stateDiff mempool.StateDiff) (spen
 				}
 
 				accountDiff.BICChange += iotago.BlockIssuanceCredits(allotment.Mana)
-				accountDiff.PreviousUpdatedSlot = accountData.Credits.UpdateSlot
+				accountDiff.PreviousUpdatedSlot = accountData.Credits().UpdateSlot()
 
 				// we are not transitioning the allotted account, so the new and previous expiry slots are the same
-				accountDiff.PreviousExpirySlot = accountData.ExpirySlot
-				accountDiff.NewExpirySlot = accountData.ExpirySlot
+				accountDiff.PreviousExpirySlot = accountData.ExpirySlot()
+				accountDiff.NewExpirySlot = accountData.ExpirySlot()
 
 				// we are not transitioning the allotted account, so the new and previous outputIDs are the same
-				accountDiff.NewOutputID = accountData.OutputID
-				accountDiff.PreviousOutputID = accountData.OutputID
+				accountDiff.NewOutputID = accountData.OutputID()
+				accountDiff.PreviousOutputID = accountData.OutputID()
 			}
 		}
 
@@ -705,17 +705,17 @@ func (l *Ledger) resolveAccountOutput(accountID iotago.AccountID, slot iotago.Sl
 	l.utxoLedger.ReadLockLedger()
 	defer l.utxoLedger.ReadUnlockLedger()
 
-	isUnspent, err := l.utxoLedger.IsOutputIDUnspentWithoutLocking(accountMetadata.OutputID)
+	isUnspent, err := l.utxoLedger.IsOutputIDUnspentWithoutLocking(accountMetadata.OutputID())
 	if err != nil {
-		return nil, ierrors.Wrapf(err, "error while checking whether account with output id %s is unspent", accountMetadata.OutputID.ToHex())
+		return nil, ierrors.Wrapf(err, "error while checking whether account with output id %s is unspent", accountMetadata.OutputID().ToHex())
 	}
 	if !isUnspent {
-		return nil, ierrors.WithMessagef(mempool.ErrStateNotFound, "unspent account with output id %s not found", accountMetadata.OutputID.ToHex())
+		return nil, ierrors.WithMessagef(mempool.ErrStateNotFound, "unspent account with output id %s not found", accountMetadata.OutputID().ToHex())
 	}
 
-	accountOutput, err := l.utxoLedger.ReadOutputByOutputIDWithoutLocking(accountMetadata.OutputID)
+	accountOutput, err := l.utxoLedger.ReadOutputByOutputIDWithoutLocking(accountMetadata.OutputID())
 	if err != nil {
-		return nil, ierrors.Wrapf(err, "error while retrieving account with output id %s", accountMetadata.OutputID.ToHex())
+		return nil, ierrors.Wrapf(err, "error while retrieving account with output id %s", accountMetadata.OutputID().ToHex())
 	}
 
 	return accountOutput, nil

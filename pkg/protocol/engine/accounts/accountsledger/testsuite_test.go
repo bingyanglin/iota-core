@@ -241,16 +241,17 @@ func (t *TestSuite) assertAccountState(slot iotago.SlotIndex, accountID iotago.A
 
 	require.True(t.T, exists)
 
-	require.Equal(t.T, accountID, actualState.ID)
-	require.Equal(t.T, expectedCredits, actualState.Credits, "slot: %d, accountID %s: expected: %v, actual: %v", slot, accountID, expectedCredits, actualState.Credits)
-	require.True(t.T, expectedBlockIssuerKeys.Equal(actualState.BlockIssuerKeys), "slot: %d, accountID %s: expected: %s, actual: %s", slot, accountID, expectedBlockIssuerKeys, actualState.BlockIssuerKeys)
+	require.Equal(t.T, accountID, actualState.ID())
+	require.Equal(t.T, expectedCredits.Value(), actualState.Credits().Value(), "slot: %d, accountID %s: expected: %v, actual: %v", slot, accountID, expectedCredits, actualState.Credits().Value())
+	require.Equal(t.T, expectedCredits.UpdateSlot(), actualState.Credits().UpdateSlot(), "slot: %d, accountID %s: expected: %v, actual: %v", slot, accountID, expectedCredits, actualState.Credits().UpdateSlot())
+	require.True(t.T, expectedBlockIssuerKeys.Equal(actualState.BlockIssuerKeys()), "slot: %d, accountID %s: expected: %s, actual: %s", slot, accountID, expectedBlockIssuerKeys, actualState.BlockIssuerKeys())
 
-	require.Equal(t.T, t.OutputID(expectedState.OutputID, false), actualState.OutputID)
-	require.Equal(t.T, expectedState.StakeEndEpoch, actualState.StakeEndEpoch, "slot: %d, accountID %s: expected StakeEndEpoch: %d, actual: %d", slot, accountID, expectedState.StakeEndEpoch, actualState.StakeEndEpoch)
-	require.Equal(t.T, expectedState.ValidatorStake, actualState.ValidatorStake, "slot: %d, accountID %s: expected ValidatorStake: %d, actual: %d", slot, accountID, expectedState.ValidatorStake, actualState.ValidatorStake)
-	require.Equal(t.T, expectedState.FixedCost, actualState.FixedCost, "slot: %d, accountID %s: expected FixedCost: %d, actual: %d", slot, accountID, expectedState.FixedCost, actualState.FixedCost)
-	require.Equal(t.T, expectedState.DelegationStake, actualState.DelegationStake, "slot: %d, accountID %s: expected DelegationStake: %d, actual: %d", slot, accountID, expectedState.DelegationStake, actualState.DelegationStake)
-	require.Equal(t.T, expectedState.LatestSupportedProtocolVersionAndHash, actualState.LatestSupportedProtocolVersionAndHash, "slot: %d, accountID %s: expected LatestSupportedProtocolVersionAndHash: %d, actual: %d", slot, accountID, expectedState.LatestSupportedProtocolVersionAndHash, actualState.LatestSupportedProtocolVersionAndHash)
+	require.Equal(t.T, t.OutputID(expectedState.OutputID, false), actualState.OutputID())
+	require.Equal(t.T, expectedState.StakeEndEpoch, actualState.StakeEndEpoch(), "slot: %d, accountID %s: expected StakeEndEpoch: %d, actual: %d", slot, accountID, expectedState.StakeEndEpoch, actualState.StakeEndEpoch())
+	require.Equal(t.T, expectedState.ValidatorStake, actualState.ValidatorStake(), "slot: %d, accountID %s: expected ValidatorStake: %d, actual: %d", slot, accountID, expectedState.ValidatorStake, actualState.ValidatorStake())
+	require.Equal(t.T, expectedState.FixedCost, actualState.FixedCost(), "slot: %d, accountID %s: expected FixedCost: %d, actual: %d", slot, accountID, expectedState.FixedCost, actualState.FixedCost())
+	require.Equal(t.T, expectedState.DelegationStake, actualState.DelegationStake(), "slot: %d, accountID %s: expected DelegationStake: %d, actual: %d", slot, accountID, expectedState.DelegationStake, actualState.DelegationStake())
+	require.Equal(t.T, expectedState.LatestSupportedProtocolVersionAndHash, actualState.LatestSupportedProtocolVersionAndHash(), "slot: %d, accountID %s: expected LatestSupportedProtocolVersionAndHash: %d, actual: %d", slot, accountID, expectedState.LatestSupportedProtocolVersionAndHash, actualState.LatestSupportedProtocolVersionAndHash())
 
 }
 

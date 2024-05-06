@@ -42,11 +42,11 @@ func (r *RequestHandler) CongestionByAccountAddress(accountAddress *iotago.Accou
 		return nil, ierrors.WithMessagef(echo.ErrNotFound, "account %s not found", accountID.ToHex())
 	}
 
-	blockIssuanceCredits := acc.Credits.Value
+	blockIssuanceCredits := acc.Credits().Value()
 	// Apply decay to BIC if the value is positive
 	if blockIssuanceCredits > 0 {
 		manaDecayProvider := r.APIProvider().APIForSlot(targetSlot).ManaDecayProvider()
-		decayedBIC, err := manaDecayProvider.DecayManaBySlots(iotago.Mana(acc.Credits.Value), acc.Credits.UpdateSlot, targetSlot)
+		decayedBIC, err := manaDecayProvider.DecayManaBySlots(iotago.Mana(acc.Credits().Value()), acc.Credits().UpdateSlot(), targetSlot)
 		if err != nil {
 			return nil, ierrors.WithMessagef(echo.ErrInternalServerError, "failed to decay BIC for account %s: %w", accountID.ToHex(), err)
 		}
@@ -121,13 +121,13 @@ func (r *RequestHandler) ValidatorByAccountAddress(accountAddress *iotago.Accoun
 
 	return &api.ValidatorResponse{
 		AddressBech32:                  accountID.ToAddress().Bech32(r.protocol.CommittedAPI().ProtocolParameters().Bech32HRP()),
-		PoolStake:                      accountData.ValidatorStake + accountData.DelegationStake,
-		ValidatorStake:                 accountData.ValidatorStake,
-		StakingEndEpoch:                accountData.StakeEndEpoch,
-		FixedCost:                      accountData.FixedCost,
+		PoolStake:                      accountData.ValidatorStake() + accountData.DelegationStake(),
+		ValidatorStake:                 accountData.ValidatorStake(),
+		StakingEndEpoch:                accountData.StakeEndEpoch(),
+		FixedCost:                      accountData.FixedCost(),
 		Active:                         active,
-		LatestSupportedProtocolVersion: accountData.LatestSupportedProtocolVersionAndHash.Version,
-		LatestSupportedProtocolHash:    accountData.LatestSupportedProtocolVersionAndHash.Hash,
+		LatestSupportedProtocolVersion: accountData.LatestSupportedProtocolVersionAndHash().Version,
+		LatestSupportedProtocolHash:    accountData.LatestSupportedProtocolVersionAndHash().Hash,
 	}, nil
 }
 

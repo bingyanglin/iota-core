@@ -181,12 +181,12 @@ func (m *ManualPOA) RotateCommittee(epoch iotago.EpochIndex, validators accounts
 		m.accounts = account.NewAccounts()
 
 		for _, validatorData := range validators {
-			if err := m.accounts.Set(validatorData.ID, &account.Pool{
-				PoolStake:      validatorData.ValidatorStake + validatorData.DelegationStake,
-				ValidatorStake: validatorData.ValidatorStake,
-				FixedCost:      validatorData.FixedCost,
+			if err := m.accounts.Set(validatorData.ID(), &account.Pool{
+				PoolStake:      validatorData.ValidatorStake() + validatorData.DelegationStake(),
+				ValidatorStake: validatorData.ValidatorStake(),
+				FixedCost:      validatorData.FixedCost(),
 			}); err != nil {
-				return nil, ierrors.Wrapf(err, "error while setting pool for epoch %d for validator %s", epoch, validatorData.ID.String())
+				return nil, ierrors.Wrapf(err, "error while setting pool for epoch %d for validator %s", epoch, validatorData.ID().String())
 			}
 		}
 		m.committee = m.accounts.SeatedAccounts()

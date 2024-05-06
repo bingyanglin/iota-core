@@ -222,9 +222,9 @@ func (m *Manager) getBIC(accountID iotago.AccountID, slot iotago.SlotIndex) (bic
 	if !exists {
 		return 0, 0, ierrors.Errorf("account data for %s in slot %s does not exist", accountID, slot)
 	}
-	if accountBIC.Credits.Value <= 0 {
+	if accountBIC.Credits().Value() <= 0 {
 		return 0, 0, nil
 	}
 
-	return iotago.Mana(accountBIC.Credits.Value), accountBIC.Credits.UpdateSlot, nil
+	return iotago.Mana(accountBIC.Credits().Value()), accountBIC.Credits().UpdateSlot(), nil
 }

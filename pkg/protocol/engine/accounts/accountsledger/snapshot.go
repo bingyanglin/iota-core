@@ -32,8 +32,8 @@ func (m *Manager) Import(reader io.ReadSeeker) error {
 			return ierrors.Wrapf(err, "unable to read account data at index %d", i)
 		}
 
-		if err := m.accountsTree.Set(accountData.ID, accountData); err != nil {
-			return ierrors.Wrapf(err, "unable to set account %s", accountData.ID)
+		if err := m.accountsTree.Set(accountData.ID(), accountData); err != nil {
+			return ierrors.Wrapf(err, "unable to set account %s", accountData.ID())
 		}
 
 		m.LogDebug("Imported account", "accountData", accountData)

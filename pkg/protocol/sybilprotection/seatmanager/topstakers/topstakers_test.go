@@ -167,23 +167,25 @@ func TestTopStakers_RotateCommittee(t *testing.T) {
 		{
 			candidate0ID := tpkg.RandAccountID()
 			candidate0ID.RegisterAlias("candidate0")
-			accountsData = append(accountsData, &accounts.AccountData{
-				ID:              candidate0ID,
-				ValidatorStake:  100,
-				DelegationStake: 800 - 399,
-				FixedCost:       3,
-				StakeEndEpoch:   iotago.MaxEpochIndex,
-			})
+			accountsData = append(accountsData,
+				accounts.NewAccountData(candidate0ID,
+					accounts.WithValidatorStake(100),
+					accounts.WithDelegationStake(800-399),
+					accounts.WithFixedCost(3),
+					accounts.WithStakeEndEpoch(iotago.MaxEpochIndex),
+				),
+			)
 
 			candidate1ID := tpkg.RandAccountID()
 			candidate1ID.RegisterAlias("candidate1")
-			accountsData = append(accountsData, &accounts.AccountData{
-				ID:              candidate1ID,
-				ValidatorStake:  100,
-				DelegationStake: 800 - 399,
-				FixedCost:       3,
-				StakeEndEpoch:   iotago.MaxEpochIndex,
-			})
+			accountsData = append(accountsData,
+				accounts.NewAccountData(candidate1ID,
+					accounts.WithValidatorStake(100),
+					accounts.WithDelegationStake(800-399),
+					accounts.WithFixedCost(3),
+					accounts.WithStakeEndEpoch(iotago.MaxEpochIndex),
+				),
+			)
 		}
 
 		for i := 2; i <= numCandidates; i++ {
@@ -194,13 +196,14 @@ func TestTopStakers_RotateCommittee(t *testing.T) {
 				ValidatorStake: iotago.BaseToken(i * 50),
 				FixedCost:      iotago.Mana(i),
 			}
-			accountsData = append(accountsData, &accounts.AccountData{
-				ID:              candidateAccountID,
-				ValidatorStake:  iotago.BaseToken(i * 50),
-				DelegationStake: iotago.BaseToken(i*100) - iotago.BaseToken(i*50),
-				FixedCost:       tpkg.RandMana(iotago.MaxMana),
-				StakeEndEpoch:   tpkg.RandEpoch(),
-			})
+			accountsData = append(accountsData,
+				accounts.NewAccountData(candidateAccountID,
+					accounts.WithValidatorStake(iotago.BaseToken(i*50)),
+					accounts.WithDelegationStake(iotago.BaseToken(i*100)-iotago.BaseToken(i*50)),
+					accounts.WithFixedCost(tpkg.RandMana(iotago.MaxMana)),
+					accounts.WithStakeEndEpoch(tpkg.RandEpoch()),
+				),
+			)
 
 			if i+int(expectedCommitteeSize) > numCandidates {
 				require.NoError(t, expectedCommitteeInEpoch1.Set(candidateAccountID, candidatePool))
@@ -240,13 +243,14 @@ func TestTopStakers_RotateCommittee(t *testing.T) {
 
 		candidate0ID := tpkg.RandAccountID()
 		candidate0ID.RegisterAlias("candidate0-epoch2")
-		accountsData = append(accountsData, &accounts.AccountData{
-			ID:              candidate0ID,
-			ValidatorStake:  100,
-			DelegationStake: 800 - 399,
-			FixedCost:       3,
-			StakeEndEpoch:   iotago.MaxEpochIndex,
-		})
+		accountsData = append(accountsData,
+			accounts.NewAccountData(candidate0ID,
+				accounts.WithValidatorStake(100),
+				accounts.WithDelegationStake(800-399),
+				accounts.WithFixedCost(3),
+				accounts.WithStakeEndEpoch(iotago.MaxEpochIndex),
+			),
+		)
 		require.NoError(t, expectedCommitteeInEpoch2.Set(candidate0ID, &account.Pool{PoolStake: 1900, ValidatorStake: 900, FixedCost: 11}))
 
 		// Rotate the committee and make sure that the returned committee matches the expected.

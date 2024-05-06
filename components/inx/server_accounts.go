@@ -20,7 +20,7 @@ func (s *Server) ReadIsValidatorAccount(_ context.Context, accountInfoRequest *i
 		return nil, ierrors.Wrapf(err, "error when retrieving account data for %s", accountID)
 	}
 
-	return inx.WrapBoolResponse(exists && account.StakeEndEpoch <= deps.Protocol.APIForSlot(slot).TimeProvider().EpochFromSlot(slot)), nil
+	return inx.WrapBoolResponse(exists && account.StakeEndEpoch() <= deps.Protocol.APIForSlot(slot).TimeProvider().EpochFromSlot(slot)), nil
 }
 
 func (s *Server) ReadIsCommitteeMember(_ context.Context, accountInfoRequest *inx.AccountInfoRequest) (*inx.BoolResponse, error) {
