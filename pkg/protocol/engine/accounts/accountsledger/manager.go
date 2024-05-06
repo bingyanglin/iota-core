@@ -39,8 +39,7 @@ type Manager struct {
 	// at the latest committed slot, it is updated on the slot commitment.
 	accountsTree ads.Map[iotago.Identifier, iotago.AccountID, *accounts.AccountData]
 
-	// TODO: add in memory shrink version of the slot diffs
-	// slot diffs for the Account between [LatestCommittedSlot - MCA, LatestCommittedSlot].
+	// slot diffs for the Account.
 	slotDiff func(iotago.SlotIndex) (*slotstore.AccountDiffs, error)
 
 	// block is a function that returns a block from the cache or from the database.
@@ -228,15 +227,16 @@ func (m *Manager) account(accountID iotago.AccountID, targetSlot iotago.SlotInde
 	}
 
 	if !exists {
-		loadedAccount = accounts.NewAccountData(accountID, accounts.WithCredits(accounts.NewBlockIssuanceCredits(0, targetSlot)))
+		loadedAccount = accounts.NewAccountData(accountID)
 	}
 
-	_, wasDestroyed, err := m.rollbackAccountTo(loadedAccount, targetSlot)
+	wasDestroyed, err := m.rollbackAccountTo(loadedAccount, targetSlot)
 	if err != nil {
 		return nil, false, err
 	}
 
-	// account not present in the accountsTree, and it was not marked as destroyed in slots between targetSlot and latestCommittedSlot
+	// the account is not present in the accountsTree,
+	// and it was not marked as destroyed in slots between targetSlot and latestCommittedSlot
 	if !exists && !wasDestroyed {
 		return nil, false, nil
 	}
@@ -261,7 +261,7 @@ func (m *Manager) PastAccounts(accountIDs iotago.AccountIDs, targetSlot iotago.S
 		if !exists {
 			loadedAccount = accounts.NewAccountData(accountID, accounts.WithCredits(accounts.NewBlockIssuanceCredits(0, targetSlot)))
 		}
-		_, wasDestroyed, err := m.rollbackAccountTo(loadedAccount, targetSlot)
+		wasDestroyed, err := m.rollbackAccountTo(loadedAccount, targetSlot)
 		if err != nil {
 			continue
 		}
@@ -276,15 +276,17 @@ func (m *Manager) PastAccounts(accountIDs iotago.AccountIDs, targetSlot iotago.S
 
 	return result, nil
 }
-
 func (m *Manager) Rollback(targetSlot iotago.SlotIndex) error {
-	for slot := m.latestCommittedSlot; slot > targetSlot; slot-- {
+	return m.rollbackFromTo(m.latestCommittedSlot, targetSlot, false)
+}
+
+func (m *Manager) rollbackFromTo(fromSlot iotago.SlotIndex, toSlot iotago.SlotIndex, deleteRevertedDiffs bool) error {
+	for slot := fromSlot; slot > toSlot; slot-- {
 		slotDiff := lo.PanicOnErr(m.slotDiff(slot))
 		var internalErr error
 
 		//nolint:revive
 		if err := slotDiff.Stream(func(accountID iotago.AccountID, accountDiff *model.AccountDiff, destroyed bool) bool {
-
 			accountData, exists, err := m.accountsTree.Get(accountID)
 			if err != nil {
 				internalErr = ierrors.Wrapf(err, "unable to retrieve account %s to rollback in slot %d", accountID, slot)
@@ -293,16 +295,23 @@ func (m *Manager) Rollback(targetSlot iotago.SlotIndex) error {
 			}
 
 			if !exists {
-				// Account was not found in the tree, so we need to re-create it
+				// The Account was not found in the tree, so we need to re-create it
 				accountData = accounts.NewAccountData(accountID)
 			}
 
-			wasCreatedAfterTargetSlot, _, err := m.rollbackSlotDiffOnAccount(accountData, slotDiff)
+			wasCreatedAfterTargetSlot, wasDestroyed, err := m.rollbackSlotDiffOnAccount(accountData, slotDiff)
 			if err != nil {
-				internalErr = ierrors.Wrapf(err, "unable to rollback account %s to target slot %d", accountID, targetSlot)
+				internalErr = ierrors.Wrapf(err, "unable to rollback account %s to target slot %d", accountID, toSlot)
 
 				return false
 			}
+
+			if !exists && !wasDestroyed || exists && wasDestroyed {
+				internalErr = ierrors.Errorf("incorrect account state %s at slot %d (exists: %t wasDestroyed: %t)", accountID, slot, exists, wasDestroyed)
+
+				return false
+			}
+
 			if wasCreatedAfterTargetSlot && exists {
 				if _, err := m.accountsTree.Delete(accountID); err != nil {
 					internalErr = ierrors.Wrapf(err, "failed to delete account %s from slot %d", accountID, slot)
@@ -314,7 +323,7 @@ func (m *Manager) Rollback(targetSlot iotago.SlotIndex) error {
 			}
 
 			if err := m.accountsTree.Set(accountID, accountData); err != nil {
-				internalErr = ierrors.Wrapf(err, "failed to save rolled back account %s to target slot %d", accountID, targetSlot)
+				internalErr = ierrors.Wrapf(err, "failed to save rolled back account %s to target slot %d", accountID, toSlot)
 
 				return false
 			}
@@ -326,6 +335,12 @@ func (m *Manager) Rollback(targetSlot iotago.SlotIndex) error {
 
 		if internalErr != nil {
 			return ierrors.Wrapf(internalErr, "error in rolling back account for slot %s", slot)
+		}
+
+		if deleteRevertedDiffs {
+			if err := slotDiff.Clear(); err != nil {
+				return ierrors.Wrapf(err, "error while deleting reverted diff for slot %s", slot)
+			}
 		}
 	}
 
@@ -387,29 +402,30 @@ func (m *Manager) Reset() {
 	m.latestSupportedVersionSignals.Clear()
 }
 
-func (m *Manager) rollbackAccountTo(accountData *accounts.AccountData, targetSlot iotago.SlotIndex) (wasCreatedAfterTargetSlot bool, wasDestroyed bool, err error) {
+func (m *Manager) rollbackAccountTo(accountData *accounts.AccountData, targetSlot iotago.SlotIndex) (wasDestroyed bool, err error) {
 	// to reach targetSlot, we need to rollback diffs from the current latestCommittedSlot down to targetSlot + 1
 	for diffSlot := m.latestCommittedSlot; diffSlot > targetSlot; diffSlot-- {
 		diffStore, err := m.slotDiff(diffSlot)
 		if err != nil {
-			return false, false, ierrors.Errorf("can't retrieve account, could not find diff store for slot %d", diffSlot)
+			return false, ierrors.Errorf("can't retrieve account, could not find diff store for slot %d", diffSlot)
 		}
 
-		createdAfterTargetSlot, destroyed, err := m.rollbackSlotDiffOnAccount(accountData, diffStore)
+		createdInTheDiff, destroyed, err := m.rollbackSlotDiffOnAccount(accountData, diffStore)
 		if err != nil {
-			return false, false, ierrors.Wrapf(err, "can't retrieve account, could not rollback diff for account %s in slot %d", accountData.ID, diffStore.Slot())
-		} else if createdAfterTargetSlot {
-			return createdAfterTargetSlot, false, nil
+			return false, ierrors.Wrapf(err, "can't retrieve account, could not rollback diff for account %s in slot %d", accountData.ID, diffStore.Slot())
+		} else if createdInTheDiff {
+			// If the account was created in the diffSlot, then don't need to iterate previous slots as the account diff is definitely not there.
+			return false, nil
 		}
 
 		// collected to see if an account was destroyed between slotIndex and b.latestCommittedSlot index.
 		wasDestroyed = wasDestroyed || destroyed
 	}
 
-	return false, wasDestroyed, nil
+	return wasDestroyed, nil
 }
 
-func (m *Manager) rollbackSlotDiffOnAccount(accountData *accounts.AccountData, diffStore *slotstore.AccountDiffs) (wasCreatedAfterTargetSlot bool, wasDestroyed bool, err error) {
+func (m *Manager) rollbackSlotDiffOnAccount(accountData *accounts.AccountData, diffStore *slotstore.AccountDiffs) (wasCreatedInTheDiff bool, wasDestroyed bool, err error) {
 	found, err := diffStore.Has(accountData.ID)
 	if err != nil {
 		return false, false, ierrors.Wrapf(err, "can't retrieve account, could not check if diff store for slot %d has account %s", diffStore.Slot(), accountData.ID)
@@ -428,7 +444,7 @@ func (m *Manager) rollbackSlotDiffOnAccount(accountData *accounts.AccountData, d
 	m.LogDebug("Rolling back account", "accountID", accountData.ID, "diffSlot", diffStore.Slot(), "accountData", accountData, "diffChange", diffChange, "destroyed", destroyed)
 
 	// update the account data with the diff
-	if diffChange.BICChange != 0 {
+	if diffChange.BICChange != 0 || destroyed {
 		accountData.Credits.Update(-diffChange.BICChange, diffChange.PreviousUpdatedSlot)
 	}
 

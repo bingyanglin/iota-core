@@ -20,12 +20,12 @@ func (m *Manager) Import(reader io.ReadSeeker) error {
 		return ierrors.Wrap(err, "unable to read target slot")
 	}
 
-	latestCommittedSlot, err := stream.Read[iotago.SlotIndex](reader)
+	accountsTreeSlot, err := stream.Read[iotago.SlotIndex](reader)
 	if err != nil {
-		return ierrors.Wrap(err, "unable to read latest committed slot")
+		return ierrors.Wrap(err, "unable to read accounts tree slot")
 	}
 
-	// populate the account tree, account tree should be empty at this point
+	// populate the account tree, the account tree should be empty at this point
 	if err := stream.ReadCollection(reader, serializer.SeriLengthPrefixTypeAsUint64, func(i int) error {
 		accountData, err := stream.ReadObjectFromReader(reader, accounts.AccountDataFromReader)
 		if err != nil {
@@ -47,11 +47,9 @@ func (m *Manager) Import(reader io.ReadSeeker) error {
 		return ierrors.Wrap(err, "unable to import slot diffs")
 	}
 
-	m.latestCommittedSlot = latestCommittedSlot
-	if err := m.Rollback(targetSlot); err != nil {
+	if err := m.rollbackFromTo(accountsTreeSlot, targetSlot, true); err != nil {
 		return ierrors.Wrapf(err, "unable to rollback to slot %d", targetSlot)
 	}
-	m.latestCommittedSlot = targetSlot
 
 	return nil
 }
@@ -140,13 +138,9 @@ func (m *Manager) readSlotDiffs(reader io.ReadSeeker) error {
 				return ierrors.Wrapf(err, "unable to read destroyed flag for accountID %s", accountID)
 			}
 
-			var accountDiff *model.AccountDiff
-			if !destroyed {
-				if accountDiff, err = stream.ReadObjectFromReader(reader, model.AccountDiffFromReader); err != nil {
-					return ierrors.Wrapf(err, "unable to read account diff for accountID %s", accountID)
-				}
-			} else {
-				accountDiff = model.NewAccountDiff()
+			accountDiff, err := stream.ReadObjectFromReader(reader, model.AccountDiffFromReader)
+			if err != nil {
+				return ierrors.Wrapf(err, "unable to read account diff for accountID %s", accountID)
 			}
 
 			m.LogDebug("Imported account diff", "slot", slot, "accountID", accountID, "destroyed", destroyed, "accountDiff", accountDiff)
@@ -203,12 +197,9 @@ func (m *Manager) writeSlotDiffs(writer io.WriteSeeker, targetSlot iotago.SlotIn
 					innerErr = ierrors.Wrapf(err, "unable to write destroyed flag for account %s", accountID)
 					return false
 				}
-
-				if !destroyed {
-					if err = stream.WriteObject(writer, accountDiff, (*model.AccountDiff).Bytes); err != nil {
-						innerErr = ierrors.Wrapf(err, "unable to write account diff for account %s", accountID)
-						return false
-					}
+				if err = stream.WriteObject(writer, accountDiff, (*model.AccountDiff).Bytes); err != nil {
+					innerErr = ierrors.Wrapf(err, "unable to write account diff for account %s", accountID)
+					return false
 				}
 
 				m.LogDebug("Exported account diff", "slot", slot, "accountID", accountID, "destroyed", destroyed, "accountDiff", accountDiff)

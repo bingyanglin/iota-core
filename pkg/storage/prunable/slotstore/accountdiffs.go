@@ -82,20 +82,34 @@ func (b *AccountDiffs) Delete(accountID iotago.AccountID) (err error) {
 	return b.diffChangeStore.Delete(accountID)
 }
 
-// Stream streams all accountIDs changes for a slot index.
-func (b *AccountDiffs) Stream(consumer func(accountID iotago.AccountID, accountDiff *model.AccountDiff, destroyed bool) bool) error {
-	// We firstly iterate over the destroyed accounts, as they won't have a corresponding accountDiff.
-	if storageErr := b.destroyedAccounts.Iterate(kvstore.EmptyPrefix, func(accountID iotago.AccountID, _ types.Empty) bool {
-		return consumer(accountID, nil, true)
-	}); storageErr != nil {
-		return ierrors.Wrapf(storageErr, "failed to iterate over account diffs for slot %s", b.slot)
+func (b *AccountDiffs) Clear() error {
+	if err := b.diffChangeStore.Clear(); err != nil {
+		return err
 	}
 
-	// For those accounts that still exist, we might have an accountDiff.
+	return b.destroyedAccounts.Clear()
+}
+
+// Stream streams all accountIDs changes for a slot index.
+func (b *AccountDiffs) Stream(consumer func(accountID iotago.AccountID, accountDiff *model.AccountDiff, destroyed bool) bool) error {
+	// Existing accounts modified in the slot only have a SlotDiff, but are not part of the b.destroyedAccount store.
+	// Destroyed accounts should also have a SlotDiff
+	// and be part of b.destroyedAccount so that it's possible to re-create those.
+
+	var internalErr error
 	if storageErr := b.diffChangeStore.Iterate(kvstore.EmptyPrefix, func(accountID iotago.AccountID, accountDiff *model.AccountDiff) bool {
-		return consumer(accountID, accountDiff, false)
+		destroyed, err := b.destroyedAccounts.Has(accountID)
+		if err != nil {
+			internalErr = ierrors.Wrapf(err, "failed to check if an account %s was destroyed", accountID)
+
+			return false
+		}
+
+		return consumer(accountID, accountDiff, destroyed)
 	}); storageErr != nil {
 		return ierrors.Wrapf(storageErr, "failed to iterate over account diffs for slot %s", b.slot)
+	} else if internalErr != nil {
+		return internalErr
 	}
 
 	return nil

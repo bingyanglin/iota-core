@@ -16,7 +16,7 @@ func TestManager_Import_Export(t *testing.T) {
 	latestSupportedVersionHash1 := tpkg.Rand32ByteArray()
 	latestSupportedVersionHash2 := tpkg.Rand32ByteArray()
 
-	accountTreeRoots := []iotago.Identifier{}
+	var accountTreeRoots []iotago.Identifier
 
 	accountTreeRoots = append(accountTreeRoots, ts.Instance.AccountsTreeRoot())
 
