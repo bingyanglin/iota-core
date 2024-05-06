@@ -80,7 +80,7 @@ func TestManager_GetManaOnAccountOverflow(t *testing.T) {
 			), true, nil
 		default:
 			return accounts.NewAccountData(id,
-				accounts.WithCredits(accounts.NewBlockIssuanceCredits(iotago.MaxBlockIssuanceCredits/2, 0)),
+				accounts.WithCredits(accounts.NewBlockIssuanceCredits(iotago.MaxBlockIssuanceCredits/2+iotago.MaxBlockIssuanceCredits/4, 0)),
 				accounts.WithExpirySlot(iotago.MaxSlotIndex),
 				accounts.WithOutputID(iotago.OutputID{}),
 				accounts.WithBlockIssuerKeys(nil),
