@@ -46,6 +46,11 @@ func Test_ValidatorsAPI(t *testing.T) {
 	d.WaitUntilNetworkReady()
 	hrp := d.defaultWallet.Client.CommittedAPI().ProtocolParameters().Bech32HRP()
 
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(func() {
+		cancel()
+	})
+
 	// Create registered validators
 	var wg sync.WaitGroup
 	clt := d.defaultWallet.Client
@@ -58,8 +63,13 @@ func Test_ValidatorsAPI(t *testing.T) {
 		go func() {
 			defer wg.Done()
 
-			wallet, accountData := d.CreateAccount(WithStakingFeature(100, 1, currentEpoch))
+			// create implicit accounts for every validator
+			wallet, implicitAccountOutputData := d.CreateImplicitAccount(ctx)
+
+			// create account with staking feature for every validator
+			accountData := d.CreateAccountFromImplicitAccount(wallet, implicitAccountOutputData, wallet.GetNewBlockIssuanceResponse(), WithStakingFeature(100, 1, currentEpoch))
 			expectedValidators = append(expectedValidators, accountData.Address.Bech32(hrp))
+
 			// issue candidacy payload in the next epoch (currentEpoch + 1), in order to issue it before epochNearingThreshold
 			d.AwaitCommitment(clt.CommittedAPI().TimeProvider().EpochEnd(currentEpoch))
 			blkID := d.IssueCandidacyPayloadFromAccount(wallet)

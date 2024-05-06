@@ -3,6 +3,7 @@
 package tests
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -205,9 +206,16 @@ func Test_Staking(t *testing.T) {
 
 	d.WaitUntilNetworkReady()
 
-	_, account := d.CreateAccount(WithStakingFeature(100, 1, 0))
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
 
-	d.AssertValidatorExists(account.Address)
+	// create implicit account for the validator
+	wallet, implicitAccountOutputData := d.CreateImplicitAccount(ctx)
+
+	// create account with staking feature for the validator
+	accountData := d.CreateAccountFromImplicitAccount(wallet, implicitAccountOutputData, wallet.GetNewBlockIssuanceResponse(), WithStakingFeature(100, 1, 0))
+
+	d.AssertValidatorExists(accountData.Address)
 }
 
 // Test_Delegation tests if committee changed due to delegation.

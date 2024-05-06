@@ -236,12 +236,19 @@ func test_DelegationTransactionBlocks(t *testing.T, e *EventAPIDockerTestFramewo
 func test_AccountTransactionBlocks(t *testing.T, e *EventAPIDockerTestFramework) {
 	// get event API client ready
 	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
 	eventClt := e.ConnectEventAPIClient(ctx)
 	defer eventClt.Close()
 
 	// implicit account transition
 	{
-		accountData, wallet, _, blk := e.dockerFramework.CreateAccountBlock()
+		// create an implicit account by requesting faucet funds
+		wallet, implicitAccountOutputData := e.dockerFramework.CreateImplicitAccount(ctx)
+
+		// prepare account transition block
+		accountData, _, blk := e.dockerFramework.CreateAccountBlockFromImplicit(wallet, implicitAccountOutputData, wallet.GetNewBlockIssuanceResponse())
+
 		expectedBlocks := map[string]*iotago.Block{
 			blk.MustID().ToHex(): blk,
 		}

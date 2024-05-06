@@ -233,7 +233,7 @@ func (d *DockerTestFramework) prepareAssets(totalAssetsNum int) (coreAPIAssets, 
 
 		// delegation
 		//nolint:forcetypeassert
-		delegationOutputData:= d.DelegateToValidator(wallet, d.Node("V1").AccountAddress(d.Testing))
+		delegationOutputData := d.DelegateToValidator(wallet, d.Node("V1").AccountAddress(d.Testing))
 		assets.setupAssetsForSlot(delegationOutputData.ID.CreationSlot())
 		assets[delegationOutputData.ID.CreationSlot()].delegationOutputs[delegationOutputData.ID] = delegationOutputData.Output.(*iotago.DelegationOutput)
 

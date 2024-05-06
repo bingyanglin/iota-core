@@ -536,17 +536,6 @@ func (d *DockerTestFramework) CreateFoundryTransitionBlockFromInput(issuerID iot
 		lo.PanicOnErr(d.defaultWallet.CreateAndSubmitBasicBlock(context.Background(), "foundry_transition", mock.WithPayload(signedTx))).ProtocolBlock()
 }
 
-// CreateAccountBlock creates an new account from implicit one to full one.
-func (d *DockerTestFramework) CreateAccountBlock(opts ...options.Option[builder.AccountOutputBuilder]) (*mock.AccountData, *mock.Wallet, *iotago.SignedTransaction, *iotago.Block) {
-	// create an implicit account by requesting faucet funds
-	ctx := context.TODO()
-	newWallet, implicitAccountOutputData := d.CreateImplicitAccount(ctx)
-
-	accountData, tx, blk := d.CreateAccountBlockFromImplicit(newWallet, implicitAccountOutputData, d.defaultWallet.GetNewBlockIssuanceResponse(), opts...)
-
-	return accountData, newWallet, tx, blk
-}
-
 // CreateAccountBlockFromImplicit consumes the given implicit account, then build the account transition block with the given account output options.
 func (d *DockerTestFramework) CreateAccountBlockFromImplicit(accountWallet *mock.Wallet, implicitAccountOutputData *mock.OutputData, blockIssuance *api.IssuanceBlockHeaderResponse, opts ...options.Option[builder.AccountOutputBuilder]) (*mock.AccountData, *iotago.SignedTransaction, *iotago.Block) {
 	// create an implicit account by requesting faucet funds
@@ -602,9 +591,13 @@ func (d *DockerTestFramework) CreateImplicitAccount(ctx context.Context) (*mock.
 }
 
 // CreateAccount creates an new account from implicit one to full one, it already wait until the transaction is committed and the created account is useable.
-func (d *DockerTestFramework) CreateAccount(opts ...options.Option[builder.AccountOutputBuilder]) (*mock.Wallet, *mock.AccountData) {
+func (d *DockerTestFramework) CreateAccount() (*mock.Wallet, *mock.AccountData) {
 	ctx := context.TODO()
-	accountData, newWallet, signedTx, block := d.CreateAccountBlock(opts...)
+
+	newWallet, implicitAccountOutputData := d.CreateImplicitAccount(ctx)
+
+	accountData, signedTx, block := d.CreateAccountBlockFromImplicit(newWallet, implicitAccountOutputData, d.defaultWallet.GetNewBlockIssuanceResponse())
+
 	d.SubmitBlock(ctx, block)
 	d.CheckAccountStatus(ctx, block.MustID(), signedTx.Transaction.MustID(), accountData.OutputID, accountData.Address, true)
 
