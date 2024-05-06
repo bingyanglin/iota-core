@@ -15,10 +15,16 @@ func (m *Manager) Import(reader io.ReadSeeker) error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
+	targetSlot, err := stream.Read[iotago.SlotIndex](reader)
+	if err != nil {
+		return ierrors.Wrap(err, "unable to read target slot")
+	}
+
 	latestCommittedSlot, err := stream.Read[iotago.SlotIndex](reader)
 	if err != nil {
 		return ierrors.Wrap(err, "unable to read latest committed slot")
 	}
+
 	// populate the account tree, account tree should be empty at this point
 	if err := stream.ReadCollection(reader, serializer.SeriLengthPrefixTypeAsUint64, func(i int) error {
 		accountData, err := stream.ReadObjectFromReader(reader, accounts.AccountDataFromReader)
@@ -37,25 +43,28 @@ func (m *Manager) Import(reader io.ReadSeeker) error {
 		return ierrors.Wrap(err, "failed to read account data")
 	}
 
-	oldestSlot, err := m.readSlotDiffs(reader)
-	if err != nil {
+	if err := m.readSlotDiffs(reader); err != nil {
 		return ierrors.Wrap(err, "unable to import slot diffs")
 	}
 
 	m.latestCommittedSlot = latestCommittedSlot
-	if err := m.Rollback(oldestSlot); err != nil {
-		return ierrors.Wrapf(err, "unable to rollback to slot %d", oldestSlot)
+	if err := m.Rollback(targetSlot); err != nil {
+		return ierrors.Wrapf(err, "unable to rollback to slot %d", targetSlot)
 	}
-	m.latestCommittedSlot = oldestSlot
+	m.latestCommittedSlot = targetSlot
 
 	return nil
 }
 
-func (m *Manager) Export(writer io.WriteSeeker, targetIndex iotago.SlotIndex) error {
+func (m *Manager) Export(writer io.WriteSeeker, targetSlot iotago.SlotIndex) error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	m.LogDebug("Exporting AccountsLedger", "latestCommittedSlot", m.latestCommittedSlot, "targetIndex", targetIndex)
+	m.LogDebug("Exporting AccountsLedger", "latestCommittedSlot", m.latestCommittedSlot, "targetIndex", targetSlot)
+
+	if err := stream.Write[iotago.SlotIndex](writer, targetSlot); err != nil {
+		return ierrors.Wrap(err, "unable to write latest committed slot")
+	}
 
 	if err := stream.Write[iotago.SlotIndex](writer, m.latestCommittedSlot); err != nil {
 		return ierrors.Wrap(err, "unable to write latest committed slot")
@@ -69,18 +78,18 @@ func (m *Manager) Export(writer io.WriteSeeker, targetIndex iotago.SlotIndex) er
 
 		return elements, nil
 	}); err != nil {
-		return ierrors.Wrapf(err, "unable to export accounts for slot %d", targetIndex)
+		return ierrors.Wrapf(err, "unable to export accounts for slot %d", targetSlot)
 	}
 
 	if err := stream.WriteCollection(writer, serializer.SeriLengthPrefixTypeAsUint64, func() (elementsCount int, err error) {
-		elementsCount, err = m.writeSlotDiffs(writer, targetIndex)
+		elementsCount, err = m.writeSlotDiffs(writer, targetSlot)
 		if err != nil {
 			return 0, ierrors.Wrap(err, "can't write slot diffs")
 		}
 
 		return elementsCount, nil
 	}); err != nil {
-		return ierrors.Wrapf(err, "unable to export slot diffs for slot %d", targetIndex)
+		return ierrors.Wrapf(err, "unable to export slot diffs for slot %d", targetSlot)
 	}
 
 	return nil
@@ -106,17 +115,12 @@ func (m *Manager) exportAccountTree(writer io.WriteSeeker) (int, error) {
 	return accountCount, nil
 }
 
-func (m *Manager) readSlotDiffs(reader io.ReadSeeker) (iotago.SlotIndex, error) {
-	oldestSlot := iotago.MaxSlotIndex
+func (m *Manager) readSlotDiffs(reader io.ReadSeeker) error {
 	// Read all the slots.
 	if err := stream.ReadCollection(reader, serializer.SeriLengthPrefixTypeAsUint64, func(i int) error {
 		slot, err := stream.Read[iotago.SlotIndex](reader)
 		if err != nil {
 			return ierrors.Wrapf(err, "unable to read slot index at index %d", i)
-		}
-
-		if slot < oldestSlot {
-			oldestSlot = slot
 		}
 
 		// Read all the slot diffs within each slot.
@@ -158,16 +162,22 @@ func (m *Manager) readSlotDiffs(reader io.ReadSeeker) (iotago.SlotIndex, error) 
 
 		return nil
 	}); err != nil {
-		return oldestSlot, ierrors.Wrap(err, "failed to read slot diffs")
+		return ierrors.Wrap(err, "failed to read slot diffs")
 	}
 
-	return oldestSlot, nil
+	return nil
 }
 
 func (m *Manager) writeSlotDiffs(writer io.WriteSeeker, targetSlot iotago.SlotIndex) (int, error) {
 	var slotDiffsCount int
 
-	for slot := m.latestCommittedSlot; slot > targetSlot; slot-- {
+	lowestSlot := iotago.SlotIndex(1)
+	maxCommittableAge := m.apiProvider.APIForSlot(targetSlot).ProtocolParameters().MaxCommittableAge()
+	if targetSlot > maxCommittableAge {
+		lowestSlot = targetSlot - maxCommittableAge
+	}
+
+	for slot := m.latestCommittedSlot; slot >= lowestSlot; slot-- {
 		var accountsInDiffCount int
 
 		if err := stream.Write(writer, slot); err != nil {

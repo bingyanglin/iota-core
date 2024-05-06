@@ -42,6 +42,10 @@ func NewAccountDiffs(slot iotago.SlotIndex, store kvstore.KVStore, api iotago.AP
 	}
 }
 
+func (b *AccountDiffs) Slot() iotago.SlotIndex {
+	return b.slot
+}
+
 // Store stores the given accountID as a root block.
 func (b *AccountDiffs) Store(accountID iotago.AccountID, accountDiff *model.AccountDiff, destroyed bool) (err error) {
 	if destroyed {

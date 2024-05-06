@@ -278,17 +278,12 @@ func (m *Manager) PastAccounts(accountIDs iotago.AccountIDs, targetSlot iotago.S
 }
 
 func (m *Manager) Rollback(targetSlot iotago.SlotIndex) error {
-	processedAccounts := ds.NewSet[iotago.AccountID]()
 	for slot := m.latestCommittedSlot; slot > targetSlot; slot-- {
 		slotDiff := lo.PanicOnErr(m.slotDiff(slot))
 		var internalErr error
 
 		//nolint:revive
 		if err := slotDiff.Stream(func(accountID iotago.AccountID, accountDiff *model.AccountDiff, destroyed bool) bool {
-			// We rollback each account directly to targetSlot, therefore, we should rollback each account only once.
-			if processedAccounts.Has(accountID) {
-				return true
-			}
 
 			accountData, exists, err := m.accountsTree.Get(accountID)
 			if err != nil {
@@ -298,13 +293,24 @@ func (m *Manager) Rollback(targetSlot iotago.SlotIndex) error {
 			}
 
 			if !exists {
+				// Account was not found in the tree, so we need to re-create it
 				accountData = accounts.NewAccountData(accountID)
 			}
 
-			if _, _, err := m.rollbackAccountTo(accountData, targetSlot); err != nil {
+			wasCreatedAfterTargetSlot, _, err := m.rollbackSlotDiffOnAccount(accountData, slotDiff)
+			if err != nil {
 				internalErr = ierrors.Wrapf(err, "unable to rollback account %s to target slot %d", accountID, targetSlot)
 
 				return false
+			}
+			if wasCreatedAfterTargetSlot && exists {
+				if _, err := m.accountsTree.Delete(accountID); err != nil {
+					internalErr = ierrors.Wrapf(err, "failed to delete account %s from slot %d", accountID, slot)
+
+					return false
+				}
+
+				return true
 			}
 
 			if err := m.accountsTree.Set(accountID, accountData); err != nil {
@@ -312,8 +318,6 @@ func (m *Manager) Rollback(targetSlot iotago.SlotIndex) error {
 
 				return false
 			}
-
-			processedAccounts.Add(accountID)
 
 			return true
 		}); err != nil {
@@ -391,72 +395,11 @@ func (m *Manager) rollbackAccountTo(accountData *accounts.AccountData, targetSlo
 			return false, false, ierrors.Errorf("can't retrieve account, could not find diff store for slot %d", diffSlot)
 		}
 
-		found, err := diffStore.Has(accountData.ID)
+		createdAfterTargetSlot, destroyed, err := m.rollbackSlotDiffOnAccount(accountData, diffStore)
 		if err != nil {
-			return false, false, ierrors.Wrapf(err, "can't retrieve account, could not check if diff store for slot %d has account %s", diffSlot, accountData.ID)
-		}
-
-		// no changes for this account in this slot
-		if !found {
-			continue
-		}
-
-		diffChange, destroyed, err := diffStore.Load(accountData.ID)
-		if err != nil {
-			return false, false, ierrors.Wrapf(err, "can't retrieve account, could not load diff for account %s in slot %d", accountData.ID, diffSlot)
-		}
-
-		m.LogDebug("Rolling back account", "accountID", accountData.ID, "targetSlot", targetSlot, "diffSlot", diffSlot, "accountData", accountData, "diffChange", diffChange, "destroyed", destroyed)
-
-		// update the account data with the diff
-		if diffChange.BICChange != 0 {
-			accountData.Credits.Update(-diffChange.BICChange, diffChange.PreviousUpdatedSlot)
-		}
-
-		// update the expiry slot of the account if it was changed
-		if diffChange.PreviousExpirySlot != diffChange.NewExpirySlot {
-			accountData.ExpirySlot = diffChange.PreviousExpirySlot
-		}
-
-		if diffChange.PreviousOutputID == iotago.EmptyOutputID && diffChange.NewOutputID != iotago.EmptyOutputID {
-			// Account was created in this slot, so we need to remove it
-			m.LogDebug("Account was created in this slot, so we need to remove it", "accountID", accountData.ID, "slot", diffSlot, "diffChange.PreviousOutputID", diffChange.PreviousOutputID, "diffChange.NewOutputID", diffChange.NewOutputID)
-			return true, false, nil
-		}
-
-		// update the output ID of the account if it was changed
-		if diffChange.PreviousOutputID != iotago.EmptyOutputID {
-			accountData.OutputID = diffChange.PreviousOutputID
-		}
-
-		accountData.AddBlockIssuerKeys(diffChange.BlockIssuerKeysRemoved...)
-		accountData.RemoveBlockIssuerKey(diffChange.BlockIssuerKeysAdded...)
-
-		validatorStake, err := safemath.SafeSub(int64(accountData.ValidatorStake), diffChange.ValidatorStakeChange)
-		if err != nil {
-			return false, false, ierrors.Wrapf(err, "can't retrieve account, validator stake underflow for account %s in slot %d: %d - %d", accountData.ID, diffSlot, accountData.ValidatorStake, diffChange.ValidatorStakeChange)
-		}
-		accountData.ValidatorStake = iotago.BaseToken(validatorStake)
-
-		delegationStake, err := safemath.SafeSub(int64(accountData.DelegationStake), diffChange.DelegationStakeChange)
-		if err != nil {
-			return false, false, ierrors.Wrapf(err, "can't retrieve account, delegation stake underflow for account %s in slot %d: %d - %d", accountData.ID, diffSlot, accountData.DelegationStake, diffChange.DelegationStakeChange)
-		}
-		accountData.DelegationStake = iotago.BaseToken(delegationStake)
-
-		stakeEpochEnd, err := safemath.SafeSub(int64(accountData.StakeEndEpoch), diffChange.StakeEndEpochChange)
-		if err != nil {
-			return false, false, ierrors.Wrapf(err, "can't retrieve account, stake end epoch underflow for account %s in slot %d: %d - %d", accountData.ID, diffSlot, accountData.StakeEndEpoch, diffChange.StakeEndEpochChange)
-		}
-		accountData.StakeEndEpoch = iotago.EpochIndex(stakeEpochEnd)
-
-		fixedCost, err := safemath.SafeSub(int64(accountData.FixedCost), diffChange.FixedCostChange)
-		if err != nil {
-			return false, false, ierrors.Wrapf(err, "can't retrieve account, fixed cost underflow for account %s in slot %d: %d - %d", accountData.ID, diffSlot, accountData.FixedCost, diffChange.FixedCostChange)
-		}
-		accountData.FixedCost = iotago.Mana(fixedCost)
-		if diffChange.PrevLatestSupportedVersionAndHash != diffChange.NewLatestSupportedVersionAndHash {
-			accountData.LatestSupportedProtocolVersionAndHash = diffChange.PrevLatestSupportedVersionAndHash
+			return false, false, ierrors.Wrapf(err, "can't retrieve account, could not rollback diff for account %s in slot %d", accountData.ID, diffStore.Slot())
+		} else if createdAfterTargetSlot {
+			return createdAfterTargetSlot, false, nil
 		}
 
 		// collected to see if an account was destroyed between slotIndex and b.latestCommittedSlot index.
@@ -464,6 +407,78 @@ func (m *Manager) rollbackAccountTo(accountData *accounts.AccountData, targetSlo
 	}
 
 	return false, wasDestroyed, nil
+}
+
+func (m *Manager) rollbackSlotDiffOnAccount(accountData *accounts.AccountData, diffStore *slotstore.AccountDiffs) (wasCreatedAfterTargetSlot bool, wasDestroyed bool, err error) {
+	found, err := diffStore.Has(accountData.ID)
+	if err != nil {
+		return false, false, ierrors.Wrapf(err, "can't retrieve account, could not check if diff store for slot %d has account %s", diffStore.Slot(), accountData.ID)
+	}
+
+	// no changes for this account in this slot
+	if !found {
+		return false, false, nil
+	}
+
+	diffChange, destroyed, err := diffStore.Load(accountData.ID)
+	if err != nil {
+		return false, false, ierrors.Wrapf(err, "can't retrieve account, could not load diff for account %s in slot %d", accountData.ID, diffStore.Slot())
+	}
+
+	m.LogDebug("Rolling back account", "accountID", accountData.ID, "diffSlot", diffStore.Slot(), "accountData", accountData, "diffChange", diffChange, "destroyed", destroyed)
+
+	// update the account data with the diff
+	if diffChange.BICChange != 0 {
+		accountData.Credits.Update(-diffChange.BICChange, diffChange.PreviousUpdatedSlot)
+	}
+
+	// update the expiry slot of the account if it was changed
+	if diffChange.PreviousExpirySlot != diffChange.NewExpirySlot {
+		accountData.ExpirySlot = diffChange.PreviousExpirySlot
+	}
+
+	if diffChange.PreviousOutputID == iotago.EmptyOutputID && diffChange.NewOutputID != iotago.EmptyOutputID {
+		// Account was created in this slot, so we need to remove it
+		m.LogDebug("Account was created in this slot, so we need to remove it", "accountID", accountData.ID, "slot", diffStore.Slot(), "diffChange.PreviousOutputID", diffChange.PreviousOutputID, "diffChange.NewOutputID", diffChange.NewOutputID)
+		return true, false, nil
+	}
+
+	// update the output ID of the account if it was changed
+	if diffChange.PreviousOutputID != iotago.EmptyOutputID {
+		accountData.OutputID = diffChange.PreviousOutputID
+	}
+
+	accountData.AddBlockIssuerKeys(diffChange.BlockIssuerKeysRemoved...)
+	accountData.RemoveBlockIssuerKey(diffChange.BlockIssuerKeysAdded...)
+
+	validatorStake, err := safemath.SafeSub(int64(accountData.ValidatorStake), diffChange.ValidatorStakeChange)
+	if err != nil {
+		return false, false, ierrors.Wrapf(err, "can't retrieve account, validator stake underflow for account %s in slot %d: %d - %d", accountData.ID, diffStore.Slot(), accountData.ValidatorStake, diffChange.ValidatorStakeChange)
+	}
+	accountData.ValidatorStake = iotago.BaseToken(validatorStake)
+
+	delegationStake, err := safemath.SafeSub(int64(accountData.DelegationStake), diffChange.DelegationStakeChange)
+	if err != nil {
+		return false, false, ierrors.Wrapf(err, "can't retrieve account, delegation stake underflow for account %s in slot %d: %d - %d", accountData.ID, diffStore.Slot(), accountData.DelegationStake, diffChange.DelegationStakeChange)
+	}
+	accountData.DelegationStake = iotago.BaseToken(delegationStake)
+
+	stakeEpochEnd, err := safemath.SafeSub(int64(accountData.StakeEndEpoch), diffChange.StakeEndEpochChange)
+	if err != nil {
+		return false, false, ierrors.Wrapf(err, "can't retrieve account, stake end epoch underflow for account %s in slot %d: %d - %d", accountData.ID, diffStore.Slot(), accountData.StakeEndEpoch, diffChange.StakeEndEpochChange)
+	}
+	accountData.StakeEndEpoch = iotago.EpochIndex(stakeEpochEnd)
+
+	fixedCost, err := safemath.SafeSub(int64(accountData.FixedCost), diffChange.FixedCostChange)
+	if err != nil {
+		return false, false, ierrors.Wrapf(err, "can't retrieve account, fixed cost underflow for account %s in slot %d: %d - %d", accountData.ID, diffStore.Slot(), accountData.FixedCost, diffChange.FixedCostChange)
+	}
+	accountData.FixedCost = iotago.Mana(fixedCost)
+	if diffChange.PrevLatestSupportedVersionAndHash != diffChange.NewLatestSupportedVersionAndHash {
+		accountData.LatestSupportedProtocolVersionAndHash = diffChange.PrevLatestSupportedVersionAndHash
+	}
+
+	return false, destroyed, nil
 }
 
 func (m *Manager) preserveDestroyedAccountData(accountID iotago.AccountID) (accountDiff *model.AccountDiff, err error) {
