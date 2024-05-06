@@ -406,7 +406,7 @@ func (m *Manager) rollbackAccountTo(accountData *accounts.AccountData, targetSlo
 			return false, false, ierrors.Wrapf(err, "can't retrieve account, could not load diff for account %s in slot %d", accountData.ID, diffSlot)
 		}
 
-		m.LogDebug("Rolling back account", "accountID", accountData.ID, "slot", diffSlot, "accountData", accountData, "diffChange", diffChange, "destroyed", destroyed)
+		m.LogDebug("Rolling back account", "accountID", accountData.ID, "targetSlot", targetSlot, "diffSlot", diffSlot, "accountData", accountData, "diffChange", diffChange, "destroyed", destroyed)
 
 		// update the account data with the diff
 		if diffChange.BICChange != 0 {
