@@ -207,7 +207,7 @@ func prepareAssets(d *dockertestframework.DockerTestFramework, totalAssetsNum in
 
 	for i := 0; i < totalAssetsNum; i++ {
 		// account
-		wallet, account := d.CreateAccount()
+		wallet, account := d.CreateAccountFromFaucet()
 		assets.setupAssetsForSlot(account.OutputID.Slot())
 		assets[account.OutputID.Slot()].accountAddress = account.Address
 
@@ -301,7 +301,12 @@ func Test_ValidatorsAPI(t *testing.T) {
 			wallet, implicitAccountOutputData := d.CreateImplicitAccount(ctx)
 
 			// create account with staking feature for every validator
-			accountData := d.CreateAccountFromImplicitAccount(wallet, implicitAccountOutputData, wallet.GetNewBlockIssuanceResponse(), dockertestframework.WithStakingFeature(100, 1, currentEpoch))
+			accountData := d.CreateAccountFromImplicitAccount(wallet,
+				implicitAccountOutputData,
+				wallet.GetNewBlockIssuanceResponse(),
+				dockertestframework.WithStakingFeature(100, 1, currentEpoch),
+			)
+
 			expectedValidators = append(expectedValidators, accountData.Address.Bech32(hrp))
 
 			// issue candidacy payload in the next epoch (currentEpoch + 1), in order to issue it before epochNearingThreshold
@@ -660,7 +665,7 @@ func Test_CoreAPI(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			d.RequestFromClients(test.testFunc)
+			d.RequestFromNodes(test.testFunc)
 		})
 	}
 
@@ -887,7 +892,7 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			d.RequestFromClients(test.testFunc)
+			d.RequestFromNodes(test.testFunc)
 		})
 	}
 }

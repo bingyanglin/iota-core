@@ -63,7 +63,12 @@ func Test_ValidatorRewards(t *testing.T) {
 	// The earliest epoch in which we can remove the staking feature and claim rewards.
 	claimingSlot := clt.CommittedAPI().TimeProvider().EpochStart(endEpoch + 1)
 
-	goodAccountData := d.CreateAccountFromImplicitAccount(goodWallet, goodAccountOutputData, blockIssuance, dockertestframework.WithStakingFeature(100, 1, stakingStartEpoch, endEpoch))
+	goodAccountData := d.CreateAccountFromImplicitAccount(goodWallet,
+		goodAccountOutputData,
+		blockIssuance,
+		dockertestframework.WithStakingFeature(100, 1, stakingStartEpoch, endEpoch),
+	)
+
 	initialMana := goodAccountData.Output.StoredMana()
 	issueCandidacyPayloadInBackground(ctx,
 		d,
@@ -84,7 +89,11 @@ func Test_ValidatorRewards(t *testing.T) {
 	endEpoch = stakingStartEpoch + clt.CommittedAPI().ProtocolParameters().StakingUnbondingPeriod() + 1
 	claimingSlot = clt.CommittedAPI().TimeProvider().EpochStart(endEpoch + 1)
 
-	lazyAccountData := d.CreateAccountFromImplicitAccount(lazyWallet, lazyAccountOutputData, blockIssuance, dockertestframework.WithStakingFeature(100, 1, stakingStartEpoch, endEpoch))
+	lazyAccountData := d.CreateAccountFromImplicitAccount(lazyWallet,
+		lazyAccountOutputData,
+		blockIssuance,
+		dockertestframework.WithStakingFeature(100, 1, stakingStartEpoch, endEpoch),
+	)
 
 	lazyInitialMana := lazyAccountData.Output.StoredMana()
 	issueCandidacyPayloadInBackground(ctx,
@@ -152,7 +161,7 @@ func Test_DelegatorRewards(t *testing.T) {
 	d.WaitUntilNetworkReady()
 
 	ctx := context.Background()
-	delegatorWallet, _ := d.CreateAccount()
+	delegatorWallet, _ := d.CreateAccountFromFaucet()
 	clt := delegatorWallet.Client
 
 	// delegate funds to V2
@@ -210,7 +219,7 @@ func Test_DelayedClaimingRewards(t *testing.T) {
 	d.WaitUntilNetworkReady()
 
 	ctx := context.Background()
-	delegatorWallet, _ := d.CreateAccount()
+	delegatorWallet, _ := d.CreateAccountFromFaucet()
 	clt := delegatorWallet.Client
 
 	{

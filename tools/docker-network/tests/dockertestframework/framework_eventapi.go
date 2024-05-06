@@ -20,6 +20,18 @@ import (
 	"github.com/iotaledger/iota.go/v4/tpkg"
 )
 
+func WithEventAPIWaitFor(waitFor time.Duration) options.Option[EventAPIDockerTestFramework] {
+	return func(d *EventAPIDockerTestFramework) {
+		d.optsWaitFor = waitFor
+	}
+}
+
+func WithEventAPITick(tick time.Duration) options.Option[EventAPIDockerTestFramework] {
+	return func(d *EventAPIDockerTestFramework) {
+		d.optsTick = tick
+	}
+}
+
 type EventAPIDockerTestFramework struct {
 	Testing *testing.T
 
@@ -616,17 +628,5 @@ func (e *EventAPIDockerTestFramework) AwaitEventAPITopics(t *testing.T, cancleFu
 				return nil
 			}
 		}
-	}
-}
-
-func WithEventAPIWaitFor(waitFor time.Duration) options.Option[EventAPIDockerTestFramework] {
-	return func(d *EventAPIDockerTestFramework) {
-		d.optsWaitFor = waitFor
-	}
-}
-
-func WithEventAPITick(tick time.Duration) options.Option[EventAPIDockerTestFramework] {
-	return func(d *EventAPIDockerTestFramework) {
-		d.optsTick = tick
 	}
 }

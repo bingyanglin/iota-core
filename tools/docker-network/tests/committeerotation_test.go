@@ -214,7 +214,11 @@ func Test_Staking(t *testing.T) {
 	wallet, implicitAccountOutputData := d.CreateImplicitAccount(ctx)
 
 	// create account with staking feature for the validator
-	accountData := d.CreateAccountFromImplicitAccount(wallet, implicitAccountOutputData, wallet.GetNewBlockIssuanceResponse(), dockertestframework.WithStakingFeature(100, 1, 0))
+	accountData := d.CreateAccountFromImplicitAccount(wallet,
+		implicitAccountOutputData,
+		wallet.GetNewBlockIssuanceResponse(),
+		dockertestframework.WithStakingFeature(100, 1, 0),
+	)
 
 	d.AssertValidatorExists(accountData.Address)
 }
@@ -251,7 +255,7 @@ func Test_Delegation(t *testing.T) {
 	d.WaitUntilNetworkReady()
 
 	// create an account to perform delegation
-	wallet, _ := d.CreateAccount()
+	wallet, _ := d.CreateAccountFromFaucet()
 
 	// delegate all faucet funds to V2, V2 should replace V3
 	//nolint:forcetypeassert
