@@ -46,24 +46,23 @@ func Test_ValidatorRewards(t *testing.T) {
 	t.Cleanup(cancel)
 
 	clt := d.defaultWallet.Client
+	slotsDuration := clt.CommittedAPI().ProtocolParameters().SlotDurationInSeconds()
+
+	// create good account
+	goodWallet, goodAccountOutputData := d.CreateImplicitAccount(ctx)
 
 	blockIssuance, err := clt.BlockIssuance(ctx)
 	require.NoError(t, err)
 
 	latestCommitmentSlot := blockIssuance.LatestCommitment.Slot
-
 	stakingStartEpoch := d.defaultWallet.StakingStartEpochFromSlot(latestCommitmentSlot)
-
 	currentEpoch := clt.CommittedAPI().TimeProvider().EpochFromSlot(latestCommitmentSlot)
-	slotsDuration := clt.CommittedAPI().ProtocolParameters().SlotDurationInSeconds()
-
 	// Set end epoch so the staking feature can be removed as soon as possible.
 	endEpoch := stakingStartEpoch + clt.CommittedAPI().ProtocolParameters().StakingUnbondingPeriod() + 1
 	// The earliest epoch in which we can remove the staking feature and claim rewards.
 	claimingSlot := clt.CommittedAPI().TimeProvider().EpochStart(endEpoch + 1)
 
-	// create accounts and continue issuing candidacy payload for account in the background
-	goodWallet, goodAccountData := d.CreateAccount(WithStakingFeature(100, 1, stakingStartEpoch, endEpoch))
+	goodAccountData := d.CreateAccountFromImplicitAccount(goodWallet, goodAccountOutputData, blockIssuance, WithStakingFeature(100, 1, stakingStartEpoch, endEpoch))
 	initialMana := goodAccountData.Output.StoredMana()
 	issueCandidacyPayloadInBackground(ctx,
 		d,
@@ -72,7 +71,20 @@ func Test_ValidatorRewards(t *testing.T) {
 		claimingSlot,
 		slotsDuration)
 
-	lazyWallet, lazyAccountData := d.CreateAccount(WithStakingFeature(100, 1, stakingStartEpoch, endEpoch))
+	// create lazy account
+	lazyWallet, lazyAccountOutputData := d.CreateImplicitAccount(ctx)
+
+	blockIssuance, err = clt.BlockIssuance(ctx)
+	require.NoError(t, err)
+
+	latestCommitmentSlot = blockIssuance.LatestCommitment.Slot
+	stakingStartEpoch = d.defaultWallet.StakingStartEpochFromSlot(latestCommitmentSlot)
+	currentEpoch = clt.CommittedAPI().TimeProvider().EpochFromSlot(latestCommitmentSlot)
+	endEpoch = stakingStartEpoch + clt.CommittedAPI().ProtocolParameters().StakingUnbondingPeriod() + 1
+	claimingSlot = clt.CommittedAPI().TimeProvider().EpochStart(endEpoch + 1)
+
+	lazyAccountData := d.CreateAccountFromImplicitAccount(lazyWallet, lazyAccountOutputData, blockIssuance, WithStakingFeature(100, 1, stakingStartEpoch, endEpoch))
+
 	lazyInitialMana := lazyAccountData.Output.StoredMana()
 	issueCandidacyPayloadInBackground(ctx,
 		d,
@@ -87,17 +99,16 @@ func Test_ValidatorRewards(t *testing.T) {
 	d.AssertCommittee(currentEpoch+2, append(d.AccountsFromNodes(d.Nodes("V1", "V3", "V2", "V4")...), goodAccountAddrBech32, lazyAccountAddrBech32))
 
 	// issue validation blocks to have performance
-	if currentSlot := clt.CommittedAPI().TimeProvider().CurrentSlot(); currentSlot < claimingSlot {
-		slotToWait := claimingSlot - currentSlot
-		secToWait := time.Duration(slotToWait) * time.Duration(slotsDuration) * time.Second
-		fmt.Println("Wait for ", secToWait, "until expected slot: ", claimingSlot)
+	currentSlot := clt.CommittedAPI().TimeProvider().CurrentSlot()
+	slotToWait := claimingSlot - currentSlot
+	secToWait := time.Duration(slotToWait) * time.Duration(slotsDuration) * time.Second
+	fmt.Println("Wait for ", secToWait, "until expected slot: ", claimingSlot)
 
-		var wg sync.WaitGroup
-		issueValidationBlockInBackground(ctx, &wg, goodWallet, currentSlot, claimingSlot, 5)
-		issueValidationBlockInBackground(ctx, &wg, lazyWallet, currentSlot, claimingSlot, 1)
+	var wg sync.WaitGroup
+	issueValidationBlockInBackground(ctx, &wg, goodWallet, currentSlot, claimingSlot, 5)
+	issueValidationBlockInBackground(ctx, &wg, lazyWallet, currentSlot, claimingSlot, 1)
 
-		wg.Wait()
-	}
+	wg.Wait()
 
 	// claim rewards that put to the account output
 	d.AwaitCommitment(claimingSlot)

@@ -12,6 +12,7 @@ import (
 	"github.com/iotaledger/hive.go/lo"
 	"github.com/iotaledger/hive.go/runtime/options"
 	iotago "github.com/iotaledger/iota.go/v4"
+	"github.com/iotaledger/iota.go/v4/api"
 	"github.com/iotaledger/iota.go/v4/builder"
 	"github.com/iotaledger/iota.go/v4/tpkg"
 	"github.com/iotaledger/iota.go/v4/vm"
@@ -403,7 +404,7 @@ func (w *Wallet) CreateImplicitAccountAndBasicOutputFromInput(transactionName st
 	return signedTransaction
 }
 
-func (w *Wallet) TransitionImplicitAccountToAccountOutput(transactionName string, inputs []*OutputData, opts ...options.Option[builder.AccountOutputBuilder]) *iotago.SignedTransaction {
+func (w *Wallet) TransitionImplicitAccountToAccountOutputWithBlockIssuance(transactionName string, inputs []*OutputData, blockIssuance *api.IssuanceBlockHeaderResponse, opts ...options.Option[builder.AccountOutputBuilder]) *iotago.SignedTransaction {
 	var implicitAccountOutput *OutputData
 	var baseTokenAmount iotago.BaseToken
 	for _, input := range inputs {
@@ -435,7 +436,7 @@ func (w *Wallet) TransitionImplicitAccountToAccountOutput(transactionName string
 			AccountID: implicitAccountID,
 		}),
 		WithCommitmentInput(&iotago.CommitmentInput{
-			CommitmentID: w.GetNewBlockIssuanceResponse().LatestCommitment.MustID(),
+			CommitmentID: blockIssuance.LatestCommitment.MustID(),
 		}),
 		WithInputs(inputs...),
 		WithOutputs(accountOutput),
@@ -444,6 +445,12 @@ func (w *Wallet) TransitionImplicitAccountToAccountOutput(transactionName string
 	)
 
 	return signedTransaction
+}
+
+func (w *Wallet) TransitionImplicitAccountToAccountOutput(transactionName string, inputs []*OutputData, opts ...options.Option[builder.AccountOutputBuilder]) *iotago.SignedTransaction {
+	issuance := w.GetNewBlockIssuanceResponse()
+
+	return w.TransitionImplicitAccountToAccountOutputWithBlockIssuance(transactionName, inputs, issuance, opts...)
 }
 
 func (w *Wallet) CreateFoundryAndNativeTokensFromInput(input *OutputData, mintedAmount iotago.BaseToken, maxSupply iotago.BaseToken) *iotago.SignedTransaction {
