@@ -26,7 +26,7 @@ func Test_ValidatorRewards(t *testing.T) {
 		dockertestframework.WithProtocolParametersOptions(
 			iotago.WithTimeProviderOptions(5, time.Now().Unix(), 10, 4),
 			iotago.WithLivenessOptions(10, 10, 2, 4, 8),
-			iotago.WithStakingOptions(3, 10, 10),
+			iotago.WithStakingOptions(2, 10, 10),
 		))
 	defer d.Stop()
 
@@ -57,11 +57,10 @@ func Test_ValidatorRewards(t *testing.T) {
 
 	latestCommitmentSlot := blockIssuance.LatestCommitment.Slot
 	stakingStartEpoch := d.DefaultWallet().StakingStartEpochFromSlot(latestCommitmentSlot)
-	currentEpoch := clt.CommittedAPI().TimeProvider().EpochFromSlot(latestCommitmentSlot)
 	// Set end epoch so the staking feature can be removed as soon as possible.
-	endEpoch := stakingStartEpoch + clt.CommittedAPI().ProtocolParameters().StakingUnbondingPeriod() + 1
+	endEpoch := stakingStartEpoch + clt.CommittedAPI().ProtocolParameters().StakingUnbondingPeriod()
 	// The earliest epoch in which we can remove the staking feature and claim rewards.
-	claimingSlot := clt.CommittedAPI().TimeProvider().EpochStart(endEpoch + 1)
+	goodClaimingSlot := clt.CommittedAPI().TimeProvider().EpochStart(endEpoch + 1)
 
 	goodAccountData := d.CreateAccountFromImplicitAccount(goodWallet,
 		goodAccountOutputData,
@@ -74,7 +73,7 @@ func Test_ValidatorRewards(t *testing.T) {
 		d,
 		goodWallet,
 		clt.CommittedAPI().TimeProvider().CurrentSlot(),
-		claimingSlot,
+		goodClaimingSlot,
 		slotsDuration)
 
 	// create lazy account
@@ -85,9 +84,8 @@ func Test_ValidatorRewards(t *testing.T) {
 
 	latestCommitmentSlot = blockIssuance.LatestCommitment.Slot
 	stakingStartEpoch = d.DefaultWallet().StakingStartEpochFromSlot(latestCommitmentSlot)
-	currentEpoch = clt.CommittedAPI().TimeProvider().EpochFromSlot(latestCommitmentSlot)
-	endEpoch = stakingStartEpoch + clt.CommittedAPI().ProtocolParameters().StakingUnbondingPeriod() + 1
-	claimingSlot = clt.CommittedAPI().TimeProvider().EpochStart(endEpoch + 1)
+	endEpoch = stakingStartEpoch + clt.CommittedAPI().ProtocolParameters().StakingUnbondingPeriod()
+	lazyClaimingSlot := clt.CommittedAPI().TimeProvider().EpochStart(endEpoch + 1)
 
 	lazyAccountData := d.CreateAccountFromImplicitAccount(lazyWallet,
 		lazyAccountOutputData,
@@ -100,28 +98,28 @@ func Test_ValidatorRewards(t *testing.T) {
 		d,
 		lazyWallet,
 		clt.CommittedAPI().TimeProvider().CurrentSlot(),
-		claimingSlot,
+		lazyClaimingSlot,
 		slotsDuration)
 
 	// make sure the account is in the committee, so it can issue validation blocks
 	goodAccountAddrBech32 := goodAccountData.Address.Bech32(clt.CommittedAPI().ProtocolParameters().Bech32HRP())
 	lazyAccountAddrBech32 := lazyAccountData.Address.Bech32(clt.CommittedAPI().ProtocolParameters().Bech32HRP())
-	d.AssertCommittee(currentEpoch+2, append(d.AccountsFromNodes(d.Nodes("V1", "V3", "V2", "V4")...), goodAccountAddrBech32, lazyAccountAddrBech32))
+	d.AssertCommittee(stakingStartEpoch+1, append(d.AccountsFromNodes(d.Nodes("V1", "V3", "V2", "V4")...), goodAccountAddrBech32, lazyAccountAddrBech32))
 
 	// issue validation blocks to have performance
 	currentSlot := clt.CommittedAPI().TimeProvider().CurrentSlot()
-	slotToWait := claimingSlot - currentSlot
+	slotToWait := lazyClaimingSlot - currentSlot
 	secToWait := time.Duration(slotToWait) * time.Duration(slotsDuration) * time.Second
-	fmt.Println("Wait for ", secToWait, "until expected slot: ", claimingSlot)
+	fmt.Println("Issue validation blocks, wait for ", secToWait, "until expected slot: ", lazyClaimingSlot)
 
 	var wg sync.WaitGroup
-	issueValidationBlockInBackground(ctx, &wg, goodWallet, currentSlot, claimingSlot, 5)
-	issueValidationBlockInBackground(ctx, &wg, lazyWallet, currentSlot, claimingSlot, 1)
+	issueValidationBlockInBackground(ctx, &wg, goodWallet, currentSlot, goodClaimingSlot, 5)
+	issueValidationBlockInBackground(ctx, &wg, lazyWallet, currentSlot, lazyClaimingSlot, 1)
 
 	wg.Wait()
 
 	// claim rewards that put to the account output
-	d.AwaitCommitment(claimingSlot)
+	d.AwaitCommitment(lazyClaimingSlot)
 	d.ClaimRewardsForValidator(ctx, goodWallet)
 	d.ClaimRewardsForValidator(ctx, lazyWallet)
 
