@@ -277,6 +277,9 @@ func (m *Manager) PastAccounts(accountIDs iotago.AccountIDs, targetSlot iotago.S
 	return result, nil
 }
 func (m *Manager) Rollback(targetSlot iotago.SlotIndex) error {
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+
 	return m.rollbackFromTo(m.latestCommittedSlot, targetSlot, false)
 }
 
