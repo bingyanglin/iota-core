@@ -549,7 +549,7 @@ func (s *Scheduler) removeIssuer(issuerID iotago.AccountID, err error) {
 		return true
 	})
 
-	for i := 0; i < q.readyHeap.Len(); i++ {
+	for i := range q.readyHeap.Len() {
 		block := q.readyHeap[i].Value
 		block.SetDropped()
 		s.events.BlockDropped.Trigger(block, err)
