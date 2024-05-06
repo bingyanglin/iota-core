@@ -1,6 +1,6 @@
 //go:build dockertests
 
-package tests
+package dockertestframework
 
 import (
 	"bytes"
@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -359,7 +360,13 @@ func (d *DockerTestFramework) SendFaucetRequest(ctx context.Context, wallet *moc
 	require.Equal(d.Testing, http.StatusAccepted, res.StatusCode)
 }
 
-func createLogDirectory(testName string) string {
+func (d *DockerTestFramework) RequestFromClients(testFunc func(*testing.T, string)) {
+	for alias := range d.nodes {
+		testFunc(d.Testing, alias)
+	}
+}
+
+func CreateLogDirectory(testName string) string {
 	// make sure logs/ exists
 	err := os.Mkdir("logs", 0755)
 	if err != nil {
@@ -381,7 +388,7 @@ func createLogDirectory(testName string) string {
 	return dir
 }
 
-func getDelegationStartEpoch(api iotago.API, commitmentSlot iotago.SlotIndex) iotago.EpochIndex {
+func GetDelegationStartEpoch(api iotago.API, commitmentSlot iotago.SlotIndex) iotago.EpochIndex {
 	pastBoundedSlot := commitmentSlot + api.ProtocolParameters().MaxCommittableAge()
 	pastBoundedEpoch := api.TimeProvider().EpochFromSlot(pastBoundedSlot)
 	pastBoundedEpochEnd := api.TimeProvider().EpochEnd(pastBoundedEpoch)
@@ -394,7 +401,7 @@ func getDelegationStartEpoch(api iotago.API, commitmentSlot iotago.SlotIndex) io
 	return pastBoundedEpoch + 2
 }
 
-func getDelegationEndEpoch(api iotago.API, slot, latestCommitmentSlot iotago.SlotIndex) iotago.EpochIndex {
+func GetDelegationEndEpoch(api iotago.API, slot, latestCommitmentSlot iotago.SlotIndex) iotago.EpochIndex {
 	futureBoundedSlot := latestCommitmentSlot + api.ProtocolParameters().MinCommittableAge()
 	futureBoundedEpoch := api.TimeProvider().EpochFromSlot(futureBoundedSlot)
 
@@ -407,11 +414,11 @@ func getDelegationEndEpoch(api iotago.API, slot, latestCommitmentSlot iotago.Slo
 	return futureBoundedEpoch + 1
 }
 
-func isStatusCode(err error, status int) bool {
+func IsStatusCode(err error, status int) bool {
 	if err == nil {
 		return false
 	}
-	code, err := extractStatusCode(err.Error())
+	code, err := ExtractStatusCode(err.Error())
 	if err != nil {
 		return false
 	}
@@ -419,7 +426,7 @@ func isStatusCode(err error, status int) bool {
 	return code == status
 }
 
-func extractStatusCode(errorMessage string) (int, error) {
+func ExtractStatusCode(errorMessage string) (int, error) {
 	re := regexp.MustCompile(`code=(\d+)`)
 	matches := re.FindStringSubmatch(errorMessage)
 	if len(matches) != 2 {

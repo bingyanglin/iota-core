@@ -1,6 +1,6 @@
 //go:build dockertests
 
-package tests
+package dockertestframework
 
 import (
 	"context"
@@ -41,6 +41,10 @@ func NewEventAPIDockerTestFramework(t *testing.T, dockerFramework *DockerTestFra
 		optsWaitFor:     3 * time.Minute,
 		optsTick:        5 * time.Second,
 	}
+}
+
+func (e EventAPIDockerTestFramework) DockerTestFramework() *DockerTestFramework {
+	return e.dockerFramework
 }
 
 func (e *EventAPIDockerTestFramework) ConnectEventAPIClient(ctx context.Context) *nodeclient.EventAPIClient {

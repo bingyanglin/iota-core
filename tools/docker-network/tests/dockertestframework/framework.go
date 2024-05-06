@@ -1,6 +1,6 @@
 //go:build dockertests
 
-package tests
+package dockertestframework
 
 import (
 	"context"
@@ -118,7 +118,7 @@ func NewDockerTestFramework(t *testing.T, opts ...options.Option[DockerTestFrame
 		protocolParams := iotago.NewV3SnapshotProtocolParameters(d.optsProtocolParameterOptions...)
 		testAPI := iotago.V3API(protocolParams)
 
-		d.logDirectoryPath = createLogDirectory(t.Name())
+		d.logDirectoryPath = CreateLogDirectory(t.Name())
 		d.snapshotPath = snapshotFilePath
 		d.optsSnapshotOptions = append(DefaultAccountOptions(protocolParams),
 			[]options.Option[snapshotcreator.Options]{
@@ -216,6 +216,10 @@ loop:
 	d.DumpContainerLogsToFiles()
 
 	return nil
+}
+
+func (d *DockerTestFramework) DefaultWallet() *mock.Wallet {
+	return d.defaultWallet
 }
 
 func (d *DockerTestFramework) waitForNodesAndGetClients() error {
@@ -492,7 +496,7 @@ func (d *DockerTestFramework) CreateDelegationBlockFromInput(wallet *mock.Wallet
 		"",
 		input,
 		mock.WithDelegatedValidatorAddress(accountAdddress),
-		mock.WithDelegationStartEpoch(getDelegationStartEpoch(clt.LatestAPI(), wallet.GetNewBlockIssuanceResponse().LatestCommitment.Slot)),
+		mock.WithDelegationStartEpoch(GetDelegationStartEpoch(clt.LatestAPI(), wallet.GetNewBlockIssuanceResponse().LatestCommitment.Slot)),
 	)
 	outputID := iotago.OutputIDFromTransactionIDAndIndex(signedTx.Transaction.MustID(), 0)
 
@@ -680,7 +684,7 @@ func (d *DockerTestFramework) DelegateToValidator(fromWallet *mock.Wallet, accou
 		"delegation_tx",
 		fundsOutputData,
 		mock.WithDelegatedValidatorAddress(accountAddress),
-		mock.WithDelegationStartEpoch(getDelegationStartEpoch(fromWallet.Client.LatestAPI(), fromWallet.GetNewBlockIssuanceResponse().LatestCommitment.Slot)),
+		mock.WithDelegationStartEpoch(GetDelegationStartEpoch(fromWallet.Client.LatestAPI(), fromWallet.GetNewBlockIssuanceResponse().LatestCommitment.Slot)),
 	)
 
 	fromWallet.CreateAndSubmitBasicBlock(ctx, "delegation", mock.WithPayload(signedTx))

@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/iotaledger/iota-core/pkg/testsuite/mock"
+	"github.com/iotaledger/iota-core/tools/docker-network/tests/dockertestframework"
 	iotago "github.com/iotaledger/iota.go/v4"
 )
 
@@ -21,8 +22,8 @@ import (
 // 3. One of the account issues 3 validation blocks per slot, the other account issues 1 validation block per slot until claiming slot is reached.
 // 4. Claim rewards and check if the mana increased as expected, the account that issued less validation blocks should have less mana.
 func Test_ValidatorRewards(t *testing.T) {
-	d := NewDockerTestFramework(t,
-		WithProtocolParametersOptions(
+	d := dockertestframework.NewDockerTestFramework(t,
+		dockertestframework.WithProtocolParametersOptions(
 			iotago.WithTimeProviderOptions(5, time.Now().Unix(), 10, 4),
 			iotago.WithLivenessOptions(10, 10, 2, 4, 8),
 			iotago.WithStakingOptions(3, 10, 10),
@@ -45,7 +46,7 @@ func Test_ValidatorRewards(t *testing.T) {
 	// cancel the context when the test is done
 	t.Cleanup(cancel)
 
-	clt := d.defaultWallet.Client
+	clt := d.DefaultWallet().Client
 	slotsDuration := clt.CommittedAPI().ProtocolParameters().SlotDurationInSeconds()
 
 	// create good account
@@ -55,14 +56,14 @@ func Test_ValidatorRewards(t *testing.T) {
 	require.NoError(t, err)
 
 	latestCommitmentSlot := blockIssuance.LatestCommitment.Slot
-	stakingStartEpoch := d.defaultWallet.StakingStartEpochFromSlot(latestCommitmentSlot)
+	stakingStartEpoch := d.DefaultWallet().StakingStartEpochFromSlot(latestCommitmentSlot)
 	currentEpoch := clt.CommittedAPI().TimeProvider().EpochFromSlot(latestCommitmentSlot)
 	// Set end epoch so the staking feature can be removed as soon as possible.
 	endEpoch := stakingStartEpoch + clt.CommittedAPI().ProtocolParameters().StakingUnbondingPeriod() + 1
 	// The earliest epoch in which we can remove the staking feature and claim rewards.
 	claimingSlot := clt.CommittedAPI().TimeProvider().EpochStart(endEpoch + 1)
 
-	goodAccountData := d.CreateAccountFromImplicitAccount(goodWallet, goodAccountOutputData, blockIssuance, WithStakingFeature(100, 1, stakingStartEpoch, endEpoch))
+	goodAccountData := d.CreateAccountFromImplicitAccount(goodWallet, goodAccountOutputData, blockIssuance, dockertestframework.WithStakingFeature(100, 1, stakingStartEpoch, endEpoch))
 	initialMana := goodAccountData.Output.StoredMana()
 	issueCandidacyPayloadInBackground(ctx,
 		d,
@@ -78,12 +79,12 @@ func Test_ValidatorRewards(t *testing.T) {
 	require.NoError(t, err)
 
 	latestCommitmentSlot = blockIssuance.LatestCommitment.Slot
-	stakingStartEpoch = d.defaultWallet.StakingStartEpochFromSlot(latestCommitmentSlot)
+	stakingStartEpoch = d.DefaultWallet().StakingStartEpochFromSlot(latestCommitmentSlot)
 	currentEpoch = clt.CommittedAPI().TimeProvider().EpochFromSlot(latestCommitmentSlot)
 	endEpoch = stakingStartEpoch + clt.CommittedAPI().ProtocolParameters().StakingUnbondingPeriod() + 1
 	claimingSlot = clt.CommittedAPI().TimeProvider().EpochStart(endEpoch + 1)
 
-	lazyAccountData := d.CreateAccountFromImplicitAccount(lazyWallet, lazyAccountOutputData, blockIssuance, WithStakingFeature(100, 1, stakingStartEpoch, endEpoch))
+	lazyAccountData := d.CreateAccountFromImplicitAccount(lazyWallet, lazyAccountOutputData, blockIssuance, dockertestframework.WithStakingFeature(100, 1, stakingStartEpoch, endEpoch))
 
 	lazyInitialMana := lazyAccountData.Output.StoredMana()
 	issueCandidacyPayloadInBackground(ctx,
@@ -131,8 +132,8 @@ func Test_ValidatorRewards(t *testing.T) {
 // 2. Wait long enough so there's rewards can be claimed.
 // 3. Claim rewards and check if the mana increased as expected.
 func Test_DelegatorRewards(t *testing.T) {
-	d := NewDockerTestFramework(t,
-		WithProtocolParametersOptions(
+	d := dockertestframework.NewDockerTestFramework(t,
+		dockertestframework.WithProtocolParametersOptions(
 			iotago.WithTimeProviderOptions(5, time.Now().Unix(), 10, 3),
 			iotago.WithLivenessOptions(10, 10, 2, 4, 5),
 			iotago.WithStakingOptions(3, 10, 10),
@@ -189,8 +190,8 @@ func Test_DelegatorRewards(t *testing.T) {
 // 2. Delay claiming rewards for the delegation and check if the delegated stake is removed from the validator.
 // 3. Claim rewards and check to destroy the delegation output.
 func Test_DelayedClaimingRewards(t *testing.T) {
-	d := NewDockerTestFramework(t,
-		WithProtocolParametersOptions(
+	d := dockertestframework.NewDockerTestFramework(t,
+		dockertestframework.WithProtocolParametersOptions(
 			iotago.WithTimeProviderOptions(5, time.Now().Unix(), 10, 4),
 			iotago.WithLivenessOptions(10, 10, 2, 4, 8),
 			iotago.WithStakingOptions(3, 10, 10),
@@ -226,7 +227,7 @@ func Test_DelayedClaimingRewards(t *testing.T) {
 		currentSlot := delegatorWallet.CurrentSlot()
 		apiForSlot := clt.APIForSlot(currentSlot)
 		latestCommitmentSlot := delegatorWallet.GetNewBlockIssuanceResponse().LatestCommitment.Slot
-		delegationEndEpoch := getDelegationEndEpoch(apiForSlot, currentSlot, latestCommitmentSlot)
+		delegationEndEpoch := dockertestframework.GetDelegationEndEpoch(apiForSlot, currentSlot, latestCommitmentSlot)
 		delegationOutputData = d.DelayedClaimingTransition(ctx, delegatorWallet, delegationOutputData)
 		d.AwaitCommitment(delegationOutputData.ID.CreationSlot())
 
@@ -265,7 +266,7 @@ func Test_DelayedClaimingRewards(t *testing.T) {
 	}
 }
 
-func issueCandidacyPayloadInBackground(ctx context.Context, d *DockerTestFramework, wallet *mock.Wallet, startSlot, endSlot iotago.SlotIndex, slotDuration uint8) {
+func issueCandidacyPayloadInBackground(ctx context.Context, d *dockertestframework.DockerTestFramework, wallet *mock.Wallet, startSlot, endSlot iotago.SlotIndex, slotDuration uint8) {
 	go func() {
 		fmt.Println("Issuing candidacy payloads for account", wallet.BlockIssuer.AccountData.ID, "in the background...")
 		defer fmt.Println("Issuing candidacy payloads for account", wallet.BlockIssuer.AccountData.ID, "in the background......done")

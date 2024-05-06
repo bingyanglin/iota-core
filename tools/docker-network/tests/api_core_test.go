@@ -12,11 +12,245 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/iotaledger/hive.go/ds/types"
+	"github.com/iotaledger/hive.go/lo"
 	"github.com/iotaledger/iota-core/pkg/testsuite/mock"
+	"github.com/iotaledger/iota-core/tools/docker-network/tests/dockertestframework"
 	iotago "github.com/iotaledger/iota.go/v4"
 	"github.com/iotaledger/iota.go/v4/api"
 	"github.com/iotaledger/iota.go/v4/tpkg"
 )
+
+type coreAPIAssets map[iotago.SlotIndex]*coreAPISlotAssets
+
+func (a coreAPIAssets) setupAssetsForSlot(slot iotago.SlotIndex) {
+	_, ok := a[slot]
+	if !ok {
+		a[slot] = newAssetsPerSlot()
+	}
+}
+
+func (a coreAPIAssets) assertCommitments(t *testing.T) {
+	for _, asset := range a {
+		asset.assertCommitments(t)
+	}
+}
+
+func (a coreAPIAssets) assertBICs(t *testing.T) {
+	for _, asset := range a {
+		asset.assertBICs(t)
+	}
+}
+
+func (a coreAPIAssets) forEachBlock(t *testing.T, f func(*testing.T, *iotago.Block)) {
+	for _, asset := range a {
+		for _, block := range asset.dataBlocks {
+			f(t, block)
+		}
+		for _, block := range asset.valueBlocks {
+			f(t, block)
+		}
+	}
+}
+
+func (a coreAPIAssets) forEachTransaction(t *testing.T, f func(*testing.T, *iotago.SignedTransaction, iotago.BlockID)) {
+	for _, asset := range a {
+		for i, tx := range asset.transactions {
+			blockID := asset.valueBlocks[i].MustID()
+			f(t, tx, blockID)
+		}
+	}
+}
+
+func (a coreAPIAssets) forEachReattachment(t *testing.T, f func(*testing.T, iotago.BlockID)) {
+	for _, asset := range a {
+		for _, reattachment := range asset.reattachments {
+			f(t, reattachment)
+		}
+	}
+}
+
+func (a coreAPIAssets) forEachOutput(t *testing.T, f func(*testing.T, iotago.OutputID, iotago.Output)) {
+	for _, asset := range a {
+		for outID, out := range asset.basicOutputs {
+			f(t, outID, out)
+		}
+		for outID, out := range asset.faucetOutputs {
+			f(t, outID, out)
+		}
+		for outID, out := range asset.delegationOutputs {
+			f(t, outID, out)
+		}
+	}
+}
+
+func (a coreAPIAssets) forEachSlot(t *testing.T, f func(*testing.T, iotago.SlotIndex, map[string]iotago.CommitmentID)) {
+	for slot, slotAssets := range a {
+		f(t, slot, slotAssets.commitmentPerNode)
+	}
+}
+
+func (a coreAPIAssets) forEachCommitment(t *testing.T, f func(*testing.T, map[string]iotago.CommitmentID)) {
+	for _, asset := range a {
+		f(t, asset.commitmentPerNode)
+	}
+}
+
+func (a coreAPIAssets) forEachAccountAddress(t *testing.T, f func(t *testing.T, accountAddress *iotago.AccountAddress, commitmentPerNode map[string]iotago.CommitmentID, bicPerNode map[string]iotago.BlockIssuanceCredits)) {
+	for _, asset := range a {
+		if asset.accountAddress == nil {
+			// no account created in this slot
+			continue
+		}
+		f(t, asset.accountAddress, asset.commitmentPerNode, asset.bicPerNode)
+	}
+}
+
+func (a coreAPIAssets) assertUTXOOutputIDsInSlot(t *testing.T, slot iotago.SlotIndex, createdOutputs iotago.OutputIDs, spentOutputs iotago.OutputIDs) {
+	created := make(map[iotago.OutputID]types.Empty)
+	spent := make(map[iotago.OutputID]types.Empty)
+	for _, outputID := range createdOutputs {
+		created[outputID] = types.Void
+	}
+
+	for _, outputID := range spentOutputs {
+		spent[outputID] = types.Void
+	}
+
+	for outID := range a[slot].basicOutputs {
+		_, ok := created[outID]
+		require.True(t, ok, "Output ID not found in created outputs: %s, for slot %d", outID, slot)
+	}
+
+	for outID := range a[slot].faucetOutputs {
+		_, ok := spent[outID]
+		require.True(t, ok, "Output ID not found in spent outputs: %s, for slot %d", outID, slot)
+	}
+}
+
+func (a coreAPIAssets) assertUTXOOutputsInSlot(t *testing.T, slot iotago.SlotIndex, created []*api.OutputWithID, spent []*api.OutputWithID) {
+	createdMap := make(map[iotago.OutputID]iotago.Output)
+	spentMap := make(map[iotago.OutputID]iotago.Output)
+	for _, output := range created {
+		createdMap[output.OutputID] = output.Output
+	}
+	for _, output := range spent {
+		spentMap[output.OutputID] = output.Output
+	}
+
+	for outID, out := range a[slot].basicOutputs {
+		_, ok := createdMap[outID]
+		require.True(t, ok, "Output ID not found in created outputs: %s, for slot %d", outID, slot)
+		require.Equal(t, out, createdMap[outID], "Output not equal for ID: %s, for slot %d", outID, slot)
+	}
+
+	for outID, out := range a[slot].faucetOutputs {
+		_, ok := spentMap[outID]
+		require.True(t, ok, "Output ID not found in spent outputs: %s, for slot %d", outID, slot)
+		require.Equal(t, out, spentMap[outID], "Output not equal for ID: %s, for slot %d", outID, slot)
+	}
+}
+
+type coreAPISlotAssets struct {
+	accountAddress    *iotago.AccountAddress
+	dataBlocks        []*iotago.Block
+	valueBlocks       []*iotago.Block
+	transactions      []*iotago.SignedTransaction
+	reattachments     []iotago.BlockID
+	basicOutputs      map[iotago.OutputID]iotago.Output
+	faucetOutputs     map[iotago.OutputID]iotago.Output
+	delegationOutputs map[iotago.OutputID]iotago.Output
+
+	commitmentPerNode map[string]iotago.CommitmentID
+	bicPerNode        map[string]iotago.BlockIssuanceCredits
+}
+
+func (a *coreAPISlotAssets) assertCommitments(t *testing.T) {
+	prevCommitment := a.commitmentPerNode["V1"]
+	for _, commitmentID := range a.commitmentPerNode {
+		if prevCommitment == iotago.EmptyCommitmentID {
+			require.Fail(t, "commitment is empty")
+		}
+
+		require.Equal(t, commitmentID, prevCommitment)
+		prevCommitment = commitmentID
+	}
+}
+
+func (a *coreAPISlotAssets) assertBICs(t *testing.T) {
+	prevBIC := a.bicPerNode["V1"]
+	for _, bic := range a.bicPerNode {
+		require.Equal(t, bic, prevBIC)
+		prevBIC = bic
+	}
+}
+
+func newAssetsPerSlot() *coreAPISlotAssets {
+	return &coreAPISlotAssets{
+		dataBlocks:        make([]*iotago.Block, 0),
+		valueBlocks:       make([]*iotago.Block, 0),
+		transactions:      make([]*iotago.SignedTransaction, 0),
+		reattachments:     make([]iotago.BlockID, 0),
+		basicOutputs:      make(map[iotago.OutputID]iotago.Output),
+		faucetOutputs:     make(map[iotago.OutputID]iotago.Output),
+		delegationOutputs: make(map[iotago.OutputID]iotago.Output),
+		commitmentPerNode: make(map[string]iotago.CommitmentID),
+		bicPerNode:        make(map[string]iotago.BlockIssuanceCredits),
+	}
+}
+
+func prepareAssets(d *dockertestframework.DockerTestFramework, totalAssetsNum int) (coreAPIAssets, iotago.SlotIndex) {
+	assets := make(coreAPIAssets)
+	ctx := context.Background()
+
+	latestSlot := iotago.SlotIndex(0)
+
+	for i := 0; i < totalAssetsNum; i++ {
+		// account
+		wallet, account := d.CreateAccount()
+		assets.setupAssetsForSlot(account.OutputID.Slot())
+		assets[account.OutputID.Slot()].accountAddress = account.Address
+
+		// data block
+		block := d.CreateTaggedDataBlock(wallet, []byte("tag"))
+		blockSlot := lo.PanicOnErr(block.ID()).Slot()
+		assets.setupAssetsForSlot(blockSlot)
+		assets[blockSlot].dataBlocks = append(assets[blockSlot].dataBlocks, block)
+		d.SubmitBlock(ctx, block)
+
+		// transaction
+		valueBlock, signedTx, faucetOutput := d.CreateBasicOutputBlock(wallet)
+		valueBlockSlot := valueBlock.MustID().Slot()
+		assets.setupAssetsForSlot(valueBlockSlot)
+		// transaction and outputs are stored with the earliest included block
+		assets[valueBlockSlot].valueBlocks = append(assets[valueBlockSlot].valueBlocks, valueBlock)
+		assets[valueBlockSlot].transactions = append(assets[valueBlockSlot].transactions, signedTx)
+		basicOutputID := iotago.OutputIDFromTransactionIDAndIndex(signedTx.Transaction.MustID(), 0)
+		assets[valueBlockSlot].basicOutputs[basicOutputID] = signedTx.Transaction.Outputs[0]
+		assets[valueBlockSlot].faucetOutputs[faucetOutput.ID] = faucetOutput.Output
+		d.SubmitBlock(ctx, valueBlock)
+		d.AwaitTransactionPayloadAccepted(ctx, signedTx.Transaction.MustID())
+
+		// issue reattachment after the first one is already included
+		secondAttachment, err := wallet.CreateAndSubmitBasicBlock(ctx, "second_attachment", mock.WithPayload(signedTx))
+		require.NoError(d.Testing, err)
+		assets[valueBlockSlot].reattachments = append(assets[valueBlockSlot].reattachments, secondAttachment.ID())
+
+		// delegation
+		//nolint:forcetypeassert
+		delegationOutputData := d.DelegateToValidator(wallet, d.Node("V1").AccountAddress(d.Testing))
+		assets.setupAssetsForSlot(delegationOutputData.ID.CreationSlot())
+		assets[delegationOutputData.ID.CreationSlot()].delegationOutputs[delegationOutputData.ID] = delegationOutputData.Output.(*iotago.DelegationOutput)
+
+		latestSlot = lo.Max[iotago.SlotIndex](latestSlot, blockSlot, valueBlockSlot, delegationOutputData.ID.CreationSlot(), secondAttachment.ID().Slot())
+
+		fmt.Printf("Assets for slot %d\n: dataBlock: %s block: %s\ntx: %s\nbasic output: %s, faucet output: %s\n delegation output: %s\n",
+			valueBlockSlot, block.MustID().String(), valueBlock.MustID().String(), signedTx.MustID().String(),
+			basicOutputID.String(), faucetOutput.ID.String(), delegationOutputData.ID.String())
+	}
+
+	return assets, latestSlot
+}
 
 // Test_ValidatorsAPI tests if the validators API returns the expected validators.
 // 1. Run docker network.
@@ -25,8 +259,8 @@ import (
 // 4. Check if all 54 validators are returned from the validators API with pageSize 10, the pagination of api is also tested.
 // 5. Wait until next epoch then check again if the results remain.
 func Test_ValidatorsAPI(t *testing.T) {
-	d := NewDockerTestFramework(t,
-		WithProtocolParametersOptions(
+	d := dockertestframework.NewDockerTestFramework(t,
+		dockertestframework.WithProtocolParametersOptions(
 			iotago.WithTimeProviderOptions(5, time.Now().Unix(), 10, 4),
 			iotago.WithLivenessOptions(10, 10, 2, 4, 8),
 			iotago.WithRewardsOptions(8, 10, 2, 384),
@@ -44,7 +278,7 @@ func Test_ValidatorsAPI(t *testing.T) {
 	require.NoError(t, runErr)
 
 	d.WaitUntilNetworkReady()
-	hrp := d.defaultWallet.Client.CommittedAPI().ProtocolParameters().Bech32HRP()
+	hrp := d.DefaultWallet().Client.CommittedAPI().ProtocolParameters().Bech32HRP()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(func() {
@@ -53,7 +287,7 @@ func Test_ValidatorsAPI(t *testing.T) {
 
 	// Create registered validators
 	var wg sync.WaitGroup
-	clt := d.defaultWallet.Client
+	clt := d.DefaultWallet().Client
 	status := d.NodeStatus("V1")
 	currentEpoch := clt.CommittedAPI().TimeProvider().EpochFromSlot(status.LatestAcceptedBlockSlot)
 	expectedValidators := d.AccountsFromNodes(d.Nodes()...)
@@ -67,7 +301,7 @@ func Test_ValidatorsAPI(t *testing.T) {
 			wallet, implicitAccountOutputData := d.CreateImplicitAccount(ctx)
 
 			// create account with staking feature for every validator
-			accountData := d.CreateAccountFromImplicitAccount(wallet, implicitAccountOutputData, wallet.GetNewBlockIssuanceResponse(), WithStakingFeature(100, 1, currentEpoch))
+			accountData := d.CreateAccountFromImplicitAccount(wallet, implicitAccountOutputData, wallet.GetNewBlockIssuanceResponse(), dockertestframework.WithStakingFeature(100, 1, currentEpoch))
 			expectedValidators = append(expectedValidators, accountData.Address.Bech32(hrp))
 
 			// issue candidacy payload in the next epoch (currentEpoch + 1), in order to issue it before epochNearingThreshold
@@ -91,8 +325,8 @@ func Test_ValidatorsAPI(t *testing.T) {
 }
 
 func Test_CoreAPI(t *testing.T) {
-	d := NewDockerTestFramework(t,
-		WithProtocolParametersOptions(
+	d := dockertestframework.NewDockerTestFramework(t,
+		dockertestframework.WithProtocolParametersOptions(
 			iotago.WithTimeProviderOptions(5, time.Now().Unix(), 10, 4),
 			iotago.WithLivenessOptions(10, 10, 2, 4, 8),
 			iotago.WithRewardsOptions(8, 10, 2, 384),
@@ -111,7 +345,7 @@ func Test_CoreAPI(t *testing.T) {
 
 	d.WaitUntilNetworkReady()
 
-	assetsPerSlot, lastSlot := d.prepareAssets(5)
+	assetsPerSlot, lastSlot := prepareAssets(d, 5)
 
 	fmt.Println("Await finalisation of slot", lastSlot)
 	d.AwaitFinalization(lastSlot)
@@ -426,7 +660,7 @@ func Test_CoreAPI(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			d.requestFromClients(test.testFunc)
+			d.RequestFromClients(test.testFunc)
 		})
 	}
 
@@ -436,8 +670,8 @@ func Test_CoreAPI(t *testing.T) {
 }
 
 func Test_CoreAPI_BadRequests(t *testing.T) {
-	d := NewDockerTestFramework(t,
-		WithProtocolParametersOptions(
+	d := dockertestframework.NewDockerTestFramework(t,
+		dockertestframework.WithProtocolParametersOptions(
 			iotago.WithTimeProviderOptions(5, time.Now().Unix(), 10, 4),
 			iotago.WithLivenessOptions(10, 10, 2, 4, 8),
 			iotago.WithRewardsOptions(8, 10, 2, 384),
@@ -466,7 +700,7 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 				blockID := tpkg.RandBlockID()
 				respBlock, err := d.Client(nodeAlias).BlockByBlockID(context.Background(), blockID)
 				require.Error(t, err)
-				require.True(t, isStatusCode(err, http.StatusNotFound))
+				require.True(t, dockertestframework.IsStatusCode(err, http.StatusNotFound))
 				require.Nil(t, respBlock)
 			},
 		},
@@ -476,7 +710,7 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 				blockID := tpkg.RandBlockID()
 				resp, err := d.Client(nodeAlias).BlockMetadataByBlockID(context.Background(), blockID)
 				require.Error(t, err)
-				require.True(t, isStatusCode(err, http.StatusNotFound))
+				require.True(t, dockertestframework.IsStatusCode(err, http.StatusNotFound))
 				require.Nil(t, resp)
 			},
 		},
@@ -486,7 +720,7 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 				blockID := tpkg.RandBlockID()
 				resp, err := d.Client(nodeAlias).BlockWithMetadataByBlockID(context.Background(), blockID)
 				require.Error(t, err)
-				require.True(t, isStatusCode(err, http.StatusNotFound))
+				require.True(t, dockertestframework.IsStatusCode(err, http.StatusNotFound))
 				require.Nil(t, resp)
 			},
 		},
@@ -496,7 +730,7 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 				slot := iotago.SlotIndex(1000_000_000)
 				resp, err := d.Client(nodeAlias).CommitmentBySlot(context.Background(), slot)
 				require.Error(t, err)
-				require.True(t, isStatusCode(err, http.StatusNotFound))
+				require.True(t, dockertestframework.IsStatusCode(err, http.StatusNotFound))
 				require.Nil(t, resp)
 			},
 		},
@@ -506,7 +740,7 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 				committmentID := tpkg.RandCommitmentID()
 				resp, err := d.Client(nodeAlias).CommitmentByID(context.Background(), committmentID)
 				require.Error(t, err)
-				require.True(t, isStatusCode(err, http.StatusNotFound))
+				require.True(t, dockertestframework.IsStatusCode(err, http.StatusNotFound))
 				require.Nil(t, resp)
 			},
 		},
@@ -517,7 +751,7 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 				resp, err := d.Client(nodeAlias).CommitmentUTXOChangesByID(context.Background(), committmentID)
 				require.Error(t, err)
 				// commitmentID is valid, but the UTXO changes does not exist in the storage
-				require.True(t, isStatusCode(err, http.StatusNotFound))
+				require.True(t, dockertestframework.IsStatusCode(err, http.StatusNotFound))
 				require.Nil(t, resp)
 			},
 		},
@@ -529,7 +763,7 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 				resp, err := d.Client(nodeAlias).CommitmentUTXOChangesFullByID(context.Background(), committmentID)
 				require.Error(t, err)
 				// commitmentID is valid, but the UTXO changes does not exist in the storage
-				require.True(t, isStatusCode(err, http.StatusNotFound))
+				require.True(t, dockertestframework.IsStatusCode(err, http.StatusNotFound))
 				require.Nil(t, resp)
 			},
 		},
@@ -539,7 +773,7 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 				slot := iotago.SlotIndex(1000_000_000)
 				resp, err := d.Client(nodeAlias).CommitmentUTXOChangesBySlot(context.Background(), slot)
 				require.Error(t, err)
-				require.True(t, isStatusCode(err, http.StatusNotFound))
+				require.True(t, dockertestframework.IsStatusCode(err, http.StatusNotFound))
 				require.Nil(t, resp)
 			},
 		},
@@ -550,7 +784,7 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 
 				resp, err := d.Client(nodeAlias).CommitmentUTXOChangesFullBySlot(context.Background(), slot)
 				require.Error(t, err)
-				require.True(t, isStatusCode(err, http.StatusNotFound))
+				require.True(t, dockertestframework.IsStatusCode(err, http.StatusNotFound))
 				require.Nil(t, resp)
 			},
 		},
@@ -560,7 +794,7 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 				outputID := tpkg.RandOutputID(0)
 				resp, err := d.Client(nodeAlias).OutputByID(context.Background(), outputID)
 				require.Error(t, err)
-				require.True(t, isStatusCode(err, http.StatusNotFound))
+				require.True(t, dockertestframework.IsStatusCode(err, http.StatusNotFound))
 				require.Nil(t, resp)
 			},
 		},
@@ -571,7 +805,7 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 
 				resp, err := d.Client(nodeAlias).OutputMetadataByID(context.Background(), outputID)
 				require.Error(t, err)
-				require.True(t, isStatusCode(err, http.StatusNotFound))
+				require.True(t, dockertestframework.IsStatusCode(err, http.StatusNotFound))
 				require.Nil(t, resp)
 			},
 		},
@@ -584,7 +818,7 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 				require.Error(t, err)
 				require.Nil(t, out)
 				require.Nil(t, outMetadata)
-				require.True(t, isStatusCode(err, http.StatusNotFound))
+				require.True(t, dockertestframework.IsStatusCode(err, http.StatusNotFound))
 			},
 		},
 		{
@@ -593,7 +827,7 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 				txID := tpkg.RandTransactionID()
 				resp, err := d.Client(nodeAlias).TransactionIncludedBlock(context.Background(), txID)
 				require.Error(t, err)
-				require.True(t, isStatusCode(err, http.StatusNotFound))
+				require.True(t, dockertestframework.IsStatusCode(err, http.StatusNotFound))
 				require.Nil(t, resp)
 			},
 		},
@@ -604,7 +838,7 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 
 				resp, err := d.Client(nodeAlias).TransactionIncludedBlockMetadata(context.Background(), txID)
 				require.Error(t, err)
-				require.True(t, isStatusCode(err, http.StatusNotFound))
+				require.True(t, dockertestframework.IsStatusCode(err, http.StatusNotFound))
 				require.Nil(t, resp)
 			},
 		},
@@ -615,7 +849,7 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 
 				resp, err := d.Client(nodeAlias).TransactionMetadata(context.Background(), txID)
 				require.Error(t, err)
-				require.True(t, isStatusCode(err, http.StatusNotFound))
+				require.True(t, dockertestframework.IsStatusCode(err, http.StatusNotFound))
 				require.Nil(t, resp)
 			},
 		},
@@ -626,7 +860,7 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 				commitmentID := tpkg.RandCommitmentID()
 				resp, err := d.Client(nodeAlias).Congestion(context.Background(), accountAddress, 0, commitmentID)
 				require.Error(t, err)
-				require.True(t, isStatusCode(err, http.StatusNotFound))
+				require.True(t, dockertestframework.IsStatusCode(err, http.StatusNotFound))
 				require.Nil(t, resp)
 			},
 		},
@@ -635,7 +869,7 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 			testFunc: func(t *testing.T, nodeAlias string) {
 				resp, err := d.Client(nodeAlias).Committee(context.Background(), 4)
 				require.Error(t, err)
-				require.True(t, isStatusCode(err, http.StatusBadRequest))
+				require.True(t, dockertestframework.IsStatusCode(err, http.StatusBadRequest))
 				require.Nil(t, resp)
 			},
 		},
@@ -645,7 +879,7 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 				outputID := tpkg.RandOutputID(0)
 				resp, err := d.Client(nodeAlias).Rewards(context.Background(), outputID)
 				require.Error(t, err)
-				require.True(t, isStatusCode(err, http.StatusNotFound))
+				require.True(t, dockertestframework.IsStatusCode(err, http.StatusNotFound))
 				require.Nil(t, resp)
 			},
 		},
@@ -653,7 +887,7 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			d.requestFromClients(test.testFunc)
+			d.RequestFromClients(test.testFunc)
 		})
 	}
 }
