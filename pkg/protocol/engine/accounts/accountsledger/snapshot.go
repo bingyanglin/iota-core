@@ -93,7 +93,7 @@ func (m *Manager) Export(writer io.WriteSeeker, targetSlot iotago.SlotIndex) err
 	return nil
 }
 
-// exportAccountTree exports the current AccountTree
+// exportAccountTree exports the current AccountTree.
 func (m *Manager) exportAccountTree(writer io.WriteSeeker) (int, error) {
 	var accountCount int
 
