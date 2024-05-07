@@ -184,19 +184,21 @@ func (p *Prunable) Rollback(targetEpoch iotago.EpochIndex, startPruneRange iotag
 		return ierrors.Wrapf(err, "failed to rollback committee epochs to target epoch %d", targetEpoch)
 	}
 
-	lastPrunedPoolStatsEpoch, _, err := p.poolStats.RollbackEpochs(targetEpoch)
-	if err != nil {
-		return ierrors.Wrapf(err, "failed to rollback pool stats epochs to target epoch %d", targetEpoch)
-	}
-
-	lastPrunedDecidedUpgradeSignalsEpoch, _, err := p.decidedUpgradeSignals.RollbackEpochs(targetEpoch)
-	if err != nil {
-		return ierrors.Wrapf(err, "failed to rollback decided upgrade signals epochs to target epoch %d", targetEpoch)
-	}
-
+	var lastPrunedPoolStatsEpoch iotago.EpochIndex
+	var lastPrunedDecidedUpgradeSignalsEpoch iotago.EpochIndex
 	var lastPrunedPoolRewardsEpoch iotago.EpochIndex
 	// Do not rollback the epoch if the targetSlot is the end of the epoch, because that is when we calculated the rewards.
 	if targetSlot := startPruneRange - 1; p.apiProvider.APIForSlot(targetSlot).TimeProvider().EpochEnd(targetEpoch) != targetSlot {
+		lastPrunedPoolStatsEpoch, _, err = p.poolStats.RollbackEpochs(targetEpoch)
+		if err != nil {
+			return ierrors.Wrapf(err, "failed to rollback pool stats epochs to target epoch %d", targetEpoch)
+		}
+
+		lastPrunedDecidedUpgradeSignalsEpoch, _, err = p.decidedUpgradeSignals.RollbackEpochs(targetEpoch)
+		if err != nil {
+			return ierrors.Wrapf(err, "failed to rollback decided upgrade signals epochs to target epoch %d", targetEpoch)
+		}
+
 		lastPrunedPoolRewardsEpoch, err = p.poolRewards.RollbackEpochs(targetEpoch)
 		if err != nil {
 			return ierrors.Wrapf(err, "failed to rollback pool rewards epochs to target epoch %d", targetEpoch)
