@@ -3,6 +3,7 @@
 package tests
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/iotaledger/hive.go/ierrors"
+	"github.com/iotaledger/iota-core/tools/docker-network/tests/dockertestframework"
 	iotago "github.com/iotaledger/iota.go/v4"
 )
 
@@ -21,8 +23,8 @@ import (
 // 4. Restart inx-validator of V2.
 // 5. Check that committee of size 4 is selected in next epoch.
 func Test_SmallerCommittee(t *testing.T) {
-	d := NewDockerTestFramework(t,
-		WithProtocolParametersOptions(
+	d := dockertestframework.NewDockerTestFramework(t,
+		dockertestframework.WithProtocolParametersOptions(
 			iotago.WithTimeProviderOptions(5, time.Now().Unix(), 10, 4),
 			iotago.WithLivenessOptions(10, 10, 2, 4, 8),
 			iotago.WithRewardsOptions(8, 10, 2, 384),
@@ -43,7 +45,7 @@ func Test_SmallerCommittee(t *testing.T) {
 
 	status := d.NodeStatus("V1")
 
-	clt := d.defaultWallet.Client
+	clt := d.DefaultWallet().Client
 	currentEpoch := clt.CommittedAPI().TimeProvider().EpochFromSlot(status.LatestAcceptedBlockSlot)
 
 	// stop inx-validator plugin of validator 2
@@ -66,8 +68,8 @@ func Test_SmallerCommittee(t *testing.T) {
 // 4. Restart inx-validator of V2.
 // 5. Check that committee of size 3 (V1, V2, V4) is selected in next epoch and finalization occurs again from that epoch.
 func Test_ReuseDueToNoFinalization(t *testing.T) {
-	d := NewDockerTestFramework(t,
-		WithProtocolParametersOptions(
+	d := dockertestframework.NewDockerTestFramework(t,
+		dockertestframework.WithProtocolParametersOptions(
 			iotago.WithTimeProviderOptions(5, time.Now().Unix(), 10, 4),
 			iotago.WithLivenessOptions(10, 10, 2, 4, 8),
 			iotago.WithRewardsOptions(8, 10, 2, 384),
@@ -90,7 +92,7 @@ func Test_ReuseDueToNoFinalization(t *testing.T) {
 	err = d.StopContainer(d.Node("V2").ContainerName, d.Node("V3").ContainerName)
 	require.NoError(t, err)
 
-	clt := d.defaultWallet.Client
+	clt := d.DefaultWallet().Client
 	status := d.NodeStatus("V1")
 
 	prevFinalizedSlot := status.LatestFinalizedSlot
@@ -135,8 +137,8 @@ func Test_ReuseDueToNoFinalization(t *testing.T) {
 // 4. Start issuing candidacy payload on 3 validators only.
 // 5. Check finalization advances and the committee is changed to 3 committee members.
 func Test_NoCandidacyPayload(t *testing.T) {
-	d := NewDockerTestFramework(t,
-		WithProtocolParametersOptions(
+	d := dockertestframework.NewDockerTestFramework(t,
+		dockertestframework.WithProtocolParametersOptions(
 			iotago.WithTimeProviderOptions(5, time.Now().Unix(), 10, 4),
 			iotago.WithLivenessOptions(10, 10, 2, 4, 8),
 			iotago.WithRewardsOptions(8, 10, 2, 384),
@@ -155,7 +157,7 @@ func Test_NoCandidacyPayload(t *testing.T) {
 
 	d.WaitUntilNetworkReady()
 
-	clt := d.defaultWallet.Client
+	clt := d.DefaultWallet().Client
 	status := d.NodeStatus("V1")
 	prevFinalizedSlot := status.LatestFinalizedSlot
 	fmt.Println("First finalized slot: ", prevFinalizedSlot)
@@ -185,8 +187,8 @@ func Test_NoCandidacyPayload(t *testing.T) {
 // 2. Create an account with staking feature.
 // 3. Check if the account became a staker.
 func Test_Staking(t *testing.T) {
-	d := NewDockerTestFramework(t,
-		WithProtocolParametersOptions(
+	d := dockertestframework.NewDockerTestFramework(t,
+		dockertestframework.WithProtocolParametersOptions(
 			iotago.WithTimeProviderOptions(5, time.Now().Unix(), 10, 4),
 			iotago.WithLivenessOptions(10, 10, 2, 4, 8),
 			iotago.WithRewardsOptions(8, 10, 2, 384),
@@ -205,9 +207,20 @@ func Test_Staking(t *testing.T) {
 
 	d.WaitUntilNetworkReady()
 
-	_, account := d.CreateAccount(WithStakingFeature(100, 1, 0))
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
 
-	d.AssertValidatorExists(account.Address)
+	// create implicit account for the validator
+	wallet, implicitAccountOutputData := d.CreateImplicitAccount(ctx)
+
+	// create account with staking feature for the validator
+	accountData := d.CreateAccountFromImplicitAccount(wallet,
+		implicitAccountOutputData,
+		wallet.GetNewBlockIssuanceResponse(),
+		dockertestframework.WithStakingFeature(100, 1, 0),
+	)
+
+	d.AssertValidatorExists(accountData.Address)
 }
 
 // Test_Delegation tests if committee changed due to delegation.
@@ -217,8 +230,8 @@ func Test_Staking(t *testing.T) {
 // 3. Delegate requested faucet funds to V2, V2 should replace V3 as a committee member. (V2 > V4 > V1 > V3)
 // 4. Delegate requested faucet funds to V3, V3 should replace V1 as a committee member. (V3 > V2 > V4 > V1)
 func Test_Delegation(t *testing.T) {
-	d := NewDockerTestFramework(t,
-		WithProtocolParametersOptions(
+	d := dockertestframework.NewDockerTestFramework(t,
+		dockertestframework.WithProtocolParametersOptions(
 			iotago.WithTimeProviderOptions(5, time.Now().Unix(), 10, 4),
 			iotago.WithLivenessOptions(10, 10, 2, 4, 8),
 			iotago.WithRewardsOptions(8, 10, 2, 384),
@@ -242,7 +255,7 @@ func Test_Delegation(t *testing.T) {
 	d.WaitUntilNetworkReady()
 
 	// create an account to perform delegation
-	wallet, _ := d.CreateAccount()
+	wallet, _ := d.CreateAccountFromFaucet()
 
 	// delegate all faucet funds to V2, V2 should replace V3
 	//nolint:forcetypeassert

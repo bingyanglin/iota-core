@@ -12,6 +12,7 @@ import (
 	"github.com/iotaledger/hive.go/lo"
 	"github.com/iotaledger/hive.go/runtime/options"
 	iotago "github.com/iotaledger/iota.go/v4"
+	"github.com/iotaledger/iota.go/v4/api"
 	"github.com/iotaledger/iota.go/v4/builder"
 	"github.com/iotaledger/iota.go/v4/tpkg"
 	"github.com/iotaledger/iota.go/v4/vm"
@@ -136,34 +137,43 @@ func (w *Wallet) CreateDelegationFromInput(transactionName string, input *Output
 	return signedTransaction
 }
 
+func (w *Wallet) StakingStartEpochFromSlot(latestCommitmentSlot iotago.SlotIndex) iotago.EpochIndex {
+	apiForSlot := w.Client.APIForSlot(latestCommitmentSlot)
+
+	pastBoundedSlot := latestCommitmentSlot + apiForSlot.ProtocolParameters().MaxCommittableAge()
+	pastBoundedEpoch := apiForSlot.TimeProvider().EpochFromSlot(pastBoundedSlot)
+
+	return pastBoundedEpoch
+}
+
 func (w *Wallet) DelegationStartFromSlot(slot, latestCommitmentSlot iotago.SlotIndex) iotago.EpochIndex {
 	apiForSlot := w.Client.APIForSlot(slot)
 
-	pastBoundedSlotIndex := latestCommitmentSlot + apiForSlot.ProtocolParameters().MaxCommittableAge()
-	pastBoundedEpochIndex := apiForSlot.TimeProvider().EpochFromSlot(pastBoundedSlotIndex)
+	pastBoundedSlot := latestCommitmentSlot + apiForSlot.ProtocolParameters().MaxCommittableAge()
+	pastBoundedEpoch := apiForSlot.TimeProvider().EpochFromSlot(pastBoundedSlot)
 
 	registrationSlot := w.registrationSlot(slot)
 
-	if pastBoundedSlotIndex <= registrationSlot {
-		return pastBoundedEpochIndex + 1
+	if pastBoundedSlot <= registrationSlot {
+		return pastBoundedEpoch + 1
 	}
 
-	return pastBoundedEpochIndex + 2
+	return pastBoundedEpoch + 2
 }
 
 func (w *Wallet) DelegationEndFromSlot(slot, latestCommitmentSlot iotago.SlotIndex) iotago.EpochIndex {
 	apiForSlot := w.Client.APIForSlot(slot)
 
-	futureBoundedSlotIndex := latestCommitmentSlot + apiForSlot.ProtocolParameters().MinCommittableAge()
-	futureBoundedEpochIndex := apiForSlot.TimeProvider().EpochFromSlot(futureBoundedSlotIndex)
+	futureBoundedSlot := latestCommitmentSlot + apiForSlot.ProtocolParameters().MinCommittableAge()
+	futureBoundedEpoch := apiForSlot.TimeProvider().EpochFromSlot(futureBoundedSlot)
 
 	registrationSlot := w.registrationSlot(slot)
 
-	if futureBoundedSlotIndex <= registrationSlot {
-		return futureBoundedEpochIndex
+	if futureBoundedSlot <= registrationSlot {
+		return futureBoundedEpoch
 	}
 
-	return futureBoundedEpochIndex + 1
+	return futureBoundedEpoch + 1
 }
 
 // Returns the registration slot in the epoch X corresponding to the given slot.
@@ -185,15 +195,15 @@ func (w *Wallet) DelayedClaimingTransition(transactionName string, input *Output
 	if len(optDelegationEndEpoch) == 0 {
 		api := w.Client.LatestAPI()
 		latestCommitmentSlot := w.GetNewBlockIssuanceResponse().LatestCommitment.Slot
-		futureBoundedSlotIndex := latestCommitmentSlot + api.ProtocolParameters().MinCommittableAge()
-		futureBoundedEpochIndex := api.TimeProvider().EpochFromSlot(futureBoundedSlotIndex)
+		futureBoundedSlot := latestCommitmentSlot + api.ProtocolParameters().MinCommittableAge()
+		futureBoundedEpoch := api.TimeProvider().EpochFromSlot(futureBoundedSlot)
 
 		registrationSlot := api.TimeProvider().EpochEnd(api.TimeProvider().EpochFromSlot(w.CurrentSlot())) - api.ProtocolParameters().EpochNearingThreshold()
 
-		if futureBoundedSlotIndex <= registrationSlot {
-			delegationEndEpoch = futureBoundedEpochIndex
+		if futureBoundedSlot <= registrationSlot {
+			delegationEndEpoch = futureBoundedEpoch
 		} else {
-			delegationEndEpoch = futureBoundedEpochIndex + 1
+			delegationEndEpoch = futureBoundedEpoch + 1
 		}
 	} else {
 		delegationEndEpoch = optDelegationEndEpoch[0]
@@ -394,7 +404,7 @@ func (w *Wallet) CreateImplicitAccountAndBasicOutputFromInput(transactionName st
 	return signedTransaction
 }
 
-func (w *Wallet) TransitionImplicitAccountToAccountOutput(transactionName string, inputs []*OutputData, opts ...options.Option[builder.AccountOutputBuilder]) *iotago.SignedTransaction {
+func (w *Wallet) TransitionImplicitAccountToAccountOutputWithBlockIssuance(transactionName string, inputs []*OutputData, blockIssuance *api.IssuanceBlockHeaderResponse, opts ...options.Option[builder.AccountOutputBuilder]) *iotago.SignedTransaction {
 	var implicitAccountOutput *OutputData
 	var baseTokenAmount iotago.BaseToken
 	for _, input := range inputs {
@@ -426,7 +436,7 @@ func (w *Wallet) TransitionImplicitAccountToAccountOutput(transactionName string
 			AccountID: implicitAccountID,
 		}),
 		WithCommitmentInput(&iotago.CommitmentInput{
-			CommitmentID: w.GetNewBlockIssuanceResponse().LatestCommitment.MustID(),
+			CommitmentID: blockIssuance.LatestCommitment.MustID(),
 		}),
 		WithInputs(inputs...),
 		WithOutputs(accountOutput),
@@ -435,6 +445,12 @@ func (w *Wallet) TransitionImplicitAccountToAccountOutput(transactionName string
 	)
 
 	return signedTransaction
+}
+
+func (w *Wallet) TransitionImplicitAccountToAccountOutput(transactionName string, inputs []*OutputData, opts ...options.Option[builder.AccountOutputBuilder]) *iotago.SignedTransaction {
+	issuance := w.GetNewBlockIssuanceResponse()
+
+	return w.TransitionImplicitAccountToAccountOutputWithBlockIssuance(transactionName, inputs, issuance, opts...)
 }
 
 func (w *Wallet) CreateFoundryAndNativeTokensFromInput(input *OutputData, mintedAmount iotago.BaseToken, maxSupply iotago.BaseToken) *iotago.SignedTransaction {

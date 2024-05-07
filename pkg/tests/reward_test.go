@@ -113,13 +113,13 @@ func Test_Delegation_DelayedClaimingDestroyOutputWithoutRewards(t *testing.T) {
 	latestCommitment := blockIssuanceInfo.LatestCommitment
 	apiForSlot := ts.DefaultWallet().Client.APIForSlot(block1_2Slot)
 
-	futureBoundedSlotIndex := latestCommitment.Slot + apiForSlot.ProtocolParameters().MinCommittableAge()
-	futureBoundedEpochIndex := apiForSlot.TimeProvider().EpochFromSlot(futureBoundedSlotIndex)
+	futureBoundedSlot := latestCommitment.Slot + apiForSlot.ProtocolParameters().MinCommittableAge()
+	futureBoundedEpoch := apiForSlot.TimeProvider().EpochFromSlot(futureBoundedSlot)
 
 	registrationSlot := apiForSlot.TimeProvider().EpochEnd(apiForSlot.TimeProvider().EpochFromSlot(block1_2Slot))
-	delegationEndEpoch := futureBoundedEpochIndex
-	if futureBoundedSlotIndex > registrationSlot {
-		delegationEndEpoch = futureBoundedEpochIndex + 1
+	delegationEndEpoch := futureBoundedEpoch
+	if futureBoundedSlot > registrationSlot {
+		delegationEndEpoch = futureBoundedEpoch + 1
 	}
 
 	tx2 := ts.DefaultWallet().DelayedClaimingTransition("TX2", ts.DefaultWallet().OutputData("TX1:0"), delegationEndEpoch)

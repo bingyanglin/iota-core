@@ -126,8 +126,8 @@ func (v *VM) ValidateSignatures(signedTransaction mempool.SignedTransaction, res
 			}
 
 			apiForSlot := v.ledger.apiProvider.APIForSlot(commitmentInput.Slot)
-			futureBoundedSlotIndex := commitmentInput.Slot + apiForSlot.ProtocolParameters().MinCommittableAge()
-			claimingEpoch := apiForSlot.TimeProvider().EpochFromSlot(futureBoundedSlotIndex)
+			futureBoundedSlot := commitmentInput.Slot + apiForSlot.ProtocolParameters().MinCommittableAge()
+			claimingEpoch := apiForSlot.TimeProvider().EpochFromSlot(futureBoundedSlot)
 
 			reward, _, _, rewardErr := v.ledger.sybilProtection.ValidatorReward(accountID, stakingFeature, claimingEpoch)
 			if rewardErr != nil {
@@ -141,8 +141,8 @@ func (v *VM) ValidateSignatures(signedTransaction mempool.SignedTransaction, res
 			delegationEnd := castOutput.EndEpoch
 
 			apiForSlot := v.ledger.apiProvider.APIForSlot(commitmentInput.Slot)
-			futureBoundedSlotIndex := commitmentInput.Slot + apiForSlot.ProtocolParameters().MinCommittableAge()
-			claimingEpoch := apiForSlot.TimeProvider().EpochFromSlot(futureBoundedSlotIndex)
+			futureBoundedSlot := commitmentInput.Slot + apiForSlot.ProtocolParameters().MinCommittableAge()
+			claimingEpoch := apiForSlot.TimeProvider().EpochFromSlot(futureBoundedSlot)
 
 			if delegationID.Empty() {
 				delegationID = iotago.DelegationIDFromOutputID(outputID)
