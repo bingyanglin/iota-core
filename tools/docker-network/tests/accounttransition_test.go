@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/iotaledger/iota-core/tools/docker-network/tests/dockertestframework"
 	iotago "github.com/iotaledger/iota.go/v4"
 )
 
@@ -18,8 +19,8 @@ import (
 // 3. account1 requests faucet funds then allots 1000 mana to account2.
 // 4. account2 requests faucet funds then creates native tokens.
 func Test_AccountTransitions(t *testing.T) {
-	d := NewDockerTestFramework(t,
-		WithProtocolParametersOptions(
+	d := dockertestframework.NewDockerTestFramework(t,
+		dockertestframework.WithProtocolParametersOptions(
 			iotago.WithTimeProviderOptions(5, time.Now().Unix(), 10, 4),
 			iotago.WithLivenessOptions(10, 10, 2, 4, 8),
 			iotago.WithRewardsOptions(8, 10, 2, 384),
@@ -40,15 +41,15 @@ func Test_AccountTransitions(t *testing.T) {
 
 	// create account1
 	fmt.Println("Creating account1")
-	wallet1, _ := d.CreateAccount()
+	wallet1, _ := d.CreateAccountFromFaucet()
 
 	// create account2
 	fmt.Println("Creating account2")
-	wallet2, _ := d.CreateAccount()
+	wallet2, _ := d.CreateAccountFromFaucet()
 
 	// allot 1000 mana from account1 to account2
 	fmt.Println("Allotting mana from account1 to account2")
-	d.AllotManaTo(wallet1, wallet2.BlockIssuer.AccountData, 1000)
+	d.RequestFaucetFundsAndAllotManaTo(wallet1, wallet2.BlockIssuer.AccountData, 1000)
 
 	// create native token
 	fmt.Println("Creating native token")

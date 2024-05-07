@@ -103,7 +103,7 @@ func newCommitment(commitments *Commitments, model *model.Commitment) *Commitmen
 		WarpSyncBlocks:                  reactive.NewVariable[bool](),
 		BlocksToWarpSync:                reactive.NewVariable[ds.Set[iotago.BlockID]](),
 		Weight:                          reactive.NewVariable[uint64](),
-		AttestedWeight:                  reactive.NewVariable[uint64](func(currentValue uint64, newValue uint64) uint64 { return max(currentValue, newValue) }), //nolint:gocritic // easier to read
+		AttestedWeight:                  reactive.NewVariable[uint64](func(currentValue uint64, newValue uint64) uint64 { return max(currentValue, newValue) }),
 		CumulativeWeight:                reactive.NewVariable[uint64](),
 		CumulativeAttestedWeight:        reactive.NewVariable[uint64](),
 		CumulativeVerifiedWeight:        reactive.NewVariable[uint64](),

@@ -1,6 +1,6 @@
 //go:build dockertests
 
-package tests
+package dockertestframework
 
 import (
 	"time"

@@ -131,14 +131,14 @@ func (o *SybilProtection) TrackBlock(block *blocks.Block) {
 	blockEpoch := o.apiProvider.APIForSlot(block.ID().Slot()).TimeProvider().EpochFromSlot(block.ID().Slot())
 
 	// if the block is issued before the stake end epoch, then it's not a valid validator or candidate block
-	if accountData.StakeEndEpoch < blockEpoch {
+	if accountData.StakeEndEpoch() < blockEpoch {
 		return
 	}
 
 	// if a candidate block is issued in the stake end epoch,
 	// or if block is issued after EpochEndSlot - EpochNearingThreshold, because candidates can register only until that point.
 	// then don't consider it because the validator can't be part of the committee in the next epoch
-	if accountData.StakeEndEpoch == blockEpoch ||
+	if accountData.StakeEndEpoch() == blockEpoch ||
 		block.ID().Slot()+o.apiProvider.APIForSlot(block.ID().Slot()).ProtocolParameters().EpochNearingThreshold() > o.apiProvider.APIForSlot(block.ID().Slot()).TimeProvider().EpochEnd(blockEpoch) {
 		return
 	}
@@ -339,7 +339,7 @@ func (o *SybilProtection) EligibleValidators(epoch iotago.EpochIndex) (accounts.
 			return ierrors.Errorf("account of committee candidate %s does not exist", candidate)
 		}
 		// if `End Epoch` is the current one or has passed, validator is no longer considered for validator selection
-		if accountData.StakeEndEpoch <= epoch {
+		if accountData.StakeEndEpoch() <= epoch {
 			return nil
 		}
 		validators = append(validators, accountData.Clone())
@@ -374,19 +374,19 @@ func (o *SybilProtection) OrderedRegisteredCandidateValidatorsList(epoch iotago.
 			return ierrors.Errorf("account of committee candidate %s does not exist", candidate)
 		}
 		// if `End Epoch` is the current one or has passed, validator is no longer considered for validator selection
-		if accountData.StakeEndEpoch <= epoch {
+		if accountData.StakeEndEpoch() <= epoch {
 			return nil
 		}
 		active := activeCandidates.Has(candidate)
 		validatorResp = append(validatorResp, &api.ValidatorResponse{
-			AddressBech32:                  accountData.ID.ToAddress().Bech32(o.apiProvider.CommittedAPI().ProtocolParameters().Bech32HRP()),
-			StakingEndEpoch:                accountData.StakeEndEpoch,
-			PoolStake:                      accountData.ValidatorStake + accountData.DelegationStake,
-			ValidatorStake:                 accountData.ValidatorStake,
-			FixedCost:                      accountData.FixedCost,
+			AddressBech32:                  accountData.ID().ToAddress().Bech32(o.apiProvider.CommittedAPI().ProtocolParameters().Bech32HRP()),
+			StakingEndEpoch:                accountData.StakeEndEpoch(),
+			PoolStake:                      accountData.ValidatorStake() + accountData.DelegationStake(),
+			ValidatorStake:                 accountData.ValidatorStake(),
+			FixedCost:                      accountData.FixedCost(),
 			Active:                         active,
-			LatestSupportedProtocolVersion: accountData.LatestSupportedProtocolVersionAndHash.Version,
-			LatestSupportedProtocolHash:    accountData.LatestSupportedProtocolVersionAndHash.Hash,
+			LatestSupportedProtocolVersion: accountData.LatestSupportedProtocolVersionAndHash().Version,
+			LatestSupportedProtocolHash:    accountData.LatestSupportedProtocolVersionAndHash().Hash,
 		})
 
 		return nil

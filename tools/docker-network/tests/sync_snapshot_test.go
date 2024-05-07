@@ -8,12 +8,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/iotaledger/iota-core/tools/docker-network/tests/dockertestframework"
 	iotago "github.com/iotaledger/iota.go/v4"
 )
 
 func Test_SyncFromSnapshot(t *testing.T) {
-	d := NewDockerTestFramework(t,
-		WithProtocolParametersOptions(
+	d := dockertestframework.NewDockerTestFramework(t,
+		dockertestframework.WithProtocolParametersOptions(
 			iotago.WithTimeProviderOptions(0, time.Now().Unix(), 4, 4),
 			iotago.WithLivenessOptions(3, 4, 2, 4, 5),
 			iotago.WithCongestionControlOptions(1, 1, 1, 400_000, 250_000, 50_000_000, 1000, 100),

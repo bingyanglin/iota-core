@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/iotaledger/iota-core/pkg/storage/database"
+	"github.com/iotaledger/iota-core/tools/docker-network/tests/dockertestframework"
 	iotago "github.com/iotaledger/iota.go/v4"
 	"github.com/iotaledger/iota.go/v4/api"
 )
@@ -29,8 +30,8 @@ func getContextWithTimeout(duration time.Duration) context.Context {
 // 5. Re-Add the peer to node 1.
 // 6. List all peers of node 1 again and check if the peer was added.
 func Test_ManagementAPI_Peers(t *testing.T) {
-	d := NewDockerTestFramework(t,
-		WithProtocolParametersOptions(
+	d := dockertestframework.NewDockerTestFramework(t,
+		dockertestframework.WithProtocolParametersOptions(
 			iotago.WithTimeProviderOptions(5, time.Now().Unix(), 10, 4),
 			iotago.WithLivenessOptions(10, 10, 2, 4, 8),
 			iotago.WithRewardsOptions(8, 10, 2, 384),
@@ -118,8 +119,8 @@ func Test_ManagementAPI_Peers(t *testing.T) {
 }
 
 func Test_ManagementAPI_Peers_BadRequests(t *testing.T) {
-	d := NewDockerTestFramework(t,
-		WithProtocolParametersOptions(
+	d := dockertestframework.NewDockerTestFramework(t,
+		dockertestframework.WithProtocolParametersOptions(
 			iotago.WithTimeProviderOptions(5, time.Now().Unix(), 10, 4),
 			iotago.WithLivenessOptions(10, 10, 2, 4, 8),
 			iotago.WithRewardsOptions(8, 10, 2, 384),
@@ -182,8 +183,8 @@ func Test_ManagementAPI_Peers_BadRequests(t *testing.T) {
 }
 
 func Test_ManagementAPI_Pruning(t *testing.T) {
-	d := NewDockerTestFramework(t,
-		WithProtocolParametersOptions(
+	d := dockertestframework.NewDockerTestFramework(t,
+		dockertestframework.WithProtocolParametersOptions(
 			iotago.WithTimeProviderOptions(0, time.Now().Unix(), 4, 4),
 			iotago.WithLivenessOptions(3, 4, 2, 4, 5),
 			iotago.WithCongestionControlOptions(1, 1, 1, 400_000, 250_000, 50_000_000, 1000, 100),
@@ -263,8 +264,8 @@ func Test_ManagementAPI_Pruning(t *testing.T) {
 }
 
 func Test_ManagementAPI_Snapshots(t *testing.T) {
-	d := NewDockerTestFramework(t,
-		WithProtocolParametersOptions(
+	d := dockertestframework.NewDockerTestFramework(t,
+		dockertestframework.WithProtocolParametersOptions(
 			iotago.WithTimeProviderOptions(0, time.Now().Unix(), 3, 4),
 			iotago.WithLivenessOptions(3, 4, 2, 4, 8),
 			iotago.WithCongestionControlOptions(1, 1, 1, 400_000, 250_000, 50_000_000, 1000, 100),

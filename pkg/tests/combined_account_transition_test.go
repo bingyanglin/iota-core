@@ -112,13 +112,13 @@ func createFullAccount(ts *testsuite.TestSuite) iotago.AccountID {
 		DelegationStakeChange:  0,
 	}, false, ts.Nodes()...)
 
-	ts.AssertAccountData(&accounts.AccountData{
-		ID:              newAccountOutput.AccountID,
-		Credits:         accounts.NewBlockIssuanceCredits(0, block1Slot),
-		ExpirySlot:      newAccountExpirySlot,
-		OutputID:        newAccount.ID,
-		BlockIssuerKeys: iotago.NewBlockIssuerKeys(newAccountBlockIssuerKey),
-	}, ts.Nodes()...)
+	ts.AssertAccountData(
+		accounts.NewAccountData(newAccountOutput.AccountID,
+			accounts.WithCredits(accounts.NewBlockIssuanceCredits(0, block1Slot)),
+			accounts.WithExpirySlot(newAccountExpirySlot),
+			accounts.WithOutputID(newAccount.ID),
+			accounts.WithBlockIssuerKeys(newAccountBlockIssuerKey),
+		), ts.Nodes()...)
 
 	return newAccountOutput.AccountID
 }
@@ -144,13 +144,12 @@ func createImplicitToFullAccount(ts *testsuite.TestSuite) iotago.AccountID {
 	var implicitBlockIssuerKey iotago.BlockIssuerKey = iotago.Ed25519PublicKeyHashBlockIssuerKeyFromImplicitAccountCreationAddress(newUserWallet.ImplicitAccountCreationAddress())
 
 	// the new implicit account should now be registered in the accounts ledger.
-	ts.AssertAccountData(&accounts.AccountData{
-		ID:              implicitAccountID,
-		Credits:         accounts.NewBlockIssuanceCredits(0, block2Slot),
-		ExpirySlot:      iotago.MaxSlotIndex,
-		OutputID:        implicitAccountOutputID,
-		BlockIssuerKeys: iotago.NewBlockIssuerKeys(implicitBlockIssuerKey),
-	}, ts.Nodes()...)
+	ts.AssertAccountData(accounts.NewAccountData(implicitAccountID,
+		accounts.WithCredits(accounts.NewBlockIssuanceCredits(0, block2Slot)),
+		accounts.WithExpirySlot(iotago.MaxSlotIndex),
+		accounts.WithOutputID(implicitAccountOutputID),
+		accounts.WithBlockIssuerKeys(implicitBlockIssuerKey),
+	), ts.Nodes()...)
 
 	// TRANSITION IMPLICIT ACCOUNT TO ACCOUNT OUTPUT.
 	block3Slot := ts.CurrentSlot()
@@ -185,13 +184,12 @@ func createImplicitToFullAccount(ts *testsuite.TestSuite) iotago.AccountID {
 		DelegationStakeChange: 0,
 	}, false, ts.Nodes()...)
 
-	ts.AssertAccountData(&accounts.AccountData{
-		ID:              implicitAccountID,
-		Credits:         accounts.NewBlockIssuanceCredits(allotted-burned, block3Slot),
-		ExpirySlot:      iotago.MaxSlotIndex,
-		OutputID:        fullAccountOutputID,
-		BlockIssuerKeys: iotago.NewBlockIssuerKeys(implicitBlockIssuerKey),
-	}, ts.Nodes()...)
+	ts.AssertAccountData(accounts.NewAccountData(implicitAccountID,
+		accounts.WithCredits(accounts.NewBlockIssuanceCredits(allotted-burned, block3Slot)),
+		accounts.WithExpirySlot(iotago.MaxSlotIndex),
+		accounts.WithOutputID(fullAccountOutputID),
+		accounts.WithBlockIssuerKeys(implicitBlockIssuerKey),
+	), ts.Nodes()...)
 
 	return implicitAccountID
 }

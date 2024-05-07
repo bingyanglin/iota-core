@@ -251,27 +251,30 @@ func (s *SeatManager) ReuseCommittee(currentEpoch iotago.EpochIndex, targetEpoch
 func (s *SeatManager) selectNewCommitteeAccounts(epoch iotago.EpochIndex, candidates accounts.AccountsData) (*account.Accounts, error) {
 	sort.Slice(candidates, func(i int, j int) bool {
 		// Prioritize the candidate that has a larger pool stake.
-		if candidates[i].ValidatorStake+candidates[i].DelegationStake != candidates[j].ValidatorStake+candidates[j].DelegationStake {
-			return candidates[i].ValidatorStake+candidates[i].DelegationStake > candidates[j].ValidatorStake+candidates[j].DelegationStake
+		if candidates[i].ValidatorStake()+candidates[i].DelegationStake() != candidates[j].ValidatorStake()+candidates[j].DelegationStake() {
+			return candidates[i].ValidatorStake()+candidates[i].DelegationStake() > candidates[j].ValidatorStake()+candidates[j].DelegationStake()
 		}
 
 		// Prioritize the candidate that has a larger validator stake.
-		if candidates[i].ValidatorStake != candidates[j].ValidatorStake {
-			return candidates[i].ValidatorStake > candidates[j].ValidatorStake
+		if candidates[i].ValidatorStake() != candidates[j].ValidatorStake() {
+			return candidates[i].ValidatorStake() > candidates[j].ValidatorStake()
 		}
 
 		// Prioritize the candidate that declares a longer staking period.
-		if candidates[i].StakeEndEpoch != candidates[j].StakeEndEpoch {
-			return candidates[i].StakeEndEpoch > candidates[j].StakeEndEpoch
+		if candidates[i].StakeEndEpoch() != candidates[j].StakeEndEpoch() {
+			return candidates[i].StakeEndEpoch() > candidates[j].StakeEndEpoch()
 		}
 
 		// Prioritize the candidate that has smaller FixedCost.
-		if candidates[i].FixedCost != candidates[j].FixedCost {
-			return candidates[i].FixedCost < candidates[j].FixedCost
+		if candidates[i].FixedCost() != candidates[j].FixedCost() {
+			return candidates[i].FixedCost() < candidates[j].FixedCost()
 		}
 
 		// two candidates never have the same account ID because they come in a map
-		return bytes.Compare(candidates[i].ID[:], candidates[j].ID[:]) > 0
+		candidatesI := candidates[i].ID()
+		candidatesJ := candidates[j].ID()
+
+		return bytes.Compare(candidatesI[:], candidatesJ[:]) > 0
 	})
 
 	// We try to select up to targetCommitteeSize candidates to be part of the committee. If there are fewer candidates
@@ -282,12 +285,12 @@ func (s *SeatManager) selectNewCommitteeAccounts(epoch iotago.EpochIndex, candid
 	newCommitteeAccounts := account.NewAccounts()
 
 	for _, candidateData := range candidates[:committeeSize] {
-		if err := newCommitteeAccounts.Set(candidateData.ID, &account.Pool{
-			PoolStake:      candidateData.ValidatorStake + candidateData.DelegationStake,
-			ValidatorStake: candidateData.ValidatorStake,
-			FixedCost:      candidateData.FixedCost,
+		if err := newCommitteeAccounts.Set(candidateData.ID(), &account.Pool{
+			PoolStake:      candidateData.ValidatorStake() + candidateData.DelegationStake(),
+			ValidatorStake: candidateData.ValidatorStake(),
+			FixedCost:      candidateData.FixedCost(),
 		}); err != nil {
-			return nil, ierrors.Wrapf(err, "error while setting pool for committee candidate %s", candidateData.ID.String())
+			return nil, ierrors.Wrapf(err, "error while setting pool for committee candidate %s", candidateData.ID().String())
 		}
 	}
 

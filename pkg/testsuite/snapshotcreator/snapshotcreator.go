@@ -81,20 +81,19 @@ func CreateSnapshot(opts ...options.Option[Options]) error {
 				panic("block issuer key must be of type ed25519")
 			}
 			accountID := blockIssuerKeyEd25519.PublicKeyHash
-			committeeAccountsData = append(committeeAccountsData, &accounts.AccountData{
-				ID:         accountID,
-				Credits:    &accounts.BlockIssuanceCredits{Value: snapshotAccountDetails.BlockIssuanceCredits, UpdateSlot: 0},
-				ExpirySlot: snapshotAccountDetails.ExpirySlot,
+			committeeAccountsData = append(committeeAccountsData, accounts.NewAccountData(accountID,
+				accounts.WithCredits(accounts.NewBlockIssuanceCredits(snapshotAccountDetails.BlockIssuanceCredits, 0)),
+				accounts.WithExpirySlot(snapshotAccountDetails.ExpirySlot),
 				// OutputID is not used when selecting an initial committee,
 				// so it's safe to use an empty one that is different from the actual outputID in the UTXO Ledger.
-				OutputID:                              iotago.OutputID{},
-				BlockIssuerKeys:                       iotago.BlockIssuerKeys{snapshotAccountDetails.IssuerKey},
-				ValidatorStake:                        snapshotAccountDetails.StakedAmount,
-				DelegationStake:                       0,
-				FixedCost:                             snapshotAccountDetails.FixedCost,
-				StakeEndEpoch:                         snapshotAccountDetails.StakingEndEpoch,
-				LatestSupportedProtocolVersionAndHash: model.VersionAndHash{},
-			})
+				accounts.WithOutputID(iotago.OutputID{}),
+				accounts.WithBlockIssuerKeys(snapshotAccountDetails.IssuerKey),
+				accounts.WithValidatorStake(snapshotAccountDetails.StakedAmount),
+				accounts.WithDelegationStake(0),
+				accounts.WithFixedCost(snapshotAccountDetails.FixedCost),
+				accounts.WithStakeEndEpoch(snapshotAccountDetails.StakingEndEpoch),
+				accounts.WithLatestSupportedProtocolVersionAndHash(model.VersionAndHash{}),
+			))
 		}
 	}
 

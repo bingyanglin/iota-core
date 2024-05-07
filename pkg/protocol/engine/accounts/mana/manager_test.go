@@ -67,36 +67,29 @@ func TestManager_GetManaOnAccountOverflow(t *testing.T) {
 	accountRetriever := func(id iotago.AccountID, index iotago.SlotIndex) (*accounts.AccountData, bool, error) {
 		switch id {
 		case accountIDRecentBIC:
-			return &accounts.AccountData{
-				ID: id,
-				Credits: &accounts.BlockIssuanceCredits{
-					Value:      iotago.MaxBlockIssuanceCredits/2 + iotago.MaxBlockIssuanceCredits/4,
-					UpdateSlot: 1,
-				},
-				ExpirySlot:                            iotago.MaxSlotIndex,
-				OutputID:                              iotago.OutputID{},
-				BlockIssuerKeys:                       nil,
-				ValidatorStake:                        0,
-				DelegationStake:                       0,
-				FixedCost:                             0,
-				StakeEndEpoch:                         0,
-				LatestSupportedProtocolVersionAndHash: model.VersionAndHash{},
-			}, true, nil
+			return accounts.NewAccountData(id,
+				accounts.WithCredits(accounts.NewBlockIssuanceCredits(iotago.MaxBlockIssuanceCredits/2+iotago.MaxBlockIssuanceCredits/4, 1)),
+				accounts.WithExpirySlot(iotago.MaxSlotIndex),
+				accounts.WithOutputID(iotago.OutputID{}),
+				accounts.WithBlockIssuerKeys(nil),
+				accounts.WithValidatorStake(0),
+				accounts.WithDelegationStake(0),
+				accounts.WithFixedCost(0),
+				accounts.WithStakeEndEpoch(0),
+				accounts.WithLatestSupportedProtocolVersionAndHash(model.VersionAndHash{}),
+			), true, nil
 		default:
-			return &accounts.AccountData{
-				ID: id,
-				Credits: &accounts.BlockIssuanceCredits{
-					Value: iotago.MaxBlockIssuanceCredits/2 + iotago.MaxBlockIssuanceCredits/4,
-				},
-				ExpirySlot:                            iotago.MaxSlotIndex,
-				OutputID:                              iotago.OutputID{},
-				BlockIssuerKeys:                       nil,
-				ValidatorStake:                        0,
-				DelegationStake:                       0,
-				FixedCost:                             0,
-				StakeEndEpoch:                         0,
-				LatestSupportedProtocolVersionAndHash: model.VersionAndHash{},
-			}, true, nil
+			return accounts.NewAccountData(id,
+				accounts.WithCredits(accounts.NewBlockIssuanceCredits(iotago.MaxBlockIssuanceCredits/2+iotago.MaxBlockIssuanceCredits/4, 0)),
+				accounts.WithExpirySlot(iotago.MaxSlotIndex),
+				accounts.WithOutputID(iotago.OutputID{}),
+				accounts.WithBlockIssuerKeys(nil),
+				accounts.WithValidatorStake(0),
+				accounts.WithDelegationStake(0),
+				accounts.WithFixedCost(0),
+				accounts.WithStakeEndEpoch(0),
+				accounts.WithLatestSupportedProtocolVersionAndHash(model.VersionAndHash{}),
+			), true, nil
 		}
 	}
 

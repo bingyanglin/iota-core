@@ -42,11 +42,11 @@ func (r *RequestHandler) CongestionByAccountAddress(accountAddress *iotago.Accou
 		return nil, ierrors.WithMessagef(echo.ErrNotFound, "account %s not found", accountID.ToHex())
 	}
 
-	blockIssuanceCredits := acc.Credits.Value
+	blockIssuanceCredits := acc.Credits().Value()
 	// Apply decay to BIC if the value is positive
 	if blockIssuanceCredits > 0 {
 		manaDecayProvider := r.APIProvider().APIForSlot(targetSlot).ManaDecayProvider()
-		decayedBIC, err := manaDecayProvider.DecayManaBySlots(iotago.Mana(acc.Credits.Value), acc.Credits.UpdateSlot, targetSlot)
+		decayedBIC, err := manaDecayProvider.DecayManaBySlots(iotago.Mana(acc.Credits().Value()), acc.Credits().UpdateSlot(), targetSlot)
 		if err != nil {
 			return nil, ierrors.WithMessagef(echo.ErrInternalServerError, "failed to decay BIC for account %s: %w", accountID.ToHex(), err)
 		}
@@ -121,13 +121,13 @@ func (r *RequestHandler) ValidatorByAccountAddress(accountAddress *iotago.Accoun
 
 	return &api.ValidatorResponse{
 		AddressBech32:                  accountID.ToAddress().Bech32(r.protocol.CommittedAPI().ProtocolParameters().Bech32HRP()),
-		PoolStake:                      accountData.ValidatorStake + accountData.DelegationStake,
-		ValidatorStake:                 accountData.ValidatorStake,
-		StakingEndEpoch:                accountData.StakeEndEpoch,
-		FixedCost:                      accountData.FixedCost,
+		PoolStake:                      accountData.ValidatorStake() + accountData.DelegationStake(),
+		ValidatorStake:                 accountData.ValidatorStake(),
+		StakingEndEpoch:                accountData.StakeEndEpoch(),
+		FixedCost:                      accountData.FixedCost(),
 		Active:                         active,
-		LatestSupportedProtocolVersion: accountData.LatestSupportedProtocolVersionAndHash.Version,
-		LatestSupportedProtocolHash:    accountData.LatestSupportedProtocolVersionAndHash.Hash,
+		LatestSupportedProtocolVersion: accountData.LatestSupportedProtocolVersionAndHash().Version,
+		LatestSupportedProtocolHash:    accountData.LatestSupportedProtocolVersionAndHash().Hash,
 	}, nil
 }
 
@@ -170,8 +170,8 @@ func (r *RequestHandler) RewardsByOutputID(outputID iotago.OutputID, optSlot ...
 		//nolint:forcetypeassert
 		stakingFeature := feature.(*iotago.StakingFeature)
 
-		futureBoundedSlotIndex := slot + apiForSlot.ProtocolParameters().MinCommittableAge()
-		claimingEpoch := apiForSlot.TimeProvider().EpochFromSlot(futureBoundedSlotIndex)
+		futureBoundedSlot := slot + apiForSlot.ProtocolParameters().MinCommittableAge()
+		claimingEpoch := apiForSlot.TimeProvider().EpochFromSlot(futureBoundedSlot)
 
 		stakingPoolValidatorAccountID = accountOutput.AccountID
 		// check if the account is a validator
@@ -185,8 +185,8 @@ func (r *RequestHandler) RewardsByOutputID(outputID iotago.OutputID, optSlot ...
 		//nolint:forcetypeassert
 		delegationOutput := utxoOutput.Output().(*iotago.DelegationOutput)
 		delegationEnd := delegationOutput.EndEpoch
-		futureBoundedSlotIndex := slot + apiForSlot.ProtocolParameters().MinCommittableAge()
-		claimingEpoch := apiForSlot.TimeProvider().EpochFromSlot(futureBoundedSlotIndex)
+		futureBoundedSlot := slot + apiForSlot.ProtocolParameters().MinCommittableAge()
+		claimingEpoch := apiForSlot.TimeProvider().EpochFromSlot(futureBoundedSlot)
 
 		// If Delegation ID is zeroed, the output is in delegating state, which means its End Epoch is not set and we must use the
 		// "last epoch" for the rewards calculation.

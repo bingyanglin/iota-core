@@ -12,17 +12,15 @@ import (
 )
 
 const (
-	slotNamespace             = "slots"
-	slotLabelName             = "slot"
-	metricEvictionOffset      = 6
-	totalBlocks               = "total_blocks"
-	acceptedBlocksInSlot      = "accepted_blocks"
-	invalidBlocks             = "invalid_blocks"
-	subjectivelyInvalidBlocks = "subjectively_invalid_blocks"
-	acceptedAttachments       = "accepted_attachments"
-	createdConflicts          = "created_conflicts"
-	acceptedConflicts         = "accepted_conflicts"
-	rejectedConflicts         = "rejected_conflicts"
+	slotNamespace        = "slots"
+	slotLabelName        = "slot"
+	totalBlocks          = "total_blocks"
+	acceptedBlocksInSlot = "accepted_blocks"
+	invalidBlocks        = "invalid_blocks"
+	acceptedAttachments  = "accepted_attachments"
+	createdConflicts     = "created_conflicts"
+	acceptedConflicts    = "accepted_conflicts"
+	rejectedConflicts    = "rejected_conflicts"
 )
 
 var SlotMetrics = collector.NewCollection(slotNamespace,

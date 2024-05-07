@@ -1,6 +1,6 @@
 //go:build dockertests
 
-package tests
+package dockertestframework
 
 import (
 	"context"
@@ -19,6 +19,18 @@ import (
 	"github.com/iotaledger/iota.go/v4/nodeclient"
 	"github.com/iotaledger/iota.go/v4/tpkg"
 )
+
+func WithEventAPIWaitFor(waitFor time.Duration) options.Option[EventAPIDockerTestFramework] {
+	return func(d *EventAPIDockerTestFramework) {
+		d.optsWaitFor = waitFor
+	}
+}
+
+func WithEventAPITick(tick time.Duration) options.Option[EventAPIDockerTestFramework] {
+	return func(d *EventAPIDockerTestFramework) {
+		d.optsTick = tick
+	}
+}
 
 type EventAPIDockerTestFramework struct {
 	Testing *testing.T
@@ -41,6 +53,10 @@ func NewEventAPIDockerTestFramework(t *testing.T, dockerFramework *DockerTestFra
 		optsWaitFor:     3 * time.Minute,
 		optsTick:        5 * time.Second,
 	}
+}
+
+func (e EventAPIDockerTestFramework) DockerTestFramework() *DockerTestFramework {
+	return e.dockerFramework
 }
 
 func (e *EventAPIDockerTestFramework) ConnectEventAPIClient(ctx context.Context) *nodeclient.EventAPIClient {
@@ -612,17 +628,5 @@ func (e *EventAPIDockerTestFramework) AwaitEventAPITopics(t *testing.T, cancleFu
 				return nil
 			}
 		}
-	}
-}
-
-func WithEventAPIWaitFor(waitFor time.Duration) options.Option[EventAPIDockerTestFramework] {
-	return func(d *EventAPIDockerTestFramework) {
-		d.optsWaitFor = waitFor
-	}
-}
-
-func WithEventAPITick(tick time.Duration) options.Option[EventAPIDockerTestFramework] {
-	return func(d *EventAPIDockerTestFramework) {
-		d.optsTick = tick
 	}
 }

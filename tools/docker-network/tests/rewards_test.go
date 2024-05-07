@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/iotaledger/iota-core/pkg/testsuite/mock"
+	"github.com/iotaledger/iota-core/tools/docker-network/tests/dockertestframework"
 	iotago "github.com/iotaledger/iota.go/v4"
 )
 
@@ -21,11 +22,11 @@ import (
 // 3. One of the account issues 3 validation blocks per slot, the other account issues 1 validation block per slot until claiming slot is reached.
 // 4. Claim rewards and check if the mana increased as expected, the account that issued less validation blocks should have less mana.
 func Test_ValidatorRewards(t *testing.T) {
-	d := NewDockerTestFramework(t,
-		WithProtocolParametersOptions(
+	d := dockertestframework.NewDockerTestFramework(t,
+		dockertestframework.WithProtocolParametersOptions(
 			iotago.WithTimeProviderOptions(5, time.Now().Unix(), 10, 4),
 			iotago.WithLivenessOptions(10, 10, 2, 4, 8),
-			iotago.WithStakingOptions(3, 10, 10),
+			iotago.WithStakingOptions(2, 10, 10),
 		))
 	defer d.Stop()
 
@@ -40,48 +41,85 @@ func Test_ValidatorRewards(t *testing.T) {
 
 	d.WaitUntilNetworkReady()
 
-	ctx := context.Background()
-	clt := d.defaultWallet.Client
-	status := d.NodeStatus("V1")
-	currentEpoch := clt.CommittedAPI().TimeProvider().EpochFromSlot(status.LatestAcceptedBlockSlot)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// cancel the context when the test is done
+	t.Cleanup(cancel)
+
+	clt := d.DefaultWallet().Client
 	slotsDuration := clt.CommittedAPI().ProtocolParameters().SlotDurationInSeconds()
 
-	// Set end epoch so the staking feature can be removed as soon as possible.
-	endEpoch := currentEpoch + clt.CommittedAPI().ProtocolParameters().StakingUnbondingPeriod() + 1
-	// The earliest epoch in which we can remove the staking feature and claim rewards.
-	claimingSlot := clt.CommittedAPI().TimeProvider().EpochStart(endEpoch + 1)
+	// create good account
+	goodWallet, goodAccountOutputData := d.CreateImplicitAccount(ctx)
 
-	// create accounts and continue issuing candidacy payload for account in the background
-	goodWallet, goodAccountData := d.CreateAccount(WithStakingFeature(100, 1, currentEpoch, endEpoch))
+	blockIssuance, err := clt.BlockIssuance(ctx)
+	require.NoError(t, err)
+
+	latestCommitmentSlot := blockIssuance.LatestCommitment.Slot
+	stakingStartEpoch := d.DefaultWallet().StakingStartEpochFromSlot(latestCommitmentSlot)
+	// Set end epoch so the staking feature can be removed as soon as possible.
+	endEpoch := stakingStartEpoch + clt.CommittedAPI().ProtocolParameters().StakingUnbondingPeriod()
+	// The earliest epoch in which we can remove the staking feature and claim rewards.
+	goodClaimingSlot := clt.CommittedAPI().TimeProvider().EpochStart(endEpoch + 1)
+
+	goodAccountData := d.CreateAccountFromImplicitAccount(goodWallet,
+		goodAccountOutputData,
+		blockIssuance,
+		dockertestframework.WithStakingFeature(100, 1, stakingStartEpoch, endEpoch),
+	)
+
 	initialMana := goodAccountData.Output.StoredMana()
-	issueCandidacyPayloadInBackground(d, goodWallet, clt.CommittedAPI().TimeProvider().CurrentSlot(), claimingSlot,
+	issueCandidacyPayloadInBackground(ctx,
+		d,
+		goodWallet,
+		clt.CommittedAPI().TimeProvider().CurrentSlot(),
+		goodClaimingSlot,
 		slotsDuration)
 
-	lazyWallet, lazyAccountData := d.CreateAccount(WithStakingFeature(100, 1, currentEpoch, endEpoch))
+	// create lazy account
+	lazyWallet, lazyAccountOutputData := d.CreateImplicitAccount(ctx)
+
+	blockIssuance, err = clt.BlockIssuance(ctx)
+	require.NoError(t, err)
+
+	latestCommitmentSlot = blockIssuance.LatestCommitment.Slot
+	stakingStartEpoch = d.DefaultWallet().StakingStartEpochFromSlot(latestCommitmentSlot)
+	endEpoch = stakingStartEpoch + clt.CommittedAPI().ProtocolParameters().StakingUnbondingPeriod()
+	lazyClaimingSlot := clt.CommittedAPI().TimeProvider().EpochStart(endEpoch + 1)
+
+	lazyAccountData := d.CreateAccountFromImplicitAccount(lazyWallet,
+		lazyAccountOutputData,
+		blockIssuance,
+		dockertestframework.WithStakingFeature(100, 1, stakingStartEpoch, endEpoch),
+	)
+
 	lazyInitialMana := lazyAccountData.Output.StoredMana()
-	issueCandidacyPayloadInBackground(d, lazyWallet, clt.CommittedAPI().TimeProvider().CurrentSlot(), claimingSlot,
+	issueCandidacyPayloadInBackground(ctx,
+		d,
+		lazyWallet,
+		clt.CommittedAPI().TimeProvider().CurrentSlot(),
+		lazyClaimingSlot,
 		slotsDuration)
 
 	// make sure the account is in the committee, so it can issue validation blocks
 	goodAccountAddrBech32 := goodAccountData.Address.Bech32(clt.CommittedAPI().ProtocolParameters().Bech32HRP())
 	lazyAccountAddrBech32 := lazyAccountData.Address.Bech32(clt.CommittedAPI().ProtocolParameters().Bech32HRP())
-	d.AssertCommittee(currentEpoch+2, append(d.AccountsFromNodes(d.Nodes("V1", "V3", "V2", "V4")...), goodAccountAddrBech32, lazyAccountAddrBech32))
+	d.AssertCommittee(stakingStartEpoch+1, append(d.AccountsFromNodes(d.Nodes("V1", "V3", "V2", "V4")...), goodAccountAddrBech32, lazyAccountAddrBech32))
 
 	// issue validation blocks to have performance
-	if currentSlot := clt.CommittedAPI().TimeProvider().CurrentSlot(); currentSlot < claimingSlot {
-		slotToWait := claimingSlot - currentSlot
-		secToWait := time.Duration(slotToWait) * time.Duration(slotsDuration) * time.Second
-		fmt.Println("Wait for ", secToWait, "until expected slot: ", claimingSlot)
+	currentSlot := clt.CommittedAPI().TimeProvider().CurrentSlot()
+	slotToWait := lazyClaimingSlot - currentSlot
+	secToWait := time.Duration(slotToWait) * time.Duration(slotsDuration) * time.Second
+	fmt.Println("Issue validation blocks, wait for ", secToWait, "until expected slot: ", lazyClaimingSlot)
 
-		var wg sync.WaitGroup
-		issueValidationBlockInBackground(&wg, goodWallet, currentSlot, claimingSlot, 5)
-		issueValidationBlockInBackground(&wg, lazyWallet, currentSlot, claimingSlot, 1)
+	var wg sync.WaitGroup
+	issueValidationBlockInBackground(ctx, &wg, goodWallet, currentSlot, goodClaimingSlot, 5)
+	issueValidationBlockInBackground(ctx, &wg, lazyWallet, currentSlot, lazyClaimingSlot, 1)
 
-		wg.Wait()
-	}
+	wg.Wait()
 
 	// claim rewards that put to the account output
-	d.AwaitCommitment(claimingSlot)
+	d.AwaitCommitment(lazyClaimingSlot)
 	d.ClaimRewardsForValidator(ctx, goodWallet)
 	d.ClaimRewardsForValidator(ctx, lazyWallet)
 
@@ -101,8 +139,8 @@ func Test_ValidatorRewards(t *testing.T) {
 // 2. Wait long enough so there's rewards can be claimed.
 // 3. Claim rewards and check if the mana increased as expected.
 func Test_DelegatorRewards(t *testing.T) {
-	d := NewDockerTestFramework(t,
-		WithProtocolParametersOptions(
+	d := dockertestframework.NewDockerTestFramework(t,
+		dockertestframework.WithProtocolParametersOptions(
 			iotago.WithTimeProviderOptions(5, time.Now().Unix(), 10, 3),
 			iotago.WithLivenessOptions(10, 10, 2, 4, 5),
 			iotago.WithStakingOptions(3, 10, 10),
@@ -121,7 +159,7 @@ func Test_DelegatorRewards(t *testing.T) {
 	d.WaitUntilNetworkReady()
 
 	ctx := context.Background()
-	delegatorWallet, _ := d.CreateAccount()
+	delegatorWallet, _ := d.CreateAccountFromFaucet()
 	clt := delegatorWallet.Client
 
 	// delegate funds to V2
@@ -159,8 +197,8 @@ func Test_DelegatorRewards(t *testing.T) {
 // 2. Delay claiming rewards for the delegation and check if the delegated stake is removed from the validator.
 // 3. Claim rewards and check to destroy the delegation output.
 func Test_DelayedClaimingRewards(t *testing.T) {
-	d := NewDockerTestFramework(t,
-		WithProtocolParametersOptions(
+	d := dockertestframework.NewDockerTestFramework(t,
+		dockertestframework.WithProtocolParametersOptions(
 			iotago.WithTimeProviderOptions(5, time.Now().Unix(), 10, 4),
 			iotago.WithLivenessOptions(10, 10, 2, 4, 8),
 			iotago.WithStakingOptions(3, 10, 10),
@@ -179,7 +217,7 @@ func Test_DelayedClaimingRewards(t *testing.T) {
 	d.WaitUntilNetworkReady()
 
 	ctx := context.Background()
-	delegatorWallet, _ := d.CreateAccount()
+	delegatorWallet, _ := d.CreateAccountFromFaucet()
 	clt := delegatorWallet.Client
 
 	{
@@ -196,7 +234,7 @@ func Test_DelayedClaimingRewards(t *testing.T) {
 		currentSlot := delegatorWallet.CurrentSlot()
 		apiForSlot := clt.APIForSlot(currentSlot)
 		latestCommitmentSlot := delegatorWallet.GetNewBlockIssuanceResponse().LatestCommitment.Slot
-		delegationEndEpoch := getDelegationEndEpoch(apiForSlot, currentSlot, latestCommitmentSlot)
+		delegationEndEpoch := dockertestframework.GetDelegationEndEpoch(apiForSlot, currentSlot, latestCommitmentSlot)
 		delegationOutputData = d.DelayedClaimingTransition(ctx, delegatorWallet, delegationOutputData)
 		d.AwaitCommitment(delegationOutputData.ID.CreationSlot())
 
@@ -235,19 +273,24 @@ func Test_DelayedClaimingRewards(t *testing.T) {
 	}
 }
 
-func issueCandidacyPayloadInBackground(d *DockerTestFramework, wallet *mock.Wallet, startSlot, endSlot iotago.SlotIndex, slotDuration uint8) {
+func issueCandidacyPayloadInBackground(ctx context.Context, d *dockertestframework.DockerTestFramework, wallet *mock.Wallet, startSlot, endSlot iotago.SlotIndex, slotDuration uint8) {
 	go func() {
 		fmt.Println("Issuing candidacy payloads for account", wallet.BlockIssuer.AccountData.ID, "in the background...")
 		defer fmt.Println("Issuing candidacy payloads for account", wallet.BlockIssuer.AccountData.ID, "in the background......done")
 
 		for i := startSlot; i < endSlot; i++ {
+			if ctx.Err() != nil {
+				// context is canceled
+				return
+			}
+
 			d.IssueCandidacyPayloadFromAccount(wallet)
 			time.Sleep(time.Duration(slotDuration) * time.Second)
 		}
 	}()
 }
 
-func issueValidationBlockInBackground(wg *sync.WaitGroup, wallet *mock.Wallet, startSlot, endSlot iotago.SlotIndex, blocksPerSlot int) {
+func issueValidationBlockInBackground(ctx context.Context, wg *sync.WaitGroup, wallet *mock.Wallet, startSlot, endSlot iotago.SlotIndex, blocksPerSlot int) {
 	wg.Add(1)
 
 	go func() {
@@ -258,6 +301,11 @@ func issueValidationBlockInBackground(wg *sync.WaitGroup, wallet *mock.Wallet, s
 		for i := startSlot; i < endSlot; i++ {
 			// wait until the slot is reached
 			for {
+				if ctx.Err() != nil {
+					// context is canceled
+					return
+				}
+
 				if wallet.CurrentSlot() == i {
 					break
 				}
@@ -265,6 +313,11 @@ func issueValidationBlockInBackground(wg *sync.WaitGroup, wallet *mock.Wallet, s
 			}
 
 			for range blocksPerSlot {
+				if ctx.Err() != nil {
+					// context is canceled
+					return
+				}
+
 				wallet.CreateAndSubmitValidationBlock(context.Background(), "", nil)
 				time.Sleep(1 * time.Second)
 			}

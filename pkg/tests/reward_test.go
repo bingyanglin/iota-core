@@ -41,24 +41,22 @@ func setupRewardTestsuite(t *testing.T) (*testsuite.TestSuite, *mock.Node, *mock
 	// Assert validator and block issuer accounts in genesis snapshot.
 	// Validator node account.
 	validatorAccountOutput := ts.AccountOutput("Genesis:1")
-	ts.AssertAccountData(&accounts.AccountData{
-		ID:              node1.Validator.AccountData.ID,
-		Credits:         accounts.NewBlockIssuanceCredits(iotago.MaxBlockIssuanceCredits/2, 0),
-		OutputID:        validatorAccountOutput.ID,
-		ExpirySlot:      iotago.MaxSlotIndex,
-		BlockIssuerKeys: node1.Validator.BlockIssuerKeys(),
-		StakeEndEpoch:   iotago.MaxEpochIndex,
-		ValidatorStake:  mock.MinValidatorAccountAmount(ts.API.ProtocolParameters()),
-	}, ts.Nodes()...)
+	ts.AssertAccountData(accounts.NewAccountData(node1.Validator.AccountData.ID,
+		accounts.WithCredits(accounts.NewBlockIssuanceCredits(iotago.MaxBlockIssuanceCredits/2, 0)),
+		accounts.WithOutputID(validatorAccountOutput.ID),
+		accounts.WithExpirySlot(iotago.MaxSlotIndex),
+		accounts.WithBlockIssuerKeys(node1.Validator.BlockIssuerKeys()...),
+		accounts.WithStakeEndEpoch(iotago.MaxEpochIndex),
+		accounts.WithValidatorStake(mock.MinValidatorAccountAmount(ts.API.ProtocolParameters())),
+	), ts.Nodes()...)
 	// Default wallet block issuer account.
 	blockIssuerAccountOutput := ts.AccountOutput("Genesis:2")
-	ts.AssertAccountData(&accounts.AccountData{
-		ID:              wallet.BlockIssuer.AccountData.ID,
-		Credits:         accounts.NewBlockIssuanceCredits(iotago.MaxBlockIssuanceCredits/2, 0),
-		OutputID:        blockIssuerAccountOutput.ID,
-		ExpirySlot:      iotago.MaxSlotIndex,
-		BlockIssuerKeys: wallet.BlockIssuer.BlockIssuerKeys(),
-	}, ts.Nodes()...)
+	ts.AssertAccountData(accounts.NewAccountData(wallet.BlockIssuer.AccountData.ID,
+		accounts.WithCredits(accounts.NewBlockIssuanceCredits(iotago.MaxBlockIssuanceCredits/2, 0)),
+		accounts.WithOutputID(blockIssuerAccountOutput.ID),
+		accounts.WithExpirySlot(iotago.MaxSlotIndex),
+		accounts.WithBlockIssuerKeys(wallet.BlockIssuer.BlockIssuerKeys()...),
+	), ts.Nodes()...)
 
 	return ts, node1, node2
 }
@@ -115,13 +113,13 @@ func Test_Delegation_DelayedClaimingDestroyOutputWithoutRewards(t *testing.T) {
 	latestCommitment := blockIssuanceInfo.LatestCommitment
 	apiForSlot := ts.DefaultWallet().Client.APIForSlot(block1_2Slot)
 
-	futureBoundedSlotIndex := latestCommitment.Slot + apiForSlot.ProtocolParameters().MinCommittableAge()
-	futureBoundedEpochIndex := apiForSlot.TimeProvider().EpochFromSlot(futureBoundedSlotIndex)
+	futureBoundedSlot := latestCommitment.Slot + apiForSlot.ProtocolParameters().MinCommittableAge()
+	futureBoundedEpoch := apiForSlot.TimeProvider().EpochFromSlot(futureBoundedSlot)
 
 	registrationSlot := apiForSlot.TimeProvider().EpochEnd(apiForSlot.TimeProvider().EpochFromSlot(block1_2Slot))
-	delegationEndEpoch := futureBoundedEpochIndex
-	if futureBoundedSlotIndex > registrationSlot {
-		delegationEndEpoch = futureBoundedEpochIndex + 1
+	delegationEndEpoch := futureBoundedEpoch
+	if futureBoundedSlot > registrationSlot {
+		delegationEndEpoch = futureBoundedEpoch + 1
 	}
 
 	tx2 := ts.DefaultWallet().DelayedClaimingTransition("TX2", ts.DefaultWallet().OutputData("TX1:0"), delegationEndEpoch)
@@ -193,15 +191,14 @@ func Test_Account_RemoveStakingFeatureWithoutRewards(t *testing.T) {
 	accountOutput := ts.DefaultWallet().OutputData("TX2:0")
 	accountID := accountOutput.Output.(*iotago.AccountOutput).AccountID
 
-	ts.AssertAccountData(&accounts.AccountData{
-		ID:              accountID,
-		Credits:         &accounts.BlockIssuanceCredits{Value: 0, UpdateSlot: block1Slot},
-		OutputID:        accountOutput.ID,
-		ExpirySlot:      blockIssuerFeatExpirySlot,
-		BlockIssuerKeys: iotago.BlockIssuerKeys{blockIssuerFeatKey},
-		StakeEndEpoch:   0,
-		ValidatorStake:  0,
-	}, ts.Nodes()...)
+	ts.AssertAccountData(accounts.NewAccountData(accountID,
+		accounts.WithCredits(accounts.NewBlockIssuanceCredits(0, block1Slot)),
+		accounts.WithOutputID(accountOutput.ID),
+		accounts.WithExpirySlot(blockIssuerFeatExpirySlot),
+		accounts.WithBlockIssuerKeys(blockIssuerFeatKey),
+		accounts.WithStakeEndEpoch(0),
+		accounts.WithValidatorStake(0),
+	), ts.Nodes()...)
 
 	ts.AssertAccountDiff(accountID, block2Slot, &model.AccountDiff{
 		BICChange:              -iotago.BlockIssuanceCredits(0),
