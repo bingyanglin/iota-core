@@ -160,7 +160,9 @@ func New(subModule module.Module, e *engine.Engine, latestCommitment *model.Comm
 			s.updateSyncStatus()
 		}, time.Duration(e.CommittedAPI().ProtocolParameters().SlotDurationInSeconds())*time.Second/2, ctxUpdateSyncStatusTicker)
 
-		s.updatePrunedEpoch(s.engine.Storage.LastPrunedEpoch())
+		e.InitializedEvent().OnTrigger(func() {
+			s.updatePrunedEpoch(s.engine.Storage.LastPrunedEpoch())
+		})
 
 		// set the default bootstrapped function
 		if s.optsIsBootstrappedFunc == nil {
