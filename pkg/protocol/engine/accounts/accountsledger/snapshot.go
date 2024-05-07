@@ -4,7 +4,6 @@ import (
 	"io"
 
 	"github.com/iotaledger/hive.go/ierrors"
-	"github.com/iotaledger/hive.go/lo"
 	"github.com/iotaledger/hive.go/serializer/v2"
 	"github.com/iotaledger/hive.go/serializer/v2/stream"
 	"github.com/iotaledger/iota-core/pkg/model"
@@ -16,15 +15,25 @@ func (m *Manager) Import(reader io.ReadSeeker) error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	// populate the account tree, account tree should be empty at this point
+	targetSlot, err := stream.Read[iotago.SlotIndex](reader)
+	if err != nil {
+		return ierrors.Wrap(err, "unable to read target slot")
+	}
+
+	accountsTreeSlot, err := stream.Read[iotago.SlotIndex](reader)
+	if err != nil {
+		return ierrors.Wrap(err, "unable to read accounts tree slot")
+	}
+
+	// populate the account tree, the account tree should be empty at this point
 	if err := stream.ReadCollection(reader, serializer.SeriLengthPrefixTypeAsUint64, func(i int) error {
 		accountData, err := stream.ReadObjectFromReader(reader, accounts.AccountDataFromReader)
 		if err != nil {
 			return ierrors.Wrapf(err, "unable to read account data at index %d", i)
 		}
 
-		if err := m.accountsTree.Set(accountData.ID, accountData); err != nil {
-			return ierrors.Wrapf(err, "unable to set account %s", accountData.ID)
+		if err := m.accountsTree.Set(accountData.ID(), accountData); err != nil {
+			return ierrors.Wrapf(err, "unable to set account %s", accountData.ID())
 		}
 
 		m.LogDebug("Imported account", "accountData", accountData)
@@ -38,120 +47,70 @@ func (m *Manager) Import(reader io.ReadSeeker) error {
 		return ierrors.Wrap(err, "unable to import slot diffs")
 	}
 
-	if err := m.accountsTree.Commit(); err != nil {
-		return ierrors.Wrap(err, "unable to commit account tree")
+	if err := m.rollbackFromTo(accountsTreeSlot, targetSlot, true); err != nil {
+		return ierrors.Wrapf(err, "unable to rollback to slot %d", targetSlot)
 	}
 
 	return nil
 }
 
-func (m *Manager) Export(writer io.WriteSeeker, targetIndex iotago.SlotIndex) error {
+func (m *Manager) Export(writer io.WriteSeeker, targetSlot iotago.SlotIndex) error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
+	m.LogDebug("Exporting AccountsLedger", "latestCommittedSlot", m.latestCommittedSlot, "targetIndex", targetSlot)
+
+	if err := stream.Write[iotago.SlotIndex](writer, targetSlot); err != nil {
+		return ierrors.Wrap(err, "unable to write latest committed slot")
+	}
+
+	if err := stream.Write[iotago.SlotIndex](writer, m.latestCommittedSlot); err != nil {
+		return ierrors.Wrap(err, "unable to write latest committed slot")
+	}
+
 	if err := stream.WriteCollection(writer, serializer.SeriLengthPrefixTypeAsUint64, func() (int, error) {
-		elements, err := m.exportAccountTree(writer, targetIndex)
+		elements, err := m.exportAccountTree(writer)
 		if err != nil {
 			return 0, ierrors.Wrap(err, "can't write account tree")
 		}
 
 		return elements, nil
 	}); err != nil {
-		return ierrors.Wrapf(err, "unable to export accounts for slot %d", targetIndex)
+		return ierrors.Wrapf(err, "unable to export accounts for slot %d", targetSlot)
 	}
 
 	if err := stream.WriteCollection(writer, serializer.SeriLengthPrefixTypeAsUint64, func() (elementsCount int, err error) {
-		elementsCount, err = m.writeSlotDiffs(writer, targetIndex)
+		elementsCount, err = m.writeSlotDiffs(writer, targetSlot)
 		if err != nil {
 			return 0, ierrors.Wrap(err, "can't write slot diffs")
 		}
 
 		return elementsCount, nil
 	}); err != nil {
-		return ierrors.Wrapf(err, "unable to export slot diffs for slot %d", targetIndex)
+		return ierrors.Wrapf(err, "unable to export slot diffs for slot %d", targetSlot)
 	}
 
 	return nil
 }
 
-// exportAccountTree exports the AccountTree at a certain target slot, returning the total amount of exported accounts.
-func (m *Manager) exportAccountTree(writer io.WriteSeeker, targetIndex iotago.SlotIndex) (int, error) {
+// exportAccountTree exports the current AccountTree.
+func (m *Manager) exportAccountTree(writer io.WriteSeeker) (int, error) {
 	var accountCount int
 
 	if err := m.accountsTree.Stream(func(id iotago.AccountID, account *accounts.AccountData) error {
-		wasCreatedAfterTargetSlot, _, err := m.rollbackAccountTo(account, targetIndex)
-		if err != nil {
-			return ierrors.Wrapf(err, "unable to rollback account %s", id)
-		}
+		m.LogTrace("exportAccountTree", "accountID", id, "account", account)
 
-		// Account was created after the target slot, so we don't need to export it.
-		if wasCreatedAfterTargetSlot {
-			m.LogTrace("account was created after target slot", "id", id, "targetSlot", targetIndex)
-
-			return nil
-		}
-
-		if err = stream.WriteObject(writer, account, (*accounts.AccountData).Bytes); err != nil {
+		if err := stream.WriteObject(writer, account, (*accounts.AccountData).Bytes); err != nil {
 			return ierrors.Wrapf(err, "unable to write account %s", id)
 		}
 		accountCount++
-
-		m.LogTrace("exported account", "id", id, "account", account)
 
 		return nil
 	}); err != nil {
 		return 0, ierrors.Wrap(err, "error in streaming account tree")
 	}
 
-	// we might have entries that were destroyed, that are present in diffs but not in the tree from the latestCommittedIndex we streamed above
-	recreatedAccountsCount, err := m.recreateDestroyedAccounts(writer, targetIndex)
-
-	return accountCount + recreatedAccountsCount, err
-}
-
-func (m *Manager) recreateDestroyedAccounts(writer io.WriteSeeker, targetSlot iotago.SlotIndex) (int, error) {
-	var recreatedAccountsCount int
-	destroyedAccounts := make(map[iotago.AccountID]*accounts.AccountData)
-
-	for slot := m.latestCommittedSlot; slot > targetSlot; slot-- {
-		// it should be impossible that `m.slotDiff(slot)` returns an error, because it is impossible to export a pruned slot
-		err := lo.PanicOnErr(m.slotDiff(slot)).StreamDestroyed(func(accountID iotago.AccountID) bool {
-			// actual data will be filled in by rollbackAccountTo
-			accountData := accounts.NewAccountData(accountID)
-
-			destroyedAccounts[accountID] = accountData
-
-			return true
-		})
-		if err != nil {
-			return 0, err
-		}
-	}
-
-	for accountID, accountData := range destroyedAccounts {
-		m.LogDebug("Exporting recreated destroyed account", "accountID", accountID, "outputID", accountData.OutputID, "credits.value", accountData.Credits.Value, "credits.updateSlot", accountData.Credits.UpdateSlot)
-
-		if wasCreatedAfterTargetSlot, wasDestroyed, err := m.rollbackAccountTo(accountData, targetSlot); err != nil {
-			return 0, ierrors.Wrapf(err, "unable to rollback account %s to target slot %d", accountID, targetSlot)
-		} else if wasCreatedAfterTargetSlot {
-			// Account was created after the target slot, so we don't need to export it.
-			m.LogDebug("Exporting recreated destroyed account was created after target slot", "accountID", accountID, "targetSlot", targetSlot)
-
-			continue
-		} else if !wasDestroyed {
-			return 0, ierrors.Errorf("account %s was not destroyed", accountID)
-		}
-
-		m.LogDebug("Exporting recreated destroyed account after rollback", "accountID", accountID, "outputID", accountData.OutputID, "credits.value", accountData.Credits.Value, "credits.updateSlot", accountData.Credits.UpdateSlot)
-
-		if err := stream.WriteObject(writer, accountData, (*accounts.AccountData).Bytes); err != nil {
-			return 0, ierrors.Wrapf(err, "unable to write account %s", accountID)
-		}
-
-		recreatedAccountsCount++
-	}
-
-	return recreatedAccountsCount, nil
+	return accountCount, nil
 }
 
 func (m *Manager) readSlotDiffs(reader io.ReadSeeker) error {
@@ -179,13 +138,9 @@ func (m *Manager) readSlotDiffs(reader io.ReadSeeker) error {
 				return ierrors.Wrapf(err, "unable to read destroyed flag for accountID %s", accountID)
 			}
 
-			var accountDiff *model.AccountDiff
-			if !destroyed {
-				if accountDiff, err = stream.ReadObjectFromReader(reader, model.AccountDiffFromReader); err != nil {
-					return ierrors.Wrapf(err, "unable to read account diff for accountID %s", accountID)
-				}
-			} else {
-				accountDiff = model.NewAccountDiff()
+			accountDiff, err := stream.ReadObjectFromReader(reader, model.AccountDiffFromReader)
+			if err != nil {
+				return ierrors.Wrapf(err, "unable to read account diff for accountID %s", accountID)
 			}
 
 			m.LogDebug("Imported account diff", "slot", slot, "accountID", accountID, "destroyed", destroyed, "accountDiff", accountDiff)
@@ -210,14 +165,13 @@ func (m *Manager) readSlotDiffs(reader io.ReadSeeker) error {
 func (m *Manager) writeSlotDiffs(writer io.WriteSeeker, targetSlot iotago.SlotIndex) (int, error) {
 	var slotDiffsCount int
 
-	// write slot diffs until being able to reach targetSlot, where the exported tree is at
-	slot := iotago.SlotIndex(1)
+	lowestSlot := iotago.SlotIndex(1)
 	maxCommittableAge := m.apiProvider.APIForSlot(targetSlot).ProtocolParameters().MaxCommittableAge()
 	if targetSlot > maxCommittableAge {
-		slot = targetSlot - maxCommittableAge
+		lowestSlot = targetSlot - maxCommittableAge
 	}
 
-	for ; slot <= targetSlot; slot++ {
+	for slot := m.latestCommittedSlot; slot >= lowestSlot; slot-- {
 		var accountsInDiffCount int
 
 		if err := stream.Write(writer, slot); err != nil {
@@ -243,12 +197,9 @@ func (m *Manager) writeSlotDiffs(writer io.WriteSeeker, targetSlot iotago.SlotIn
 					innerErr = ierrors.Wrapf(err, "unable to write destroyed flag for account %s", accountID)
 					return false
 				}
-
-				if !destroyed {
-					if err = stream.WriteObject(writer, accountDiff, (*model.AccountDiff).Bytes); err != nil {
-						innerErr = ierrors.Wrapf(err, "unable to write account diff for account %s", accountID)
-						return false
-					}
+				if err = stream.WriteObject(writer, accountDiff, (*model.AccountDiff).Bytes); err != nil {
+					innerErr = ierrors.Wrapf(err, "unable to write account diff for account %s", accountID)
+					return false
 				}
 
 				m.LogDebug("Exported account diff", "slot", slot, "accountID", accountID, "destroyed", destroyed, "accountDiff", accountDiff)

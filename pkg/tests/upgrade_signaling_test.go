@@ -131,31 +131,29 @@ func Test_Upgrade_Signaling(t *testing.T) {
 	hash1 := lo.PanicOnErr(v5ProtocolParameters.Hash())
 	hash2 := iotago.Identifier{2}
 
-	ts.AssertAccountData(&accounts.AccountData{
-		ID:                                    ts.Node("nodeA").Validator.AccountData.ID,
-		Credits:                               &accounts.BlockIssuanceCredits{Value: iotago.MaxBlockIssuanceCredits / 2, UpdateSlot: 0},
-		ExpirySlot:                            iotago.MaxSlotIndex,
-		OutputID:                              ts.AccountOutput("Genesis:1").ID,
-		BlockIssuerKeys:                       ts.Node("nodeA").Validator.BlockIssuerKeys(),
-		ValidatorStake:                        mock.MinValidatorAccountAmount(ts.API.ProtocolParameters()),
-		DelegationStake:                       0,
-		FixedCost:                             0,
-		StakeEndEpoch:                         iotago.MaxEpochIndex,
-		LatestSupportedProtocolVersionAndHash: model.VersionAndHash{},
-	}, ts.Nodes()...)
+	ts.AssertAccountData(accounts.NewAccountData(ts.Node("nodeA").Validator.AccountData.ID,
+		accounts.WithCredits(accounts.NewBlockIssuanceCredits(iotago.MaxBlockIssuanceCredits/2, 0)),
+		accounts.WithExpirySlot(iotago.MaxSlotIndex),
+		accounts.WithOutputID(ts.AccountOutput("Genesis:1").ID),
+		accounts.WithBlockIssuerKeys(ts.Node("nodeA").Validator.BlockIssuerKeys()...),
+		accounts.WithValidatorStake(mock.MinValidatorAccountAmount(ts.API.ProtocolParameters())),
+		accounts.WithDelegationStake(0),
+		accounts.WithFixedCost(0),
+		accounts.WithStakeEndEpoch(iotago.MaxEpochIndex),
+		accounts.WithLatestSupportedProtocolVersionAndHash(model.VersionAndHash{}),
+	), ts.Nodes()...)
 
-	ts.AssertAccountData(&accounts.AccountData{
-		ID:                                    wallet.BlockIssuer.AccountData.ID,
-		Credits:                               &accounts.BlockIssuanceCredits{Value: iotago.MaxBlockIssuanceCredits / 2, UpdateSlot: 0},
-		ExpirySlot:                            iotago.MaxSlotIndex,
-		OutputID:                              ts.AccountOutput("Genesis:5").ID,
-		BlockIssuerKeys:                       wallet.BlockIssuer.BlockIssuerKeys(),
-		ValidatorStake:                        0,
-		DelegationStake:                       0,
-		FixedCost:                             0,
-		StakeEndEpoch:                         0,
-		LatestSupportedProtocolVersionAndHash: model.VersionAndHash{},
-	}, ts.Nodes()...)
+	ts.AssertAccountData(accounts.NewAccountData(wallet.BlockIssuer.AccountData.ID,
+		accounts.WithCredits(accounts.NewBlockIssuanceCredits(iotago.MaxBlockIssuanceCredits/2, 0)),
+		accounts.WithExpirySlot(iotago.MaxSlotIndex),
+		accounts.WithOutputID(ts.AccountOutput("Genesis:5").ID),
+		accounts.WithBlockIssuerKeys(wallet.BlockIssuer.BlockIssuerKeys()...),
+		accounts.WithValidatorStake(0),
+		accounts.WithDelegationStake(0),
+		accounts.WithFixedCost(0),
+		accounts.WithStakeEndEpoch(0),
+		accounts.WithLatestSupportedProtocolVersionAndHash(model.VersionAndHash{}),
+	), ts.Nodes()...)
 
 	// We force the nodes to issue at a specific version/hash to test tracking of votes for the upgrade signaling.
 	ts.Node("nodeA").SetHighestSupportedVersion(4)
@@ -165,31 +163,29 @@ func Test_Upgrade_Signaling(t *testing.T) {
 	ts.IssueBlocksAtEpoch("", 0, 4, "Genesis", ts.Nodes(), true, false)
 
 	// check account data before all nodes set the current version
-	ts.AssertAccountData(&accounts.AccountData{
-		ID:                                    ts.Node("nodeA").Validator.AccountData.ID,
-		Credits:                               &accounts.BlockIssuanceCredits{Value: iotago.MaxBlockIssuanceCredits / 2, UpdateSlot: 0},
-		ExpirySlot:                            iotago.MaxSlotIndex,
-		OutputID:                              ts.AccountOutput("Genesis:1").ID,
-		BlockIssuerKeys:                       ts.Node("nodeA").Validator.BlockIssuerKeys(),
-		ValidatorStake:                        mock.MinValidatorAccountAmount(ts.API.ProtocolParameters()),
-		DelegationStake:                       0,
-		FixedCost:                             0,
-		StakeEndEpoch:                         iotago.MaxEpochIndex,
-		LatestSupportedProtocolVersionAndHash: model.VersionAndHash{Version: 4, Hash: hash2},
-	}, ts.Nodes()...)
+	ts.AssertAccountData(accounts.NewAccountData(ts.Node("nodeA").Validator.AccountData.ID,
+		accounts.WithCredits(accounts.NewBlockIssuanceCredits(iotago.MaxBlockIssuanceCredits/2, 0)),
+		accounts.WithExpirySlot(iotago.MaxSlotIndex),
+		accounts.WithOutputID(ts.AccountOutput("Genesis:1").ID),
+		accounts.WithBlockIssuerKeys(ts.Node("nodeA").Validator.BlockIssuerKeys()...),
+		accounts.WithValidatorStake(mock.MinValidatorAccountAmount(ts.API.ProtocolParameters())),
+		accounts.WithDelegationStake(0),
+		accounts.WithFixedCost(0),
+		accounts.WithStakeEndEpoch(iotago.MaxEpochIndex),
+		accounts.WithLatestSupportedProtocolVersionAndHash(model.VersionAndHash{Version: 4, Hash: hash2}),
+	), ts.Nodes()...)
 
-	ts.AssertAccountData(&accounts.AccountData{
-		ID:                                    ts.Node("nodeD").Validator.AccountData.ID,
-		Credits:                               &accounts.BlockIssuanceCredits{Value: iotago.MaxBlockIssuanceCredits / 2, UpdateSlot: 0},
-		ExpirySlot:                            iotago.MaxSlotIndex,
-		OutputID:                              ts.AccountOutput("Genesis:4").ID,
-		BlockIssuerKeys:                       ts.Node("nodeD").Validator.BlockIssuerKeys(),
-		ValidatorStake:                        mock.MinValidatorAccountAmount(ts.API.ProtocolParameters()),
-		DelegationStake:                       0,
-		FixedCost:                             0,
-		StakeEndEpoch:                         iotago.MaxEpochIndex,
-		LatestSupportedProtocolVersionAndHash: model.VersionAndHash{Version: 3, Hash: hash2},
-	}, ts.Nodes()...)
+	ts.AssertAccountData(accounts.NewAccountData(ts.Node("nodeD").Validator.AccountData.ID,
+		accounts.WithCredits(accounts.NewBlockIssuanceCredits(iotago.MaxBlockIssuanceCredits/2, 0)),
+		accounts.WithExpirySlot(iotago.MaxSlotIndex),
+		accounts.WithOutputID(ts.AccountOutput("Genesis:4").ID),
+		accounts.WithBlockIssuerKeys(ts.Node("nodeD").Validator.BlockIssuerKeys()...),
+		accounts.WithValidatorStake(mock.MinValidatorAccountAmount(ts.API.ProtocolParameters())),
+		accounts.WithDelegationStake(0),
+		accounts.WithFixedCost(0),
+		accounts.WithStakeEndEpoch(iotago.MaxEpochIndex),
+		accounts.WithLatestSupportedProtocolVersionAndHash(model.VersionAndHash{Version: 3, Hash: hash2}),
+	), ts.Nodes()...)
 
 	// update the latest supported version for the remaining nodes
 	ts.Node("nodeA").SetHighestSupportedVersion(5)
@@ -199,24 +195,23 @@ func Test_Upgrade_Signaling(t *testing.T) {
 
 	ts.IssueBlocksAtEpoch("", 1, 4, "7.3", ts.Nodes(), true, false)
 
-	ts.AssertAccountData(&accounts.AccountData{
-		ID:                                    ts.Node("nodeA").Validator.AccountData.ID,
-		Credits:                               &accounts.BlockIssuanceCredits{Value: iotago.MaxBlockIssuanceCredits / 2, UpdateSlot: 0},
-		ExpirySlot:                            iotago.MaxSlotIndex,
-		OutputID:                              ts.AccountOutput("Genesis:1").ID,
-		BlockIssuerKeys:                       ts.Node("nodeA").Validator.BlockIssuerKeys(),
-		ValidatorStake:                        mock.MinValidatorAccountAmount(ts.API.ProtocolParameters()),
-		DelegationStake:                       0,
-		FixedCost:                             0,
-		StakeEndEpoch:                         iotago.MaxEpochIndex,
-		LatestSupportedProtocolVersionAndHash: model.VersionAndHash{Version: 5, Hash: hash1},
-	}, ts.Nodes()...)
+	ts.AssertAccountData(accounts.NewAccountData(ts.Node("nodeA").Validator.AccountData.ID,
+		accounts.WithCredits(accounts.NewBlockIssuanceCredits(iotago.MaxBlockIssuanceCredits/2, 0)),
+		accounts.WithExpirySlot(iotago.MaxSlotIndex),
+		accounts.WithOutputID(ts.AccountOutput("Genesis:1").ID),
+		accounts.WithBlockIssuerKeys(ts.Node("nodeA").Validator.BlockIssuerKeys()...),
+		accounts.WithValidatorStake(mock.MinValidatorAccountAmount(ts.API.ProtocolParameters())),
+		accounts.WithDelegationStake(0),
+		accounts.WithFixedCost(0),
+		accounts.WithStakeEndEpoch(iotago.MaxEpochIndex),
+		accounts.WithLatestSupportedProtocolVersionAndHash(model.VersionAndHash{Version: 5, Hash: hash1}),
+	), ts.Nodes()...)
 
 	// check that rollback is correct
 	pastAccounts, err := ts.Node("nodeA").Protocol.Engines.Main.Get().Ledger.PastAccounts(iotago.AccountIDs{ts.Node("nodeA").Validator.AccountData.ID}, 7)
 	require.NoError(t, err)
 	require.Contains(t, pastAccounts, ts.Node("nodeA").Validator.AccountData.ID)
-	require.Equal(t, model.VersionAndHash{Version: 4, Hash: hash2}, pastAccounts[ts.Node("nodeA").Validator.AccountData.ID].LatestSupportedProtocolVersionAndHash)
+	require.Equal(t, model.VersionAndHash{Version: 4, Hash: hash2}, pastAccounts[ts.Node("nodeA").Validator.AccountData.ID].LatestSupportedProtocolVersionAndHash())
 
 	ts.IssueBlocksAtEpoch("", 2, 4, "15.3", ts.Nodes(), true, false)
 	ts.IssueBlocksAtEpoch("", 3, 4, "23.3", ts.Nodes(), true, false)
@@ -364,31 +359,29 @@ func Test_Upgrade_Signaling(t *testing.T) {
 		}, ts.Nodes()...)
 
 		// check account data at the end of the test
-		ts.AssertAccountData(&accounts.AccountData{
-			ID:                                    ts.Node("nodeA").Validator.AccountData.ID,
-			Credits:                               &accounts.BlockIssuanceCredits{Value: iotago.MaxBlockIssuanceCredits / 2, UpdateSlot: 0},
-			ExpirySlot:                            iotago.MaxSlotIndex,
-			OutputID:                              ts.AccountOutput("Genesis:1").ID,
-			BlockIssuerKeys:                       ts.Node("nodeA").Validator.BlockIssuerKeys(),
-			ValidatorStake:                        mock.MinValidatorAccountAmount(ts.API.ProtocolParameters()),
-			DelegationStake:                       0,
-			FixedCost:                             0,
-			StakeEndEpoch:                         iotago.MaxEpochIndex,
-			LatestSupportedProtocolVersionAndHash: model.VersionAndHash{Version: 5, Hash: hash1},
-		}, ts.Nodes()...)
+		ts.AssertAccountData(accounts.NewAccountData(ts.Node("nodeA").Validator.AccountData.ID,
+			accounts.WithCredits(accounts.NewBlockIssuanceCredits(iotago.MaxBlockIssuanceCredits/2, 0)),
+			accounts.WithExpirySlot(iotago.MaxSlotIndex),
+			accounts.WithOutputID(ts.AccountOutput("Genesis:1").ID),
+			accounts.WithBlockIssuerKeys(ts.Node("nodeA").Validator.BlockIssuerKeys()...),
+			accounts.WithValidatorStake(mock.MinValidatorAccountAmount(ts.API.ProtocolParameters())),
+			accounts.WithDelegationStake(0),
+			accounts.WithFixedCost(0),
+			accounts.WithStakeEndEpoch(iotago.MaxEpochIndex),
+			accounts.WithLatestSupportedProtocolVersionAndHash(model.VersionAndHash{Version: 5, Hash: hash1}),
+		), ts.Nodes()...)
 
-		ts.AssertAccountData(&accounts.AccountData{
-			ID:                                    ts.Node("nodeD").Validator.AccountData.ID,
-			Credits:                               &accounts.BlockIssuanceCredits{Value: iotago.MaxBlockIssuanceCredits / 2, UpdateSlot: 0},
-			ExpirySlot:                            iotago.MaxSlotIndex,
-			OutputID:                              ts.AccountOutput("Genesis:4").ID,
-			BlockIssuerKeys:                       ts.Node("nodeD").Validator.BlockIssuerKeys(),
-			ValidatorStake:                        mock.MinValidatorAccountAmount(ts.API.ProtocolParameters()),
-			DelegationStake:                       0,
-			FixedCost:                             0,
-			StakeEndEpoch:                         iotago.MaxEpochIndex,
-			LatestSupportedProtocolVersionAndHash: model.VersionAndHash{Version: 5, Hash: hash2},
-		}, ts.Nodes()...)
+		ts.AssertAccountData(accounts.NewAccountData(ts.Node("nodeD").Validator.AccountData.ID,
+			accounts.WithCredits(accounts.NewBlockIssuanceCredits(iotago.MaxBlockIssuanceCredits/2, 0)),
+			accounts.WithExpirySlot(iotago.MaxSlotIndex),
+			accounts.WithOutputID(ts.AccountOutput("Genesis:4").ID),
+			accounts.WithBlockIssuerKeys(ts.Node("nodeD").Validator.BlockIssuerKeys()...),
+			accounts.WithValidatorStake(mock.MinValidatorAccountAmount(ts.API.ProtocolParameters())),
+			accounts.WithDelegationStake(0),
+			accounts.WithFixedCost(0),
+			accounts.WithStakeEndEpoch(iotago.MaxEpochIndex),
+			accounts.WithLatestSupportedProtocolVersionAndHash(model.VersionAndHash{Version: 5, Hash: hash2}),
+		), ts.Nodes()...)
 	}
 
 	// TODO: these node start to warpsync and don't manage to catch up

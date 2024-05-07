@@ -25,7 +25,7 @@ var AccountMetrics = collector.NewCollection(accountNamespace,
 			deps.Protocol.Events.Engine.BlockGadget.BlockAccepted.Hook(func(block *blocks.Block) {
 				accountData, exists, _ := deps.Protocol.Engines.Main.Get().Ledger.Account(block.IssuerID(), deps.Protocol.Engines.Main.Get().SyncManager.LatestCommitment().Slot())
 				if exists {
-					deps.Collector.Update(accountNamespace, credits, float64(accountData.Credits.Value), accountData.ID.String())
+					deps.Collector.Update(accountNamespace, credits, float64(accountData.Credits().Value()), accountData.ID().String())
 				}
 			}, event.WithWorkerPool(Component.WorkerPool))
 		}),

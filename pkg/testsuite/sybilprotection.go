@@ -112,7 +112,7 @@ func (t *TestSuite) AssertSybilProtectionCandidates(epoch iotago.EpochIndex, exp
 		t.Eventually(func() error {
 			candidates, err := node.Protocol.Engines.Main.Get().SybilProtection.EligibleValidators(epoch)
 			candidateIDs := lo.Map(candidates, func(candidate *accounts.AccountData) iotago.AccountID {
-				return candidate.ID
+				return candidate.ID()
 			})
 			if err != nil {
 				return ierrors.Wrapf(err, "AssertSybilProtectionCandidates: %s: failed to get eligible validators in epoch %d", node.Name, epoch)

@@ -103,7 +103,7 @@ func (v *VM) ValidateSignatures(signedTransaction mempool.SignedTransaction, res
 			return nil, ierrors.WithMessagef(iotago.ErrBICInputReferenceInvalid, "BIC input does not exist for account %s in slot %d", inp.AccountID, commitmentInput.Slot)
 		}
 
-		bicInputSet[inp.AccountID] = accountData.Credits.Value
+		bicInputSet[inp.AccountID] = accountData.Credits().Value()
 	}
 
 	rewardInputSet := make(iotagovm.RewardsInputSet)

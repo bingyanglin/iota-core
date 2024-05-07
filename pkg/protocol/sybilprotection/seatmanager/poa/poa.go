@@ -100,12 +100,12 @@ func (s *SeatManager) RotateCommittee(epoch iotago.EpochIndex, validators accoun
 		committeeAccounts := account.NewAccounts()
 
 		for _, validatorData := range validators {
-			if err := committeeAccounts.Set(validatorData.ID, &account.Pool{
-				PoolStake:      validatorData.ValidatorStake + validatorData.DelegationStake,
-				ValidatorStake: validatorData.ValidatorStake,
-				FixedCost:      validatorData.FixedCost,
+			if err := committeeAccounts.Set(validatorData.ID(), &account.Pool{
+				PoolStake:      validatorData.ValidatorStake() + validatorData.DelegationStake(),
+				ValidatorStake: validatorData.ValidatorStake(),
+				FixedCost:      validatorData.FixedCost(),
 			}); err != nil {
-				return nil, ierrors.Wrapf(err, "error while setting committee for epoch %d for validator %s", epoch, validatorData.ID.String())
+				return nil, ierrors.Wrapf(err, "error while setting committee for epoch %d for validator %s", epoch, validatorData.ID().String())
 			}
 		}
 

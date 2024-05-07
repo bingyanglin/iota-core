@@ -146,7 +146,7 @@ func (c *PostSolidBlockFilter) ProcessSolidBlock(block *blocks.Block) {
 
 		// Check that the issuer of this block has non-negative block issuance credit
 		{
-			if accountData.Credits.Value < 0 {
+			if accountData.Credits().Value() < 0 {
 				c.filterBlock(
 					block,
 					ierrors.WithMessagef(iotago.ErrAccountLocked, "block issuer account %s", block.IssuerID()),
@@ -158,10 +158,10 @@ func (c *PostSolidBlockFilter) ProcessSolidBlock(block *blocks.Block) {
 
 		// Check that the account is not expired
 		{
-			if accountData.ExpirySlot < block.ProtocolBlock().Header.SlotCommitmentID.Slot() {
+			if accountData.ExpirySlot() < block.ProtocolBlock().Header.SlotCommitmentID.Slot() {
 				c.filterBlock(
 					block,
-					ierrors.WithMessagef(iotago.ErrAccountExpired, "block issuer account %s is expired, expiry slot %d in commitment %d", block.IssuerID(), accountData.ExpirySlot, block.ProtocolBlock().Header.SlotCommitmentID.Slot()),
+					ierrors.WithMessagef(iotago.ErrAccountExpired, "block issuer account %s is expired, expiry slot %d in commitment %d", block.IssuerID(), accountData.ExpirySlot(), block.ProtocolBlock().Header.SlotCommitmentID.Slot()),
 				)
 
 				return
@@ -174,7 +174,7 @@ func (c *PostSolidBlockFilter) ProcessSolidBlock(block *blocks.Block) {
 			case *iotago.Ed25519Signature:
 				expectedBlockIssuerKey := iotago.Ed25519PublicKeyHashBlockIssuerKeyFromPublicKey(signature.PublicKey)
 
-				if !accountData.BlockIssuerKeys.Has(expectedBlockIssuerKey) {
+				if !accountData.BlockIssuerKeys().Has(expectedBlockIssuerKey) {
 					c.filterBlock(
 						block,
 						ierrors.WithMessagef(iotago.ErrInvalidSignature, "block issuer account %s does not have block issuer key corresponding to public key %s in slot %d", block.IssuerID(), hexutil.EncodeHex(signature.PublicKey[:]), block.ProtocolBlock().Header.SlotCommitmentID.Index()),
