@@ -7,6 +7,7 @@ import (
 	"github.com/iotaledger/hive.go/runtime/event"
 	"github.com/iotaledger/iota-core/components/prometheus/collector"
 	"github.com/iotaledger/iota-core/pkg/protocol"
+	"github.com/iotaledger/iota-core/pkg/protocol/engine"
 	"github.com/iotaledger/iota-core/pkg/protocol/engine/notarization"
 	iotago "github.com/iotaledger/iota.go/v4"
 )
@@ -20,6 +21,9 @@ const (
 	acceptedBlocks      = "accepted_blocks"
 	transactions        = "accepted_transactions"
 	validators          = "active_validators"
+	activeChainsCount   = "active_chains_count"
+	seenChainsCount     = "seen_chains_count"
+	spawnedEnginesCount = "spawned_engines_count"
 )
 
 var CommitmentsMetrics = collector.NewCollection(commitmentsNamespace,
@@ -52,6 +56,35 @@ var CommitmentsMetrics = collector.NewCollection(commitmentsNamespace,
 					Component.WorkerPool.Submit(func() { deps.Collector.Increment(commitmentsNamespace, forksCount) })
 				}
 			})
+		}),
+	)),
+	collector.WithMetric(collector.NewMetric(spawnedEnginesCount,
+		collector.WithType(collector.Counter),
+		collector.WithHelp("Number spawned engines since the node started."),
+		collector.WithInitFunc(func() {
+			deps.Protocol.Chains.WithInitializedEngines(func(_ *protocol.Chain, _ *engine.Engine) (shutdown func()) {
+				Component.WorkerPool.Submit(func() { deps.Collector.Increment(commitmentsNamespace, spawnedEnginesCount) })
+
+				return nil
+			})
+		}),
+	)),
+	collector.WithMetric(collector.NewMetric(seenChainsCount,
+		collector.WithType(collector.Counter),
+		collector.WithHelp("Number chains seen since the node started."),
+		collector.WithInitFunc(func() {
+			deps.Protocol.Chains.WithElements(func(_ *protocol.Chain) (teardown func()) {
+				Component.WorkerPool.Submit(func() { deps.Collector.Increment(commitmentsNamespace, seenChainsCount) })
+
+				return nil
+			})
+		}),
+	)),
+	collector.WithMetric(collector.NewMetric(activeChainsCount,
+		collector.WithType(collector.Gauge),
+		collector.WithHelp("Number currently active chains."),
+		collector.WithCollectFunc(func() (metricValue float64, labelValues []string) {
+			return float64(deps.Protocol.Chains.Size()), nil
 		}),
 	)),
 	collector.WithMetric(collector.NewMetric(acceptedBlocks,
