@@ -11,7 +11,6 @@ import (
 const (
 	infoNamespace = "info"
 
-	appName    = "app"
 	nodeOS     = "node_os"
 	syncStatus = "sync_status"
 	memUsage   = "memory_usage_bytes"
