@@ -2,43 +2,50 @@ package collector
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/iotaledger/hive.go/ds/shrinkingmap"
 )
 
 // Collector is responsible for creation and collection of metrics for the prometheus.
 type Collector struct {
 	Registry    *prometheus.Registry
-	collections map[string]*Collection
+	collections *shrinkingmap.ShrinkingMap[string, *Collection]
 }
 
 // New creates an instance of Manager and creates a new prometheus registry for the protocol metrics collection.
 func New() *Collector {
 	return &Collector{
 		Registry:    prometheus.NewRegistry(),
-		collections: make(map[string]*Collection),
+		collections: shrinkingmap.New[string, *Collection](),
 	}
 }
 
-func (c *Collector) RegisterCollection(coll *Collection) {
-	c.collections[coll.CollectionName] = coll
-	for _, m := range coll.metrics {
-		c.Registry.MustRegister(m.promMetric)
-		if m.initValueFunc != nil {
-			metricValue, labelValues := m.initValueFunc()
-			m.update(metricValue, labelValues...)
+func (c *Collector) RegisterCollection(collection *Collection) {
+	c.collections.Set(collection.CollectionName, collection)
+	collection.metrics.ForEach(func(_ string, metric *Metric) bool {
+		c.Registry.MustRegister(metric.promMetric)
+		if metric.initValueFunc != nil {
+			metricValue, labelValues := metric.initValueFunc()
+			metric.update(metricValue, labelValues...)
 		}
-		if m.initFunc != nil {
-			m.initFunc()
+		if metric.initFunc != nil {
+			metric.initFunc()
 		}
-	}
+
+		return true
+	})
 }
 
 // Collect collects all metrics from the registered collections.
 func (c *Collector) Collect() {
-	for _, collection := range c.collections {
-		for _, metric := range collection.metrics {
+	c.collections.ForEach(func(_ string, collection *Collection) bool {
+		collection.metrics.ForEach(func(_ string, metric *Metric) bool {
 			metric.collect()
-		}
-	}
+			return true
+		})
+
+		return true
+	})
 }
 
 // Update updates the value of the existing metric defined by the subsystem and metricName.
@@ -78,11 +85,14 @@ func (c *Collector) ResetMetric(namespace string, metricName string) {
 }
 
 func (c *Collector) Shutdown() {
-	for _, collection := range c.collections {
-		for _, metric := range collection.metrics {
+	c.collections.ForEach(func(_ string, collection *Collection) bool {
+		collection.metrics.ForEach(func(_ string, metric *Metric) bool {
 			metric.shutdown()
-		}
-	}
+			return true
+		})
+
+		return true
+	})
 }
 
 func (c *Collector) getMetric(subsystem string, metricName string) *Metric {
@@ -95,9 +105,10 @@ func (c *Collector) getMetric(subsystem string, metricName string) *Metric {
 }
 
 func (c *Collector) getCollection(subsystem string) *Collection {
-	if collection, exists := c.collections[subsystem]; exists {
-		return collection
+	collection, exists := c.collections.Get(subsystem)
+	if !exists {
+		return nil
 	}
 
-	return nil
+	return collection
 }

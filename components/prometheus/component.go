@@ -29,11 +29,12 @@ import (
 
 func init() {
 	Component = &app.Component{
-		Name:     "Prometheus",
-		DepsFunc: func(cDeps dependencies) { deps = cDeps },
-		Params:   params,
-		Provide:  provide,
-		Run:      run,
+		Name:      "Prometheus",
+		DepsFunc:  func(cDeps dependencies) { deps = cDeps },
+		Params:    params,
+		Provide:   provide,
+		Configure: configure,
+		Run:       run,
 		IsEnabled: func(_ *dig.Container) bool {
 			return ParamsMetrics.Enabled
 		},
@@ -56,9 +57,11 @@ type dependencies struct {
 	Collector *collector.Collector
 }
 
-func run() error {
-	Component.LogInfo("Starting Prometheus exporter ...")
+func provide(c *dig.Container) error {
+	return c.Provide(collector.New)
+}
 
+func configure() error {
 	if ParamsMetrics.GoMetrics {
 		deps.Collector.Registry.MustRegister(collectors.NewGoCollector())
 	}
@@ -66,7 +69,20 @@ func run() error {
 		deps.Collector.Registry.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 	}
 
-	registerMetrics()
+	deps.Collector.RegisterCollection(TangleMetrics)
+	deps.Collector.RegisterCollection(ConflictMetrics)
+	deps.Collector.RegisterCollection(InfoMetrics)
+	deps.Collector.RegisterCollection(DBMetrics)
+	deps.Collector.RegisterCollection(CommitmentsMetrics)
+	deps.Collector.RegisterCollection(SlotMetrics)
+	deps.Collector.RegisterCollection(AccountMetrics)
+	deps.Collector.RegisterCollection(SchedulerMetrics)
+
+	return nil
+}
+
+func run() error {
+	Component.LogInfo("Starting Prometheus exporter ...")
 
 	return Component.Daemon().BackgroundWorker("Prometheus exporter", func(ctx context.Context) {
 		Component.LogInfo("Starting Prometheus exporter ... done")
@@ -117,19 +133,4 @@ func run() error {
 
 		Component.LogInfo("Stopping Prometheus exporter ... done")
 	}, daemon.PriorityMetrics)
-}
-
-func provide(c *dig.Container) error {
-	return c.Provide(collector.New)
-}
-
-func registerMetrics() {
-	deps.Collector.RegisterCollection(TangleMetrics)
-	deps.Collector.RegisterCollection(ConflictMetrics)
-	deps.Collector.RegisterCollection(InfoMetrics)
-	deps.Collector.RegisterCollection(DBMetrics)
-	deps.Collector.RegisterCollection(CommitmentsMetrics)
-	deps.Collector.RegisterCollection(SlotMetrics)
-	deps.Collector.RegisterCollection(AccountMetrics)
-	deps.Collector.RegisterCollection(SchedulerMetrics)
 }
