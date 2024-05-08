@@ -1,3 +1,4 @@
+//nolint:err113
 package toolset
 
 import (
@@ -128,7 +129,6 @@ func hashPasswordAndSalt(args []string) error {
 	}
 
 	if *outputJSONFlag {
-
 		result := struct {
 			Password string `json:"passwordHash"`
 			Salt     string `json:"passwordSalt"`

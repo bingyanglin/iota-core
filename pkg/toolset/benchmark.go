@@ -69,7 +69,7 @@ func benchmarkIO(args []string) error {
 	ts := time.Now()
 
 	lastStatusTime := time.Now()
-	for i := 0; i < objectCnt; i++ {
+	for i := range objectCnt {
 		// one read operation and one write operation per cycle
 		batchWriter.Enqueue(newBenchmarkObject(store, writeDoneWaitGroup, iotago_tpkg.RandBytes(32), iotago_tpkg.RandBytes(size)))
 
@@ -154,7 +154,7 @@ func benchmarkCPU(args []string) error {
 			}
 		}()
 
-		for i := 0; i < numWorkers; i++ {
+		for range numWorkers {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()

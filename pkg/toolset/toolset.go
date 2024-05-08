@@ -55,6 +55,7 @@ const (
 )
 
 const (
+	//nolint:gosec // there is no hardcoded password
 	passwordEnvKey = "IOTA_CORE_TOOL_PASSWORD"
 
 	// printStatusInterval is the interval for printing status messages.

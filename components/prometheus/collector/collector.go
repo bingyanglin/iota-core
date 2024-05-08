@@ -43,6 +43,7 @@ func (c *Collector) Collect() {
 			metric.collect()
 			return true
 		})
+
 		return true
 	})
 }
@@ -89,6 +90,7 @@ func (c *Collector) Shutdown() {
 			metric.shutdown()
 			return true
 		})
+
 		return true
 	})
 }
