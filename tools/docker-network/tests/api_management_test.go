@@ -221,9 +221,9 @@ func Test_ManagementAPI_Pruning(t *testing.T) {
 			name: "Test_PruneDatabase_ByEpoch",
 			testFunc: func(t *testing.T) {
 				// we need to wait until epoch 3 to be able to prune epoch 1
-				d.AwaitNextEpoch()
-				d.AwaitNextEpoch()
-				d.AwaitNextEpoch()
+				d.AwaitEpochFinalized()
+				d.AwaitEpochFinalized()
+				d.AwaitEpochFinalized()
 
 				// prune database by epoch
 				pruneDatabaseResponse, err := managementClient.PruneDatabaseByEpoch(getContextWithTimeout(5*time.Second), 1)
@@ -235,7 +235,7 @@ func Test_ManagementAPI_Pruning(t *testing.T) {
 			name: "Test_PruneDatabase_ByDepth",
 			testFunc: func(t *testing.T) {
 				// wait for the next epoch to start
-				d.AwaitNextEpoch()
+				d.AwaitEpochFinalized()
 
 				// prune database by depth
 				pruneDatabaseResponse, err := managementClient.PruneDatabaseByDepth(getContextWithTimeout(5*time.Second), 1)
@@ -247,7 +247,7 @@ func Test_ManagementAPI_Pruning(t *testing.T) {
 			name: "Test_PruneDatabase_BySize",
 			testFunc: func(t *testing.T) {
 				// wait for the next epoch to start
-				d.AwaitNextEpoch()
+				d.AwaitEpochFinalized()
 
 				// prune database by size
 				pruneDatabaseResponse, err := managementClient.PruneDatabaseBySize(getContextWithTimeout(5*time.Second), "5G")

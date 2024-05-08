@@ -102,7 +102,7 @@ func (d *DockerTestFramework) AwaitFinalization(targetSlot iotago.SlotIndex) {
 	})
 }
 
-func (d *DockerTestFramework) AwaitNextEpoch() {
+func (d *DockerTestFramework) AwaitEpochFinalized() {
 	//nolint:lostcancel
 	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
 
