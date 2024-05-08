@@ -6,6 +6,7 @@ replace github.com/goccy/go-graphviz => github.com/alexsporn/go-graphviz v0.0.0-
 
 require (
 	github.com/VictoriaMetrics/fastcache v1.12.2
+	github.com/dustin/go-humanize v1.0.1
 	github.com/fjl/memsize v0.0.2
 	github.com/goccy/go-graphviz v0.1.2
 	github.com/golang-jwt/jwt v3.2.2+incompatible
@@ -26,6 +27,7 @@ require (
 	github.com/iotaledger/hive.go/serializer/v2 v2.0.0-rc.1.0.20240425095808-113b21573349
 	github.com/iotaledger/hive.go/sql v0.0.0-20240425095808-113b21573349
 	github.com/iotaledger/hive.go/stringify v0.0.0-20240425095808-113b21573349
+	github.com/iotaledger/hive.go/web v0.0.0-20240425095808-113b21573349
 	github.com/iotaledger/inx-app v1.0.0-rc.3.0.20240425100742-5c85b6d16701
 	github.com/iotaledger/inx/go v1.0.0-rc.2.0.20240425100432-05e1bf8fc089
 	github.com/iotaledger/iota.go/v4 v4.0.0-20240503105040-c86882e71808
@@ -45,7 +47,8 @@ require (
 	github.com/zyedidia/generic v1.2.1
 	go.uber.org/atomic v1.11.0
 	go.uber.org/dig v1.17.1
-	golang.org/x/crypto v0.22.0
+	golang.org/x/crypto v0.23.0
+	golang.org/x/term v0.20.0
 	google.golang.org/grpc v1.63.2
 	google.golang.org/protobuf v1.33.0
 	gorm.io/gorm v1.25.9
@@ -63,7 +66,6 @@ require (
 	github.com/davidlazar/go-crypto v0.0.0-20200604182044-b73af7476f6c // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
-	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/eclipse/paho.mqtt.golang v1.4.3 // indirect
 	github.com/elastic/gosigar v0.14.3 // indirect
 	github.com/ethereum/go-ethereum v1.14.0 // indirect
@@ -183,8 +185,8 @@ require (
 	golang.org/x/mod v0.17.0 // indirect
 	golang.org/x/net v0.24.0 // indirect
 	golang.org/x/sync v0.7.0 // indirect
-	golang.org/x/sys v0.19.0 // indirect
-	golang.org/x/text v0.14.0 // indirect
+	golang.org/x/sys v0.20.0 // indirect
+	golang.org/x/text v0.15.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
 	golang.org/x/tools v0.20.0 // indirect
 	gonum.org/v1/gonum v0.15.0 // indirect
