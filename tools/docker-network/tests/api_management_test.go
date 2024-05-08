@@ -185,8 +185,8 @@ func Test_ManagementAPI_Peers_BadRequests(t *testing.T) {
 func Test_ManagementAPI_Pruning(t *testing.T) {
 	d := dockertestframework.NewDockerTestFramework(t,
 		dockertestframework.WithProtocolParametersOptions(
-			iotago.WithTimeProviderOptions(0, time.Now().Unix(), 4, 4),
-			iotago.WithLivenessOptions(3, 4, 2, 4, 5),
+			iotago.WithTimeProviderOptions(0, time.Now().Unix(), 10, 3),
+			iotago.WithLivenessOptions(10, 10, 2, 4, 5),
 			iotago.WithCongestionControlOptions(1, 1, 1, 400_000, 250_000, 50_000_000, 1000, 100),
 			iotago.WithRewardsOptions(8, 10, 2, 384),
 			iotago.WithTargetCommitteeSize(4),
@@ -266,8 +266,8 @@ func Test_ManagementAPI_Pruning(t *testing.T) {
 func Test_ManagementAPI_Snapshots(t *testing.T) {
 	d := dockertestframework.NewDockerTestFramework(t,
 		dockertestframework.WithProtocolParametersOptions(
-			iotago.WithTimeProviderOptions(0, time.Now().Unix(), 3, 4),
-			iotago.WithLivenessOptions(3, 4, 2, 4, 8),
+			iotago.WithTimeProviderOptions(0, time.Now().Unix(), 10, 3),
+			iotago.WithLivenessOptions(10, 10, 2, 4, 5),
 			iotago.WithCongestionControlOptions(1, 1, 1, 400_000, 250_000, 50_000_000, 1000, 100),
 			iotago.WithRewardsOptions(8, 10, 2, 384),
 			iotago.WithTargetCommitteeSize(4),
