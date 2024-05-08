@@ -77,9 +77,6 @@ func (d *DockerTestFramework) AssertCommittee(expectedEpoch iotago.EpochIndex, e
 	testAPI := d.defaultWallet.Client.CommittedAPI()
 	expectedSlotStart := testAPI.TimeProvider().EpochStart(expectedEpoch)
 
-	// the expected slot needs to be at least now or in the future, otherwise we can't wait for it and get wrong results
-	require.GreaterOrEqual(d.Testing, expectedSlotStart, status.LatestAcceptedBlockSlot)
-
 	if status.LatestAcceptedBlockSlot < expectedSlotStart {
 		slotToWait := expectedSlotStart - status.LatestAcceptedBlockSlot
 		secToWait := time.Duration(slotToWait) * time.Duration(testAPI.ProtocolParameters().SlotDurationInSeconds()) * time.Second
@@ -89,7 +86,7 @@ func (d *DockerTestFramework) AssertCommittee(expectedEpoch iotago.EpochIndex, e
 
 	d.Eventually(func() error {
 		for _, node := range d.Nodes() {
-			resp, err := d.Client(node.Name).Committee(context.TODO())
+			resp, err := d.Client(node.Name).Committee(context.TODO(), expectedEpoch)
 			if err != nil {
 				return err
 			}
