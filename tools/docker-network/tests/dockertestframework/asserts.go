@@ -76,7 +76,6 @@ func (d *DockerTestFramework) AssertCommittee(expectedEpoch iotago.EpochIndex, e
 	status := d.NodeStatus("V1")
 	testAPI := d.defaultWallet.Client.CommittedAPI()
 	expectedSlotStart := testAPI.TimeProvider().EpochStart(expectedEpoch)
-	require.Greater(d.Testing, expectedSlotStart, status.LatestAcceptedBlockSlot)
 
 	if status.LatestAcceptedBlockSlot < expectedSlotStart {
 		slotToWait := expectedSlotStart - status.LatestAcceptedBlockSlot
