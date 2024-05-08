@@ -130,6 +130,9 @@ func (d *DockerTestFramework) DockerComposeUp(detach ...bool) error {
 }
 
 func (d *DockerTestFramework) Run() error {
+	// first we remove old containers, volumes and orphans
+	_ = exec.Command("docker", "compose", "down", "-v", "--remove-orphans").Run()
+
 	ch := make(chan error)
 	stopCh := make(chan struct{})
 	defer close(ch)
@@ -183,7 +186,8 @@ func (d *DockerTestFramework) Stop() {
 	fmt.Println("Stop the network...")
 	defer fmt.Println("Stop the network.....done")
 
-	_ = exec.Command("docker", "compose", "down").Run()
+	// remove volumes and orphans
+	_ = exec.Command("docker", "compose", "down", "-v", "--remove-orphans").Run()
 	_ = exec.Command("rm", d.snapshotPath).Run() //nolint:gosec
 }
 
