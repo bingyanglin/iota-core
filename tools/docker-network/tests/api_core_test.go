@@ -608,14 +608,12 @@ func Test_CoreAPI(t *testing.T) {
 				resp, err := client.Validators(context.Background(), pageSize)
 				require.NoError(t, err)
 				require.NotNil(t, resp)
-				//TODO after finishing validators endpoint and including registered validators
-				//require.Equal(t, int(pageSize), len(resp.Validators), "There should be exactly %d validators returned on the first page", pageSize)
+				require.Equal(t, int(pageSize), len(resp.Validators), "There should be exactly %d validators returned on the first page", pageSize)
 
 				resp, err = client.Validators(context.Background(), pageSize, resp.Cursor)
 				require.NoError(t, err)
 				require.NotNil(t, resp)
-				//TODO after finishing validators endpoint and including registered validators
-				//require.Equal(t, 1, len(resp.Validators), "There should be only one validator returned on the last page")
+				require.Equal(t, 1, len(resp.Validators), "There should be only one validator returned on the last page")
 			},
 		},
 		{
