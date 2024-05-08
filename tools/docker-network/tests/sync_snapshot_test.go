@@ -4,11 +4,13 @@ package tests
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/iotaledger/iota-core/pkg/testsuite/mock"
 	"github.com/iotaledger/iota-core/tools/docker-network/tests/dockertestframework"
 	iotago "github.com/iotaledger/iota.go/v4"
 )
@@ -20,7 +22,7 @@ func Test_SyncFromSnapshot(t *testing.T) {
 			iotago.WithLivenessOptions(10, 10, 2, 4, 5),
 			iotago.WithCongestionControlOptions(1, 1, 1, 400_000, 250_000, 50_000_000, 1000, 100),
 			iotago.WithRewardsOptions(8, 10, 2, 384),
-			iotago.WithTargetCommitteeSize(4),
+			iotago.WithTargetCommitteeSize(3),
 		))
 	defer d.Stop()
 
@@ -36,57 +38,118 @@ func Test_SyncFromSnapshot(t *testing.T) {
 	d.WaitUntilNetworkReady()
 
 	ctx := context.Background()
-	delegatorWallet, accountData := d.CreateAccountFromFaucet()
-	clt := delegatorWallet.Client
+	clt := d.DefaultWallet().Client
 
-	// delegate funds to V2
-	delegationOutputData := d.DelegateToValidator(delegatorWallet, d.Node("V2").AccountAddress(t))
-	d.AwaitCommitment(delegationOutputData.ID.CreationSlot())
+	createAccountAndDelegateTo := func(receiver *dockertestframework.Node) (*mock.Wallet, *mock.AccountData, *mock.OutputData) {
+		delegatorWallet, accountData := d.CreateAccountFromFaucet()
+		clt := delegatorWallet.Client
 
-	// check if V2 received the delegator stake
-	v2Resp, err := clt.Validator(ctx, d.Node("V2").AccountAddress(t))
-	require.NoError(t, err)
-	require.Greater(t, v2Resp.PoolStake, v2Resp.ValidatorStake)
+		// delegate funds to receiver
+		delegationOutputData := d.DelegateToValidator(delegatorWallet, receiver.AccountAddress(t))
+		d.AwaitCommitment(delegationOutputData.ID.CreationSlot())
+
+		// check if receiver received the delegator stake
+		resp, err := clt.Validator(ctx, receiver.AccountAddress(t))
+		require.NoError(t, err)
+		require.Greater(t, resp.PoolStake, resp.ValidatorStake)
+
+		return delegatorWallet, accountData, delegationOutputData
+	}
+
+	v1DelegatorWallet, v1DelegatorAccountData, v1DelegationOutputData := createAccountAndDelegateTo(d.Node("V1"))
+	v2DelegatorWallet, v2DelegatorAccountData, v2DelegationOutputData := createAccountAndDelegateTo(d.Node("V2"))
 
 	//nolint:forcetypeassert
-	currentEpoch := clt.CommittedAPI().TimeProvider().EpochFromSlot(delegatorWallet.CurrentSlot())
-	expectedEpoch := delegationOutputData.Output.(*iotago.DelegationOutput).StartEpoch + 2
+	currentEpoch := clt.CommittedAPI().TimeProvider().CurrentEpoch()
+	expectedEpoch := v2DelegationOutputData.Output.(*iotago.DelegationOutput).StartEpoch + 2
 	for range expectedEpoch - currentEpoch {
 		d.AwaitEpochFinalized()
 	}
+	d.AssertCommittee(expectedEpoch, d.AccountsFromNodes(d.Nodes("V1", "V2", "V4")...))
 
-	// claim rewards that put to an basic output
-	rewardsOutputID := d.ClaimRewardsForDelegator(ctx, delegatorWallet, delegationOutputData)
+	// claim rewards for v1 delegator
+	v1DelegatorRewardsOutputID := d.ClaimRewardsForDelegator(ctx, v1DelegatorWallet, v1DelegationOutputData)
 
 	// check if the mana increased as expected
 	node5Clt := d.Client("node5")
-	outputFromAPI, err := node5Clt.OutputByID(ctx, rewardsOutputID)
+	outputFromAPI, err := node5Clt.OutputByID(ctx, v1DelegatorRewardsOutputID)
 	require.NoError(t, err)
 
-	rewardsOutput := delegatorWallet.Output(rewardsOutputID)
+	rewardsOutput := v1DelegatorWallet.Output(v1DelegatorRewardsOutputID)
 	require.Equal(t, rewardsOutput.Output.StoredMana(), outputFromAPI.StoredMana())
 
 	d.AwaitEpochFinalized()
 
-	// create snapshot
-	nodeClientV1 := d.Client("V1")
-	managementClient, err := nodeClientV1.Management(getContextWithTimeout(5 * time.Second))
+	managementClient, err := clt.Management(getContextWithTimeout(5 * time.Second))
 	require.NoError(t, err)
 
-	response, err := managementClient.CreateSnapshot(getContextWithTimeout(5 * time.Second))
+	// take the snapshot and restart node5
+	{
+		fmt.Println("Create the first snapshot...")
+		response, err := managementClient.CreateSnapshot(getContextWithTimeout(5 * time.Second))
+		require.NoError(t, err)
+
+		// Deletes the database of node5 and restarts it with the just created snapshot.
+		d.ResetNode("node5", response.FilePath)
+
+		d.AwaitEpochFinalized()
+		d.AwaitEpochFinalized()
+
+		// check if the committee is the same among nodes
+		currentEpoch := clt.CommittedAPI().TimeProvider().CurrentEpoch()
+		d.AssertCommittee(currentEpoch, d.AccountsFromNodes(d.Nodes("V1", "V2", "V4")...))
+
+		// check if the account and rewardsOutput are available
+		node5Clt = d.Client("node5")
+		_, err = node5Clt.Validator(ctx, v1DelegatorAccountData.Address)
+		require.NoError(t, err)
+		_, err = node5Clt.Validator(ctx, v2DelegatorAccountData.Address)
+		require.NoError(t, err)
+
+		_, err = node5Clt.OutputByID(ctx, v1DelegatorRewardsOutputID)
+		require.NoError(t, err)
+
+	}
+
+	// claim rewards for V2 delegator, and see if the output is available on node5
+	v2DelegatorRewardsOutputID := d.ClaimRewardsForDelegator(ctx, v2DelegatorWallet, v2DelegationOutputData)
+	_, err = node5Clt.OutputByID(ctx, v2DelegatorRewardsOutputID)
 	require.NoError(t, err)
 
-	// Deletes the database of node5 and restarts it with the just created snapshot.
-	d.ResetNode("node5", response.FilePath)
+	// create V3 delegator, the committee should change to V1, V3, V4
+	v3DelegatorWallet, v3DelegatorAccountData, v3DelegationOutputData := createAccountAndDelegateTo(d.Node("V3"))
+	currentEpoch = clt.CommittedAPI().TimeProvider().CurrentEpoch()
+	expectedEpoch = v3DelegationOutputData.Output.(*iotago.DelegationOutput).StartEpoch + 1
+	for range expectedEpoch - currentEpoch {
+		d.AwaitEpochFinalized()
+	}
+
+	d.AssertCommittee(expectedEpoch, d.AccountsFromNodes(d.Nodes("V1", "V3", "V4")...))
 
 	d.AwaitEpochFinalized()
-	d.AwaitEpochFinalized()
 
-	// check if the account and rewardsOutput are available
-	node5Clt = d.Client("node5")
-	_, err = node5Clt.Validator(ctx, accountData.Address)
-	require.NoError(t, err)
+	// take the snapshot again and restart node5
+	{
+		fmt.Println("Create the second snapshot...")
+		response, err := managementClient.CreateSnapshot(getContextWithTimeout(5 * time.Second))
+		require.NoError(t, err)
 
-	outputFromAPI, err = node5Clt.OutputByID(ctx, rewardsOutputID)
-	require.NoError(t, err)
+		// Deletes the database of node5 and restarts it with the just created snapshot.
+		d.ResetNode("node5", response.FilePath)
+		currentEpoch = clt.CommittedAPI().TimeProvider().EpochFromSlot(v3DelegatorWallet.CurrentSlot())
+		d.AssertCommittee(currentEpoch, d.AccountsFromNodes(d.Nodes("V1", "V3", "V4")...))
+
+		node5Clt = d.Client("node5")
+		_, err = node5Clt.Validator(ctx, v1DelegatorAccountData.Address)
+		require.NoError(t, err)
+		_, err = node5Clt.Validator(ctx, v2DelegatorAccountData.Address)
+		require.NoError(t, err)
+		_, err = node5Clt.Validator(ctx, v3DelegatorAccountData.Address)
+		require.NoError(t, err)
+
+		_, err = node5Clt.OutputByID(ctx, v1DelegatorRewardsOutputID)
+		require.NoError(t, err)
+		_, err = node5Clt.OutputByID(ctx, v2DelegatorRewardsOutputID)
+		require.NoError(t, err)
+	}
 }
