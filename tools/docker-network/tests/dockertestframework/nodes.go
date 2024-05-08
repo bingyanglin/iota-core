@@ -51,12 +51,10 @@ func (d *DockerTestFramework) NodeStatus(name string) *api.InfoResNodeStatus {
 }
 
 func (d *DockerTestFramework) waitForNodesAndGetClients() error {
-	nodes := d.Nodes()
-
 	d.nodesLock.Lock()
 	defer d.nodesLock.Unlock()
 
-	for _, node := range nodes {
+	for _, node := range d.nodesWithoutLocking() {
 		client, err := nodeclient.New(node.ClientURL)
 		if err != nil {
 			return ierrors.Wrapf(err, "failed to create node client for node %s", node.Name)
@@ -147,10 +145,7 @@ func (d *DockerTestFramework) AddNode(name string, containerName string, clientU
 	}
 }
 
-func (d *DockerTestFramework) Nodes(names ...string) []*Node {
-	d.nodesLock.RLock()
-	defer d.nodesLock.RUnlock()
-
+func (d *DockerTestFramework) nodesWithoutLocking(names ...string) []*Node {
 	if len(names) == 0 {
 		nodes := make([]*Node, 0, len(d.nodes))
 		for _, node := range d.nodes {
@@ -166,6 +161,13 @@ func (d *DockerTestFramework) Nodes(names ...string) []*Node {
 	}
 
 	return nodes
+}
+
+func (d *DockerTestFramework) Nodes(names ...string) []*Node {
+	d.nodesLock.RLock()
+	defer d.nodesLock.RUnlock()
+
+	return d.nodesWithoutLocking(names...)
 }
 
 func (d *DockerTestFramework) Node(name string) *Node {
@@ -200,10 +202,4 @@ func (d *DockerTestFramework) ResetNode(alias string, newSnapshotPath string) {
 	d.DockerComposeUp(true)
 	d.DumpContainerLog(d.Node(alias).ContainerName, "reset1")
 	d.WaitUntilNetworkHealthy()
-}
-
-func (d *DockerTestFramework) RequestFromNodes(testFunc func(*testing.T, string)) {
-	for nodeAlias := range d.nodes {
-		testFunc(d.Testing, nodeAlias)
-	}
 }

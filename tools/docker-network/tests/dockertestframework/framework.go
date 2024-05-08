@@ -246,12 +246,10 @@ func (d *DockerTestFramework) DumpContainerLog(name string, optLogNameExtension 
 
 func (d *DockerTestFramework) GetContainersConfigs() {
 	// get container configs
-	nodes := d.Nodes()
-
 	d.nodesLock.Lock()
 	defer d.nodesLock.Unlock()
 
-	for _, node := range nodes {
+	for _, node := range d.nodesWithoutLocking() {
 		cmd := fmt.Sprintf("docker inspect --format='{{.Config.Cmd}}' %s", node.ContainerName)
 		containerConfigsBytes, err := exec.Command("bash", "-c", cmd).Output()
 		require.NoError(d.Testing, err)
@@ -270,6 +268,7 @@ func (d *DockerTestFramework) GetContainersConfigs() {
 
 		node.ContainerConfigs = configs
 		node.PrivateKey = envs
+
 		d.nodes[node.Name] = node
 	}
 }
