@@ -63,9 +63,9 @@ func (d *DockerTestFramework) AwaitTransactionFailure(ctx context.Context, txID 
 
 		if expectedReason == resp.TransactionFailureReason {
 			return nil
-		} else {
-			return ierrors.Errorf("expected transaction %s to have failure reason '%s', got '%s' instead, failure details: %s", txID, expectedReason, resp.TransactionFailureReason, resp.TransactionFailureDetails)
 		}
+
+		return ierrors.Errorf("expected transaction %s to have failure reason '%s', got '%s' instead, failure details: %s", txID, expectedReason, resp.TransactionFailureReason, resp.TransactionFailureDetails)
 	})
 }
 

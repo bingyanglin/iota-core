@@ -88,18 +88,26 @@ func (d *DockerTestFramework) WaitUntilNetworkHealthy() {
 	fmt.Println("Wait until the network is healthy...")
 	defer fmt.Println("Wait until the network is healthy......done")
 
+	// remember a map of nodes that were synced so we don't print the same node multiple times
+	syncedNodes := make(map[string]struct{})
+
 	d.Eventually(func() error {
 		for _, node := range d.Nodes() {
-			for {
-				info, err := d.Client(node.Name).Info(context.TODO())
-				if err != nil {
-					return err
-				}
+			info, err := d.Client(node.Name).Info(context.TODO())
+			if err != nil {
+				delete(syncedNodes, node.Name)
+				return ierrors.Errorf("failed to get node %s's info: %w", node.Name, err)
+			}
 
-				if info.Status.IsNetworkHealthy {
-					fmt.Println("Node", node.Name, "is synced")
-					break
-				}
+			if !info.Status.IsNetworkHealthy {
+				delete(syncedNodes, node.Name)
+				return ierrors.Errorf("node %s's network is not healthy", node.Name)
+			}
+
+			if _, exist := syncedNodes[node.Name]; !exist {
+				syncedNodes[node.Name] = struct{}{}
+
+				fmt.Println(fmt.Sprintf("Node %s's network is now healthy!", node.Name))
 			}
 		}
 
