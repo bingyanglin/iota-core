@@ -291,16 +291,6 @@ func Test_ManagementAPI_Snapshots(t *testing.T) {
 	managementClient, err := nodeClientV1.Management(getContextWithTimeout(5 * time.Second))
 	require.NoError(t, err)
 
-	awaitNextCommittedEpoch := func() {
-		info, err := nodeClientV1.Info(getContextWithTimeout(5 * time.Second))
-		require.NoError(t, err)
-
-		currentEpoch := nodeClientV1.CommittedAPI().TimeProvider().EpochFromSlot(info.Status.LatestCommitmentID.Slot())
-
-		// await the start slot of the next epoch
-		d.AwaitCommitment(nodeClientV1.CommittedAPI().TimeProvider().EpochStart(currentEpoch + 1))
-	}
-
 	type test struct {
 		name     string
 		testFunc func(t *testing.T)
@@ -311,7 +301,7 @@ func Test_ManagementAPI_Snapshots(t *testing.T) {
 			name: "Test_CreateSnapshot",
 			testFunc: func(t *testing.T) {
 				// wait for the next epoch to start
-				awaitNextCommittedEpoch()
+				d.AwaitEpochFinalized()
 
 				// create snapshot
 				snapshotResponse, err := managementClient.CreateSnapshot(getContextWithTimeout(5 * time.Second))
