@@ -138,6 +138,7 @@ func (d *DockerTestFramework) Run() error {
 	defer close(ch)
 	defer close(stopCh)
 
+	ts := time.Now()
 	go func() {
 		err := d.DockerComposeUp()
 
@@ -168,7 +169,7 @@ loop:
 			}
 		case <-ticker.C:
 			fmt.Println("Waiting for nodes to become available...")
-			if d.waitForNodesAndGetClients() == nil {
+			if d.waitForNodesOnlineAndInitClients(ts) == nil {
 				break loop
 			}
 		}

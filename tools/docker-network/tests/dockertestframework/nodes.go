@@ -50,16 +50,22 @@ func (d *DockerTestFramework) NodeStatus(name string) *api.InfoResNodeStatus {
 	return info.Status
 }
 
-func (d *DockerTestFramework) waitForNodesAndGetClients() error {
+func (d *DockerTestFramework) waitForNodesOnlineAndInitClients(ts time.Time) error {
 	d.nodesLock.Lock()
 	defer d.nodesLock.Unlock()
 
 	for _, node := range d.nodesWithoutLocking() {
+		// check if the node is online and initialize the client
 		client, err := nodeclient.New(node.ClientURL)
 		if err != nil {
+			delete(d.clients, node.Name)
 			return ierrors.Wrapf(err, "failed to create node client for node %s", node.Name)
 		}
-		d.nodes[node.Name] = node
+
+		if _, exist := d.clients[node.Name]; !exist {
+			fmt.Println(fmt.Sprintf("Node %s became available after %v!", node.Name, time.Since(ts).Truncate(time.Millisecond)))
+		}
+
 		d.clients[node.Name] = client
 	}
 
