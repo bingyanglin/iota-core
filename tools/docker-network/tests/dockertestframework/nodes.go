@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -91,6 +92,8 @@ func (d *DockerTestFramework) WaitUntilNetworkHealthy() {
 	// remember a map of nodes that were synced so we don't print the same node multiple times
 	syncedNodes := make(map[string]struct{})
 
+	ts := time.Now()
+
 	d.Eventually(func() error {
 		for _, node := range d.Nodes() {
 			info, err := d.Client(node.Name).Info(context.TODO())
@@ -107,7 +110,7 @@ func (d *DockerTestFramework) WaitUntilNetworkHealthy() {
 			if _, exist := syncedNodes[node.Name]; !exist {
 				syncedNodes[node.Name] = struct{}{}
 
-				fmt.Println(fmt.Sprintf("Node %s's network is now healthy!", node.Name))
+				fmt.Println(fmt.Sprintf("Node %s's network is healthy after %v!", node.Name, time.Since(ts).Truncate(time.Millisecond)))
 			}
 		}
 
