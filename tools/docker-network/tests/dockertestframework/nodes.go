@@ -89,9 +89,42 @@ func (d *DockerTestFramework) WaitUntilNetworkReady() {
 	d.DumpContainerLogsToFiles()
 }
 
+func (d *DockerTestFramework) WaitUntilNodesHealthy() {
+	fmt.Println("Wait until all the nodes are healthy...")
+	defer fmt.Println("Wait until all the nodes are healthy... done!")
+
+	// remember a map of nodes that were synced so we don't print the same node multiple times
+	healthyNodes := make(map[string]struct{})
+
+	ts := time.Now()
+
+	d.Eventually(func() error {
+		for _, node := range d.Nodes() {
+			info, err := d.Client(node.Name).Info(context.TODO())
+			if err != nil {
+				delete(healthyNodes, node.Name)
+				return ierrors.Errorf("failed to get node %s's info: %w", node.Name, err)
+			}
+
+			if !info.Status.IsHealthy {
+				delete(healthyNodes, node.Name)
+				return ierrors.Errorf("node %s's network is not healthy", node.Name)
+			}
+
+			if _, exist := healthyNodes[node.Name]; !exist {
+				healthyNodes[node.Name] = struct{}{}
+
+				fmt.Println(fmt.Sprintf("Node %s became healthy after %v!", node.Name, time.Since(ts).Truncate(time.Millisecond)))
+			}
+		}
+
+		return nil
+	}, true)
+}
+
 func (d *DockerTestFramework) WaitUntilNetworkHealthy() {
 	fmt.Println("Wait until the network is healthy...")
-	defer fmt.Println("Wait until the network is healthy......done")
+	defer fmt.Println("Wait until the network is healthy... done!")
 
 	// remember a map of nodes that were synced so we don't print the same node multiple times
 	syncedNodes := make(map[string]struct{})
