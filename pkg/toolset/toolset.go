@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	flag "github.com/spf13/pflag"
 
@@ -22,26 +23,43 @@ const (
 	FlagToolHRP       = "hrp"
 	FlagToolBIP32Path = "bip32Path"
 	FlagToolMnemonic  = "mnemonic"
+	FlagToolPassword  = "password"
 	FlagToolSalt      = "salt"
 
 	FlagToolNodeURL = "nodeURL"
 
 	FlagToolOutputJSON            = "json"
 	FlagToolDescriptionOutputJSON = "format output as JSON"
+
+	FlagToolBenchmarkCount    = "count"
+	FlagToolBenchmarkSize     = "size"
+	FlagToolBenchmarkThreads  = "threads"
+	FlagToolBenchmarkDuration = "duration"
 )
 
 const (
+	ToolPwdHash            = "pwd-hash"
 	ToolP2PIdentityGen     = "p2pidentity-gen"
 	ToolP2PExtractIdentity = "p2pidentity-extract"
 	ToolEd25519Key         = "ed25519-key"
 	ToolEd25519Addr        = "ed25519-addr"
 	ToolJWTApi             = "jwt-api"
+	ToolBenchmarkIO        = "bench-io"
+	ToolBenchmarkCPU       = "bench-cpu"
 	ToolNodeInfo           = "node-info"
 )
 
 const (
 	DefaultValueAPIJWTTokenSalt            = "IOTA"
 	DefaultValueIdentityPrivateKeyFilePath = "testnet/p2p/identity.key"
+)
+
+const (
+	//nolint:gosec // there is no hardcoded password
+	passwordEnvKey = "IOTA_CORE_TOOL_PASSWORD"
+
+	// printStatusInterval is the interval for printing status messages.
+	printStatusInterval = 2 * time.Second
 )
 
 // ShouldHandleTools checks if tools were requested.
@@ -66,11 +84,14 @@ func HandleTools() {
 	}
 
 	tools := map[string]func([]string) error{
+		ToolPwdHash:            hashPasswordAndSalt,
 		ToolP2PIdentityGen:     generateP2PIdentity,
 		ToolP2PExtractIdentity: extractP2PIdentity,
 		ToolEd25519Key:         generateEd25519Key,
 		ToolEd25519Addr:        generateEd25519Address,
 		ToolJWTApi:             generateJWTApiToken,
+		ToolBenchmarkIO:        benchmarkIO,
+		ToolBenchmarkCPU:       benchmarkCPU,
 		ToolNodeInfo:           nodeInfo,
 	}
 
@@ -95,11 +116,14 @@ func HandleTools() {
 }
 
 func listTools() {
+	fmt.Printf("%-20s generates a scrypt hash from your password and salt\n", fmt.Sprintf("%s:", ToolPwdHash))
 	fmt.Printf("%-20s generates a p2p identity private key file\n", fmt.Sprintf("%s:", ToolP2PIdentityGen))
 	fmt.Printf("%-20s extracts the p2p identity from the private key file\n", fmt.Sprintf("%s:", ToolP2PExtractIdentity))
 	fmt.Printf("%-20s generates an ed25519 key pair\n", fmt.Sprintf("%s:", ToolEd25519Key))
 	fmt.Printf("%-20s generates an ed25519 address from a public key\n", fmt.Sprintf("%s:", ToolEd25519Addr))
 	fmt.Printf("%-20s generates a JWT token for REST-API access\n", fmt.Sprintf("%s:", ToolJWTApi))
+	fmt.Printf("%-20s benchmarks the IO throughput\n", fmt.Sprintf("%s:", ToolBenchmarkIO))
+	fmt.Printf("%-20s benchmarks the CPU performance\n", fmt.Sprintf("%s:", ToolBenchmarkCPU))
 	fmt.Printf("%-20s queries the info endpoint of a node\n", fmt.Sprintf("%s:", ToolNodeInfo))
 }
 

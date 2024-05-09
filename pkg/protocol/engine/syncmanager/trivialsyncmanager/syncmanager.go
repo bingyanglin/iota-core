@@ -272,7 +272,8 @@ func (s *SyncManager) updateSyncStatus() (changed bool) {
 	s.isSyncedLock.Lock()
 	defer s.isSyncedLock.Unlock()
 
-	isSynced := s.IsBootstrapped() && time.Since(s.engine.Clock.Accepted().RelativeTime()) < s.optsSyncThreshold
+	snapshot := s.engine.Clock.Snapshot()
+	isSynced := s.IsBootstrapped() && ((snapshot.RelativeAcceptedTime.Sub(snapshot.AcceptedTime)) < s.optsSyncThreshold)
 	if s.isSynced != isSynced {
 		s.isSynced = isSynced
 
