@@ -22,7 +22,7 @@ func Test_SyncFromSnapshot(t *testing.T) {
 			iotago.WithLivenessOptions(10, 10, 2, 4, 5),
 			iotago.WithCongestionControlOptions(1, 1, 1, 400_000, 250_000, 50_000_000, 1000, 100),
 			iotago.WithRewardsOptions(8, 10, 2, 384),
-			iotago.WithTargetCommitteeSize(4),
+			iotago.WithTargetCommitteeSize(3),
 		))
 	defer d.Stop()
 
