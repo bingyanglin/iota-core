@@ -311,7 +311,7 @@ func Test_ValidatorsAPI(t *testing.T) {
 
 			// issue candidacy payload in the next epoch (currentEpoch + 1), in order to issue it before epochNearingThreshold
 			d.AwaitCommitment(clt.CommittedAPI().TimeProvider().EpochEnd(currentEpoch))
-			blkID := d.IssueCandidacyPayloadFromAccount(wallet)
+			blkID := d.IssueCandidacyPayloadFromAccount(ctx, wallet)
 			fmt.Println("Candidacy payload:", blkID.ToHex(), blkID.Slot())
 			d.AwaitCommitment(blkID.Slot())
 		}()

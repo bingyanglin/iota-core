@@ -37,8 +37,8 @@ func (d *DockerTestFramework) StopIssueCandidacyPayload(nodes ...*Node) {
 	require.NoError(d.Testing, err)
 }
 
-func (d *DockerTestFramework) IssueCandidacyPayloadFromAccount(wallet *mock.Wallet) iotago.BlockID {
-	block, err := wallet.CreateAndSubmitBasicBlock(context.TODO(), "candidacy_payload", mock.WithPayload(&iotago.CandidacyAnnouncement{}))
+func (d *DockerTestFramework) IssueCandidacyPayloadFromAccount(ctx context.Context, wallet *mock.Wallet) iotago.BlockID {
+	block, err := wallet.CreateAndSubmitBasicBlock(ctx, "candidacy_payload", mock.WithPayload(&iotago.CandidacyAnnouncement{}))
 	require.NoError(d.Testing, err)
 
 	return block.ID()
