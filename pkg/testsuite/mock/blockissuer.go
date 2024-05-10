@@ -94,6 +94,9 @@ func (i *BlockIssuer) Address() iotago.Address {
 func (i *BlockIssuer) CreateValidationBlock(ctx context.Context, alias string, node *Node, opts ...options.Option[ValidationBlockParams]) (*blocks.Block, error) {
 	blockParams := options.Apply(NewValidationBlockParams(), opts)
 
+	blockIssuanceInfo, err := i.Client.BlockIssuance(ctx)
+	require.NoError(i.Testing, err)
+
 	if blockParams.BlockHeader.IssuingTime == nil {
 		issuingTime := time.Now().UTC()
 		blockParams.BlockHeader.IssuingTime = &issuingTime
@@ -101,8 +104,7 @@ func (i *BlockIssuer) CreateValidationBlock(ctx context.Context, alias string, n
 
 	apiForBlock := i.retrieveAPI(blockParams.BlockHeader)
 	protoParams := apiForBlock.ProtocolParameters()
-	blockIssuanceInfo, err := i.Client.BlockIssuance(ctx)
-	require.NoError(i.Testing, err)
+
 	if blockParams.BlockHeader.SlotCommitment == nil {
 		commitment := blockIssuanceInfo.LatestCommitment
 		blockSlot := apiForBlock.TimeProvider().SlotFromTime(*blockParams.BlockHeader.IssuingTime)
@@ -133,7 +135,7 @@ func (i *BlockIssuer) CreateValidationBlock(ctx context.Context, alias string, n
 	}
 
 	if blockParams.BlockHeader.References == nil {
-		blockParams.BlockHeader.References = referencesFromBlockIssuanceResponse(i.latestBlockIssuanceResponse(ctx))
+		blockParams.BlockHeader.References = referencesFromBlockIssuanceResponse(blockIssuanceInfo)
 	}
 
 	err = i.setDefaultBlockParams(ctx, blockParams.BlockHeader)
