@@ -99,6 +99,10 @@ func (i *BlockIssuer) CreateValidationBlock(ctx context.Context, alias string, n
 
 	if blockParams.BlockHeader.IssuingTime == nil {
 		issuingTime := time.Now().UTC()
+		if issuingTime.Before(blockIssuanceInfo.LatestParentBlockIssuingTime) {
+			issuingTime = blockIssuanceInfo.LatestParentBlockIssuingTime.Add(time.Nanosecond)
+		}
+
 		blockParams.BlockHeader.IssuingTime = &issuingTime
 	}
 
@@ -246,6 +250,10 @@ func (i *BlockIssuer) CreateBasicBlock(ctx context.Context, alias string, opts .
 	// set the issuing time last to ensure the timestamp is greater than that of the parents selected.
 	if blockParams.BlockHeader.IssuingTime == nil {
 		issuingTime := time.Now().UTC()
+		if issuingTime.Before(blockIssuanceInfo.LatestParentBlockIssuingTime) {
+			issuingTime = blockIssuanceInfo.LatestParentBlockIssuingTime.Add(time.Nanosecond)
+		}
+
 		blockParams.BlockHeader.IssuingTime = &issuingTime
 	}
 	blockBuilder.IssuingTime(*blockParams.BlockHeader.IssuingTime)
