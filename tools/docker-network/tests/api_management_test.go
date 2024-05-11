@@ -43,12 +43,15 @@ func Test_ManagementAPI_Peers(t *testing.T) {
 	d.AddValidatorNode("V2", "docker-network-inx-validator-2-1", "http://localhost:8060", "rms1pqm4xk8e9ny5w5rxjkvtp249tfhlwvcshyr3pc0665jvp7g3hc875k538hl")
 	d.AddValidatorNode("V3", "docker-network-inx-validator-3-1", "http://localhost:8070", "rms1pp4wuuz0y42caz48vv876qfpmffswsvg40zz8v79sy8cp0jfxm4kunflcgt")
 	d.AddValidatorNode("V4", "docker-network-inx-validator-4-1", "http://localhost:8040", "rms1pr8cxs3dzu9xh4cduff4dd4cxdthpjkpwmz2244f75m0urslrsvtsshrrjw")
-	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8090")
+	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8080")
 
 	runErr := d.Run()
 	require.NoError(t, runErr)
 
 	d.WaitUntilNetworkReady()
+
+	// wait longer for autopeering
+	d.AwaitCommitment(d.DefaultWallet().CurrentSlot())
 
 	// get the management client
 	managementClient, err := d.Client("V1").Management(getContextWithTimeout(5 * time.Second))
@@ -132,7 +135,7 @@ func Test_ManagementAPI_Peers_BadRequests(t *testing.T) {
 	d.AddValidatorNode("V2", "docker-network-inx-validator-2-1", "http://localhost:8060", "rms1pqm4xk8e9ny5w5rxjkvtp249tfhlwvcshyr3pc0665jvp7g3hc875k538hl")
 	d.AddValidatorNode("V3", "docker-network-inx-validator-3-1", "http://localhost:8070", "rms1pp4wuuz0y42caz48vv876qfpmffswsvg40zz8v79sy8cp0jfxm4kunflcgt")
 	d.AddValidatorNode("V4", "docker-network-inx-validator-4-1", "http://localhost:8040", "rms1pr8cxs3dzu9xh4cduff4dd4cxdthpjkpwmz2244f75m0urslrsvtsshrrjw")
-	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8090")
+	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8080")
 
 	runErr := d.Run()
 	require.NoError(t, runErr)
@@ -185,8 +188,8 @@ func Test_ManagementAPI_Peers_BadRequests(t *testing.T) {
 func Test_ManagementAPI_Pruning(t *testing.T) {
 	d := dockertestframework.NewDockerTestFramework(t,
 		dockertestframework.WithProtocolParametersOptions(
-			iotago.WithTimeProviderOptions(0, time.Now().Unix(), 4, 4),
-			iotago.WithLivenessOptions(3, 4, 2, 4, 5),
+			iotago.WithTimeProviderOptions(0, time.Now().Unix(), 10, 3),
+			iotago.WithLivenessOptions(10, 10, 2, 4, 5),
 			iotago.WithCongestionControlOptions(1, 1, 1, 400_000, 250_000, 50_000_000, 1000, 100),
 			iotago.WithRewardsOptions(8, 10, 2, 384),
 			iotago.WithTargetCommitteeSize(4),
@@ -198,7 +201,7 @@ func Test_ManagementAPI_Pruning(t *testing.T) {
 	d.AddValidatorNode("V2", "docker-network-inx-validator-2-1", "http://localhost:8060", "rms1pqm4xk8e9ny5w5rxjkvtp249tfhlwvcshyr3pc0665jvp7g3hc875k538hl")
 	d.AddValidatorNode("V3", "docker-network-inx-validator-3-1", "http://localhost:8070", "rms1pp4wuuz0y42caz48vv876qfpmffswsvg40zz8v79sy8cp0jfxm4kunflcgt")
 	d.AddValidatorNode("V4", "docker-network-inx-validator-4-1", "http://localhost:8040", "rms1pr8cxs3dzu9xh4cduff4dd4cxdthpjkpwmz2244f75m0urslrsvtsshrrjw")
-	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8090")
+	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8080")
 
 	runErr := d.Run()
 	require.NoError(t, runErr)
@@ -221,9 +224,9 @@ func Test_ManagementAPI_Pruning(t *testing.T) {
 			name: "Test_PruneDatabase_ByEpoch",
 			testFunc: func(t *testing.T) {
 				// we need to wait until epoch 3 to be able to prune epoch 1
-				d.AwaitNextEpoch()
-				d.AwaitNextEpoch()
-				d.AwaitNextEpoch()
+				d.AwaitEpochFinalized()
+				d.AwaitEpochFinalized()
+				d.AwaitEpochFinalized()
 
 				// prune database by epoch
 				pruneDatabaseResponse, err := managementClient.PruneDatabaseByEpoch(getContextWithTimeout(5*time.Second), 1)
@@ -235,7 +238,7 @@ func Test_ManagementAPI_Pruning(t *testing.T) {
 			name: "Test_PruneDatabase_ByDepth",
 			testFunc: func(t *testing.T) {
 				// wait for the next epoch to start
-				d.AwaitNextEpoch()
+				d.AwaitEpochFinalized()
 
 				// prune database by depth
 				pruneDatabaseResponse, err := managementClient.PruneDatabaseByDepth(getContextWithTimeout(5*time.Second), 1)
@@ -247,7 +250,7 @@ func Test_ManagementAPI_Pruning(t *testing.T) {
 			name: "Test_PruneDatabase_BySize",
 			testFunc: func(t *testing.T) {
 				// wait for the next epoch to start
-				d.AwaitNextEpoch()
+				d.AwaitEpochFinalized()
 
 				// prune database by size
 				pruneDatabaseResponse, err := managementClient.PruneDatabaseBySize(getContextWithTimeout(5*time.Second), "5G")
@@ -266,8 +269,8 @@ func Test_ManagementAPI_Pruning(t *testing.T) {
 func Test_ManagementAPI_Snapshots(t *testing.T) {
 	d := dockertestframework.NewDockerTestFramework(t,
 		dockertestframework.WithProtocolParametersOptions(
-			iotago.WithTimeProviderOptions(0, time.Now().Unix(), 3, 4),
-			iotago.WithLivenessOptions(3, 4, 2, 4, 8),
+			iotago.WithTimeProviderOptions(0, time.Now().Unix(), 10, 3),
+			iotago.WithLivenessOptions(10, 10, 2, 4, 5),
 			iotago.WithCongestionControlOptions(1, 1, 1, 400_000, 250_000, 50_000_000, 1000, 100),
 			iotago.WithRewardsOptions(8, 10, 2, 384),
 			iotago.WithTargetCommitteeSize(4),
@@ -278,7 +281,7 @@ func Test_ManagementAPI_Snapshots(t *testing.T) {
 	d.AddValidatorNode("V2", "docker-network-inx-validator-2-1", "http://localhost:8060", "rms1pqm4xk8e9ny5w5rxjkvtp249tfhlwvcshyr3pc0665jvp7g3hc875k538hl")
 	d.AddValidatorNode("V3", "docker-network-inx-validator-3-1", "http://localhost:8070", "rms1pp4wuuz0y42caz48vv876qfpmffswsvg40zz8v79sy8cp0jfxm4kunflcgt")
 	d.AddValidatorNode("V4", "docker-network-inx-validator-4-1", "http://localhost:8040", "rms1pr8cxs3dzu9xh4cduff4dd4cxdthpjkpwmz2244f75m0urslrsvtsshrrjw")
-	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8090")
+	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8080")
 
 	runErr := d.Run()
 	require.NoError(t, runErr)
@@ -291,16 +294,6 @@ func Test_ManagementAPI_Snapshots(t *testing.T) {
 	managementClient, err := nodeClientV1.Management(getContextWithTimeout(5 * time.Second))
 	require.NoError(t, err)
 
-	awaitNextCommittedEpoch := func() {
-		info, err := nodeClientV1.Info(getContextWithTimeout(5 * time.Second))
-		require.NoError(t, err)
-
-		currentEpoch := nodeClientV1.CommittedAPI().TimeProvider().EpochFromSlot(info.Status.LatestCommitmentID.Slot())
-
-		// await the start slot of the next epoch
-		d.AwaitCommitment(nodeClientV1.CommittedAPI().TimeProvider().EpochStart(currentEpoch + 1))
-	}
-
 	type test struct {
 		name     string
 		testFunc func(t *testing.T)
@@ -311,7 +304,7 @@ func Test_ManagementAPI_Snapshots(t *testing.T) {
 			name: "Test_CreateSnapshot",
 			testFunc: func(t *testing.T) {
 				// wait for the next epoch to start
-				awaitNextCommittedEpoch()
+				d.AwaitEpochFinalized()
 
 				// create snapshot
 				snapshotResponse, err := managementClient.CreateSnapshot(getContextWithTimeout(5 * time.Second))

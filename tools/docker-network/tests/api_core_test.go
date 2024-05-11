@@ -272,7 +272,7 @@ func Test_ValidatorsAPI(t *testing.T) {
 	d.AddValidatorNode("V2", "docker-network-inx-validator-2-1", "http://localhost:8060", "rms1pqm4xk8e9ny5w5rxjkvtp249tfhlwvcshyr3pc0665jvp7g3hc875k538hl")
 	d.AddValidatorNode("V3", "docker-network-inx-validator-3-1", "http://localhost:8070", "rms1pp4wuuz0y42caz48vv876qfpmffswsvg40zz8v79sy8cp0jfxm4kunflcgt")
 	d.AddValidatorNode("V4", "docker-network-inx-validator-4-1", "http://localhost:8040", "rms1pr8cxs3dzu9xh4cduff4dd4cxdthpjkpwmz2244f75m0urslrsvtsshrrjw")
-	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8090")
+	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8080")
 
 	runErr := d.Run()
 	require.NoError(t, runErr)
@@ -311,7 +311,7 @@ func Test_ValidatorsAPI(t *testing.T) {
 
 			// issue candidacy payload in the next epoch (currentEpoch + 1), in order to issue it before epochNearingThreshold
 			d.AwaitCommitment(clt.CommittedAPI().TimeProvider().EpochEnd(currentEpoch))
-			blkID := d.IssueCandidacyPayloadFromAccount(wallet)
+			blkID := d.IssueCandidacyPayloadFromAccount(ctx, wallet)
 			fmt.Println("Candidacy payload:", blkID.ToHex(), blkID.Slot())
 			d.AwaitCommitment(blkID.Slot())
 		}()
@@ -343,7 +343,7 @@ func Test_CoreAPI(t *testing.T) {
 	d.AddValidatorNode("V2", "docker-network-inx-validator-2-1", "http://localhost:8060", "rms1pqm4xk8e9ny5w5rxjkvtp249tfhlwvcshyr3pc0665jvp7g3hc875k538hl")
 	d.AddValidatorNode("V3", "docker-network-inx-validator-3-1", "http://localhost:8070", "rms1pp4wuuz0y42caz48vv876qfpmffswsvg40zz8v79sy8cp0jfxm4kunflcgt")
 	d.AddValidatorNode("V4", "docker-network-inx-validator-4-1", "http://localhost:8040", "rms1pr8cxs3dzu9xh4cduff4dd4cxdthpjkpwmz2244f75m0urslrsvtsshrrjw")
-	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8090")
+	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8080")
 
 	runErr := d.Run()
 	require.NoError(t, runErr)
@@ -357,21 +357,21 @@ func Test_CoreAPI(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		testFunc func(t *testing.T, nodeAlias string)
+		testFunc func(t *testing.T, node *dockertestframework.Node, client mock.Client)
 	}{
 		{
 			name: "Test_Info",
-			testFunc: func(t *testing.T, nodeAlias string) {
-				resp, err := d.Client(nodeAlias).Info(context.Background())
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
+				resp, err := client.Info(context.Background())
 				require.NoError(t, err)
 				require.NotNil(t, resp)
 			},
 		},
 		{
 			name: "Test_BlockByBlockID",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				assetsPerSlot.forEachBlock(t, func(t *testing.T, block *iotago.Block) {
-					respBlock, err := d.Client(nodeAlias).BlockByBlockID(context.Background(), block.MustID())
+					respBlock, err := client.BlockByBlockID(context.Background(), block.MustID())
 					require.NoError(t, err)
 					require.NotNil(t, respBlock)
 					require.Equal(t, block.MustID(), respBlock.MustID(), "BlockID of retrieved block does not match: %s != %s", block.MustID(), respBlock.MustID())
@@ -380,9 +380,9 @@ func Test_CoreAPI(t *testing.T) {
 		},
 		{
 			name: "Test_BlockMetadataByBlockID",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				assetsPerSlot.forEachBlock(t, func(t *testing.T, block *iotago.Block) {
-					resp, err := d.Client(nodeAlias).BlockMetadataByBlockID(context.Background(), block.MustID())
+					resp, err := client.BlockMetadataByBlockID(context.Background(), block.MustID())
 					require.NoError(t, err)
 					require.NotNil(t, resp)
 					require.Equal(t, block.MustID(), resp.BlockID, "BlockID of retrieved block does not match: %s != %s", block.MustID(), resp.BlockID)
@@ -390,7 +390,7 @@ func Test_CoreAPI(t *testing.T) {
 				})
 
 				assetsPerSlot.forEachReattachment(t, func(t *testing.T, blockID iotago.BlockID) {
-					resp, err := d.Client(nodeAlias).BlockMetadataByBlockID(context.Background(), blockID)
+					resp, err := client.BlockMetadataByBlockID(context.Background(), blockID)
 					require.NoError(t, err)
 					require.NotNil(t, resp)
 					require.Equal(t, blockID, resp.BlockID, "BlockID of retrieved block does not match: %s != %s", blockID, resp.BlockID)
@@ -400,9 +400,9 @@ func Test_CoreAPI(t *testing.T) {
 		},
 		{
 			name: "Test_BlockWithMetadata",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				assetsPerSlot.forEachBlock(t, func(t *testing.T, block *iotago.Block) {
-					resp, err := d.Client(nodeAlias).BlockWithMetadataByBlockID(context.Background(), block.MustID())
+					resp, err := client.BlockWithMetadataByBlockID(context.Background(), block.MustID())
 					require.NoError(t, err)
 					require.NotNil(t, resp)
 					require.Equal(t, block.MustID(), resp.Block.MustID(), "BlockID of retrieved block does not match: %s != %s", block.MustID(), resp.Block.MustID())
@@ -412,8 +412,8 @@ func Test_CoreAPI(t *testing.T) {
 		},
 		{
 			name: "Test_BlockIssuance",
-			testFunc: func(t *testing.T, nodeAlias string) {
-				resp, err := d.Client(nodeAlias).BlockIssuance(context.Background())
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
+				resp, err := client.BlockIssuance(context.Background())
 				require.NoError(t, err)
 				require.NotNil(t, resp)
 
@@ -422,79 +422,79 @@ func Test_CoreAPI(t *testing.T) {
 		},
 		{
 			name: "Test_CommitmentBySlot",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				assetsPerSlot.forEachSlot(t, func(t *testing.T, slot iotago.SlotIndex, commitmentsPerNode map[string]iotago.CommitmentID) {
-					resp, err := d.Client(nodeAlias).CommitmentBySlot(context.Background(), slot)
+					resp, err := client.CommitmentBySlot(context.Background(), slot)
 					require.NoError(t, err)
 					require.NotNil(t, resp)
-					commitmentsPerNode[nodeAlias] = resp.MustID()
+					commitmentsPerNode[node.Name] = resp.MustID()
 				})
 			},
 		},
 		{
 			name: "Test_CommitmentByID",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				assetsPerSlot.forEachCommitment(t, func(t *testing.T, commitmentsPerNode map[string]iotago.CommitmentID) {
-					resp, err := d.Client(nodeAlias).CommitmentByID(context.Background(), commitmentsPerNode[nodeAlias])
+					resp, err := client.CommitmentByID(context.Background(), commitmentsPerNode[node.Name])
 					require.NoError(t, err)
 					require.NotNil(t, resp)
-					require.Equal(t, commitmentsPerNode[nodeAlias], resp.MustID(), "Commitment does not match commitment got for the same slot from the same node: %s != %s", commitmentsPerNode[nodeAlias], resp.MustID())
+					require.Equal(t, commitmentsPerNode[node.Name], resp.MustID(), "Commitment does not match commitment got for the same slot from the same node: %s != %s", commitmentsPerNode[node.Name], resp.MustID())
 				})
 			},
 		},
 		{
 			name: "Test_CommitmentUTXOChangesByID",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				assetsPerSlot.forEachCommitment(t, func(t *testing.T, commitmentsPerNode map[string]iotago.CommitmentID) {
-					resp, err := d.Client(nodeAlias).CommitmentUTXOChangesByID(context.Background(), commitmentsPerNode[nodeAlias])
+					resp, err := client.CommitmentUTXOChangesByID(context.Background(), commitmentsPerNode[node.Name])
 					require.NoError(t, err)
 					require.NotNil(t, resp)
-					assetsPerSlot.assertUTXOOutputIDsInSlot(t, commitmentsPerNode[nodeAlias].Slot(), resp.CreatedOutputs, resp.ConsumedOutputs)
-					require.Equal(t, commitmentsPerNode[nodeAlias], resp.CommitmentID, "CommitmentID of retrieved UTXO changes does not match: %s != %s", commitmentsPerNode[nodeAlias], resp.CommitmentID)
+					assetsPerSlot.assertUTXOOutputIDsInSlot(t, commitmentsPerNode[node.Name].Slot(), resp.CreatedOutputs, resp.ConsumedOutputs)
+					require.Equal(t, commitmentsPerNode[node.Name], resp.CommitmentID, "CommitmentID of retrieved UTXO changes does not match: %s != %s", commitmentsPerNode[node.Name], resp.CommitmentID)
 				})
 			},
 		},
 		{
 			"Test_CommitmentUTXOChangesFullByID",
-			func(t *testing.T, nodeAlias string) {
+			func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				assetsPerSlot.forEachCommitment(t, func(t *testing.T, commitmentsPerNode map[string]iotago.CommitmentID) {
-					resp, err := d.Client(nodeAlias).CommitmentUTXOChangesFullByID(context.Background(), commitmentsPerNode[nodeAlias])
+					resp, err := client.CommitmentUTXOChangesFullByID(context.Background(), commitmentsPerNode[node.Name])
 					require.NoError(t, err)
 					require.NotNil(t, resp)
-					assetsPerSlot.assertUTXOOutputsInSlot(t, commitmentsPerNode[nodeAlias].Slot(), resp.CreatedOutputs, resp.ConsumedOutputs)
-					require.Equal(t, commitmentsPerNode[nodeAlias], resp.CommitmentID, "CommitmentID of retrieved UTXO changes does not match: %s != %s", commitmentsPerNode[nodeAlias], resp.CommitmentID)
+					assetsPerSlot.assertUTXOOutputsInSlot(t, commitmentsPerNode[node.Name].Slot(), resp.CreatedOutputs, resp.ConsumedOutputs)
+					require.Equal(t, commitmentsPerNode[node.Name], resp.CommitmentID, "CommitmentID of retrieved UTXO changes does not match: %s != %s", commitmentsPerNode[node.Name], resp.CommitmentID)
 				})
 			},
 		},
 		{
 			name: "Test_CommitmentUTXOChangesBySlot",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				assetsPerSlot.forEachCommitment(t, func(t *testing.T, commitmentsPerNode map[string]iotago.CommitmentID) {
-					resp, err := d.Client(nodeAlias).CommitmentUTXOChangesBySlot(context.Background(), commitmentsPerNode[nodeAlias].Slot())
+					resp, err := client.CommitmentUTXOChangesBySlot(context.Background(), commitmentsPerNode[node.Name].Slot())
 					require.NoError(t, err)
 					require.NotNil(t, resp)
-					assetsPerSlot.assertUTXOOutputIDsInSlot(t, commitmentsPerNode[nodeAlias].Slot(), resp.CreatedOutputs, resp.ConsumedOutputs)
-					require.Equal(t, commitmentsPerNode[nodeAlias], resp.CommitmentID, "CommitmentID of retrieved UTXO changes does not match: %s != %s", commitmentsPerNode[nodeAlias], resp.CommitmentID)
+					assetsPerSlot.assertUTXOOutputIDsInSlot(t, commitmentsPerNode[node.Name].Slot(), resp.CreatedOutputs, resp.ConsumedOutputs)
+					require.Equal(t, commitmentsPerNode[node.Name], resp.CommitmentID, "CommitmentID of retrieved UTXO changes does not match: %s != %s", commitmentsPerNode[node.Name], resp.CommitmentID)
 				})
 			},
 		},
 		{
 			name: "Test_CommitmentUTXOChangesFullBySlot",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				assetsPerSlot.forEachCommitment(t, func(t *testing.T, commitmentsPerNode map[string]iotago.CommitmentID) {
-					resp, err := d.Client(nodeAlias).CommitmentUTXOChangesFullBySlot(context.Background(), commitmentsPerNode[nodeAlias].Slot())
+					resp, err := client.CommitmentUTXOChangesFullBySlot(context.Background(), commitmentsPerNode[node.Name].Slot())
 					require.NoError(t, err)
 					require.NotNil(t, resp)
-					assetsPerSlot.assertUTXOOutputsInSlot(t, commitmentsPerNode[nodeAlias].Slot(), resp.CreatedOutputs, resp.ConsumedOutputs)
-					require.Equal(t, commitmentsPerNode[nodeAlias], resp.CommitmentID, "CommitmentID of retrieved UTXO changes does not match: %s != %s", commitmentsPerNode[nodeAlias], resp.CommitmentID)
+					assetsPerSlot.assertUTXOOutputsInSlot(t, commitmentsPerNode[node.Name].Slot(), resp.CreatedOutputs, resp.ConsumedOutputs)
+					require.Equal(t, commitmentsPerNode[node.Name], resp.CommitmentID, "CommitmentID of retrieved UTXO changes does not match: %s != %s", commitmentsPerNode[node.Name], resp.CommitmentID)
 				})
 			},
 		},
 		{
 			name: "Test_OutputByID",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				assetsPerSlot.forEachOutput(t, func(t *testing.T, outputID iotago.OutputID, output iotago.Output) {
-					resp, err := d.Client(nodeAlias).OutputByID(context.Background(), outputID)
+					resp, err := client.OutputByID(context.Background(), outputID)
 					require.NoError(t, err)
 					require.NotNil(t, resp)
 					require.EqualValues(t, output, resp, "Output created is different than retrieved from the API: %s != %s", output, resp)
@@ -503,9 +503,9 @@ func Test_CoreAPI(t *testing.T) {
 		},
 		{
 			name: "Test_OutputMetadata",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				assetsPerSlot.forEachOutput(t, func(t *testing.T, outputID iotago.OutputID, output iotago.Output) {
-					resp, err := d.Client(nodeAlias).OutputMetadataByID(context.Background(), outputID)
+					resp, err := client.OutputMetadataByID(context.Background(), outputID)
 					require.NoError(t, err)
 					require.NotNil(t, resp)
 					require.EqualValues(t, outputID, resp.OutputID, "OutputID of retrieved output does not match: %s != %s", outputID, resp.OutputID)
@@ -515,9 +515,9 @@ func Test_CoreAPI(t *testing.T) {
 		},
 		{
 			name: "Test_OutputWithMetadata",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				assetsPerSlot.forEachOutput(t, func(t *testing.T, outputID iotago.OutputID, output iotago.Output) {
-					out, outMetadata, err := d.Client(nodeAlias).OutputWithMetadataByID(context.Background(), outputID)
+					out, outMetadata, err := client.OutputWithMetadataByID(context.Background(), outputID)
 					require.NoError(t, err)
 					require.NotNil(t, outMetadata)
 					require.NotNil(t, out)
@@ -529,10 +529,10 @@ func Test_CoreAPI(t *testing.T) {
 		},
 		{
 			name: "Test_TransactionByID",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				assetsPerSlot.forEachTransaction(t, func(t *testing.T, transaction *iotago.SignedTransaction, firstAttachmentID iotago.BlockID) {
 					txID := transaction.Transaction.MustID()
-					resp, err := d.Client(nodeAlias).TransactionByID(context.Background(), txID)
+					resp, err := client.TransactionByID(context.Background(), txID)
 					require.NoError(t, err)
 					require.NotNil(t, resp)
 					require.EqualValues(t, txID, resp.MustID())
@@ -541,9 +541,9 @@ func Test_CoreAPI(t *testing.T) {
 		},
 		{
 			name: "Test_TransactionsIncludedBlock",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				assetsPerSlot.forEachTransaction(t, func(t *testing.T, transaction *iotago.SignedTransaction, firstAttachmentID iotago.BlockID) {
-					resp, err := d.Client(nodeAlias).TransactionIncludedBlock(context.Background(), transaction.Transaction.MustID())
+					resp, err := client.TransactionIncludedBlock(context.Background(), transaction.Transaction.MustID())
 					require.NoError(t, err)
 					require.NotNil(t, resp)
 					require.EqualValues(t, firstAttachmentID, resp.MustID())
@@ -552,9 +552,9 @@ func Test_CoreAPI(t *testing.T) {
 		},
 		{
 			name: "Test_TransactionsIncludedBlockMetadata",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				assetsPerSlot.forEachTransaction(t, func(t *testing.T, transaction *iotago.SignedTransaction, firstAttachmentID iotago.BlockID) {
-					resp, err := d.Client(nodeAlias).TransactionIncludedBlockMetadata(context.Background(), transaction.Transaction.MustID())
+					resp, err := client.TransactionIncludedBlockMetadata(context.Background(), transaction.Transaction.MustID())
 					require.NoError(t, err)
 					require.NotNil(t, resp)
 					require.EqualValues(t, api.BlockStateFinalized, resp.BlockState)
@@ -564,9 +564,9 @@ func Test_CoreAPI(t *testing.T) {
 		},
 		{
 			name: "Test_TransactionsMetadata",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				assetsPerSlot.forEachTransaction(t, func(t *testing.T, transaction *iotago.SignedTransaction, firstAttachmentID iotago.BlockID) {
-					resp, err := d.Client(nodeAlias).TransactionMetadata(context.Background(), transaction.Transaction.MustID())
+					resp, err := client.TransactionMetadata(context.Background(), transaction.Transaction.MustID())
 					require.NoError(t, err)
 					require.NotNil(t, resp)
 					require.Equal(t, api.TransactionStateFinalized, resp.TransactionState)
@@ -576,52 +576,50 @@ func Test_CoreAPI(t *testing.T) {
 		},
 		{
 			name: "Test_Congestion",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				assetsPerSlot.forEachAccountAddress(t, func(
 					t *testing.T,
 					accountAddress *iotago.AccountAddress,
 					commitmentPerNode map[string]iotago.CommitmentID,
 					bicPerNoode map[string]iotago.BlockIssuanceCredits,
 				) {
-					resp, err := d.Client(nodeAlias).Congestion(context.Background(), accountAddress, 0)
+					resp, err := client.Congestion(context.Background(), accountAddress, 0)
 					require.NoError(t, err)
 					require.NotNil(t, resp)
 
 					// node allows to get account only for the slot newer than lastCommittedSlot - MCA, we need fresh commitment
-					infoRes, err := d.Client(nodeAlias).Info(context.Background())
+					infoRes, err := client.Info(context.Background())
 					require.NoError(t, err)
-					commitment, err := d.Client(nodeAlias).CommitmentBySlot(context.Background(), infoRes.Status.LatestCommitmentID.Slot())
+					commitment, err := client.CommitmentBySlot(context.Background(), infoRes.Status.LatestCommitmentID.Slot())
 					require.NoError(t, err)
 
-					resp, err = d.Client(nodeAlias).Congestion(context.Background(), accountAddress, 0, commitment.MustID())
+					resp, err = client.Congestion(context.Background(), accountAddress, 0, commitment.MustID())
 					require.NoError(t, err)
 					require.NotNil(t, resp)
 					// later we check if all nodes have returned the same BIC value for this account
-					bicPerNoode[nodeAlias] = resp.BlockIssuanceCredits
+					bicPerNoode[node.Name] = resp.BlockIssuanceCredits
 				})
 			},
 		},
 		{
 			name: "Test_Validators",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				pageSize := uint64(3)
-				resp, err := d.Client(nodeAlias).Validators(context.Background(), pageSize)
+				resp, err := client.Validators(context.Background(), pageSize)
 				require.NoError(t, err)
 				require.NotNil(t, resp)
-				//TODO after finishing validators endpoint and including registered validators
-				//require.Equal(t, int(pageSize), len(resp.Validators), "There should be exactly %d validators returned on the first page", pageSize)
+				require.Equal(t, int(pageSize), len(resp.Validators), "There should be exactly %d validators returned on the first page", pageSize)
 
-				resp, err = d.Client(nodeAlias).Validators(context.Background(), pageSize, resp.Cursor)
+				resp, err = client.Validators(context.Background(), pageSize, resp.Cursor)
 				require.NoError(t, err)
 				require.NotNil(t, resp)
-				//TODO after finishing validators endpoint and including registered validators
-				//require.Equal(t, 1, len(resp.Validators), "There should be only one validator returned on the last page")
+				require.Equal(t, 1, len(resp.Validators), "There should be only one validator returned on the last page")
 			},
 		},
 		{
 			name: "Test_ValidatorsAll",
-			testFunc: func(t *testing.T, nodeAlias string) {
-				resp, all, err := d.Client(nodeAlias).ValidatorsAll(context.Background())
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
+				resp, all, err := client.ValidatorsAll(context.Background())
 				require.NoError(t, err)
 				require.True(t, all)
 				require.Equal(t, 4, len(resp.Validators))
@@ -629,13 +627,13 @@ func Test_CoreAPI(t *testing.T) {
 		},
 		{
 			name: "Test_Rewards",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				assetsPerSlot.forEachOutput(t, func(t *testing.T, outputID iotago.OutputID, output iotago.Output) {
 					if output.Type() != iotago.OutputDelegation {
 						return
 					}
 
-					resp, err := d.Client(nodeAlias).Rewards(context.Background(), outputID)
+					resp, err := client.Rewards(context.Background(), outputID)
 					require.NoError(t, err)
 					require.NotNil(t, resp)
 					// rewards are zero, because we do not wait for the epoch end
@@ -645,8 +643,8 @@ func Test_CoreAPI(t *testing.T) {
 		},
 		{
 			name: "Test_Committee",
-			testFunc: func(t *testing.T, nodeAlias string) {
-				resp, err := d.Client(nodeAlias).Committee(context.Background())
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
+				resp, err := client.Committee(context.Background())
 				require.NoError(t, err)
 				require.NotNil(t, resp)
 				require.EqualValues(t, 4, len(resp.Committee))
@@ -654,8 +652,8 @@ func Test_CoreAPI(t *testing.T) {
 		},
 		{
 			name: "Test_CommitteeWithEpoch",
-			testFunc: func(t *testing.T, nodeAlias string) {
-				resp, err := d.Client(nodeAlias).Committee(context.Background(), 0)
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
+				resp, err := client.Committee(context.Background(), 0)
 				require.NoError(t, err)
 				require.Equal(t, iotago.EpochIndex(0), resp.Epoch)
 				require.Equal(t, 4, len(resp.Committee))
@@ -665,7 +663,9 @@ func Test_CoreAPI(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			d.RequestFromNodes(test.testFunc)
+			for _, node := range d.Nodes() {
+				test.testFunc(d.Testing, node, d.Client(node.Name))
+			}
 		})
 	}
 
@@ -688,7 +688,7 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 	d.AddValidatorNode("V2", "docker-network-inx-validator-2-1", "http://localhost:8060", "rms1pqm4xk8e9ny5w5rxjkvtp249tfhlwvcshyr3pc0665jvp7g3hc875k538hl")
 	d.AddValidatorNode("V3", "docker-network-inx-validator-3-1", "http://localhost:8070", "rms1pp4wuuz0y42caz48vv876qfpmffswsvg40zz8v79sy8cp0jfxm4kunflcgt")
 	d.AddValidatorNode("V4", "docker-network-inx-validator-4-1", "http://localhost:8040", "rms1pr8cxs3dzu9xh4cduff4dd4cxdthpjkpwmz2244f75m0urslrsvtsshrrjw")
-	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8090")
+	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8080")
 
 	runErr := d.Run()
 	require.NoError(t, runErr)
@@ -697,13 +697,13 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		testFunc func(t *testing.T, nodeAlias string)
+		testFunc func(t *testing.T, node *dockertestframework.Node, client mock.Client)
 	}{
 		{
 			name: "Test_BlockByBlockID_Failure",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				blockID := tpkg.RandBlockID()
-				respBlock, err := d.Client(nodeAlias).BlockByBlockID(context.Background(), blockID)
+				respBlock, err := client.BlockByBlockID(context.Background(), blockID)
 				require.Error(t, err)
 				require.True(t, dockertestframework.IsStatusCode(err, http.StatusNotFound))
 				require.Nil(t, respBlock)
@@ -711,9 +711,9 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 		},
 		{
 			name: "Test_BlockMetadataByBlockID_Failure",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				blockID := tpkg.RandBlockID()
-				resp, err := d.Client(nodeAlias).BlockMetadataByBlockID(context.Background(), blockID)
+				resp, err := client.BlockMetadataByBlockID(context.Background(), blockID)
 				require.Error(t, err)
 				require.True(t, dockertestframework.IsStatusCode(err, http.StatusNotFound))
 				require.Nil(t, resp)
@@ -721,9 +721,9 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 		},
 		{
 			name: "Test_BlockWithMetadata_Failure",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				blockID := tpkg.RandBlockID()
-				resp, err := d.Client(nodeAlias).BlockWithMetadataByBlockID(context.Background(), blockID)
+				resp, err := client.BlockWithMetadataByBlockID(context.Background(), blockID)
 				require.Error(t, err)
 				require.True(t, dockertestframework.IsStatusCode(err, http.StatusNotFound))
 				require.Nil(t, resp)
@@ -731,9 +731,9 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 		},
 		{
 			name: "Test_CommitmentBySlot_Failure",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				slot := iotago.SlotIndex(1000_000_000)
-				resp, err := d.Client(nodeAlias).CommitmentBySlot(context.Background(), slot)
+				resp, err := client.CommitmentBySlot(context.Background(), slot)
 				require.Error(t, err)
 				require.True(t, dockertestframework.IsStatusCode(err, http.StatusNotFound))
 				require.Nil(t, resp)
@@ -741,9 +741,9 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 		},
 		{
 			name: "Test_CommitmentByID_Failure",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				committmentID := tpkg.RandCommitmentID()
-				resp, err := d.Client(nodeAlias).CommitmentByID(context.Background(), committmentID)
+				resp, err := client.CommitmentByID(context.Background(), committmentID)
 				require.Error(t, err)
 				require.True(t, dockertestframework.IsStatusCode(err, http.StatusNotFound))
 				require.Nil(t, resp)
@@ -751,9 +751,9 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 		},
 		{
 			name: "Test_CommitmentUTXOChangesByID_Failure",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				committmentID := tpkg.RandCommitmentID()
-				resp, err := d.Client(nodeAlias).CommitmentUTXOChangesByID(context.Background(), committmentID)
+				resp, err := client.CommitmentUTXOChangesByID(context.Background(), committmentID)
 				require.Error(t, err)
 				// commitmentID is valid, but the UTXO changes does not exist in the storage
 				require.True(t, dockertestframework.IsStatusCode(err, http.StatusNotFound))
@@ -762,10 +762,10 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 		},
 		{
 			"Test_CommitmentUTXOChangesFullByID_Failure",
-			func(t *testing.T, nodeAlias string) {
+			func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				committmentID := tpkg.RandCommitmentID()
 
-				resp, err := d.Client(nodeAlias).CommitmentUTXOChangesFullByID(context.Background(), committmentID)
+				resp, err := client.CommitmentUTXOChangesFullByID(context.Background(), committmentID)
 				require.Error(t, err)
 				// commitmentID is valid, but the UTXO changes does not exist in the storage
 				require.True(t, dockertestframework.IsStatusCode(err, http.StatusNotFound))
@@ -774,9 +774,9 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 		},
 		{
 			name: "Test_CommitmentUTXOChangesBySlot_Failure",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				slot := iotago.SlotIndex(1000_000_000)
-				resp, err := d.Client(nodeAlias).CommitmentUTXOChangesBySlot(context.Background(), slot)
+				resp, err := client.CommitmentUTXOChangesBySlot(context.Background(), slot)
 				require.Error(t, err)
 				require.True(t, dockertestframework.IsStatusCode(err, http.StatusNotFound))
 				require.Nil(t, resp)
@@ -784,10 +784,10 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 		},
 		{
 			name: "Test_CommitmentUTXOChangesFullBySlot_Failure",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				slot := iotago.SlotIndex(1000_000_000)
 
-				resp, err := d.Client(nodeAlias).CommitmentUTXOChangesFullBySlot(context.Background(), slot)
+				resp, err := client.CommitmentUTXOChangesFullBySlot(context.Background(), slot)
 				require.Error(t, err)
 				require.True(t, dockertestframework.IsStatusCode(err, http.StatusNotFound))
 				require.Nil(t, resp)
@@ -795,9 +795,9 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 		},
 		{
 			name: "Test_OutputByID_Failure",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				outputID := tpkg.RandOutputID(0)
-				resp, err := d.Client(nodeAlias).OutputByID(context.Background(), outputID)
+				resp, err := client.OutputByID(context.Background(), outputID)
 				require.Error(t, err)
 				require.True(t, dockertestframework.IsStatusCode(err, http.StatusNotFound))
 				require.Nil(t, resp)
@@ -805,10 +805,10 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 		},
 		{
 			name: "Test_OutputMetadata_Failure",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				outputID := tpkg.RandOutputID(0)
 
-				resp, err := d.Client(nodeAlias).OutputMetadataByID(context.Background(), outputID)
+				resp, err := client.OutputMetadataByID(context.Background(), outputID)
 				require.Error(t, err)
 				require.True(t, dockertestframework.IsStatusCode(err, http.StatusNotFound))
 				require.Nil(t, resp)
@@ -816,10 +816,10 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 		},
 		{
 			name: "Test_OutputWithMetadata_Failure",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				outputID := tpkg.RandOutputID(0)
 
-				out, outMetadata, err := d.Client(nodeAlias).OutputWithMetadataByID(context.Background(), outputID)
+				out, outMetadata, err := client.OutputWithMetadataByID(context.Background(), outputID)
 				require.Error(t, err)
 				require.Nil(t, out)
 				require.Nil(t, outMetadata)
@@ -828,9 +828,9 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 		},
 		{
 			name: "Test_TransactionsIncludedBlock_Failure",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				txID := tpkg.RandTransactionID()
-				resp, err := d.Client(nodeAlias).TransactionIncludedBlock(context.Background(), txID)
+				resp, err := client.TransactionIncludedBlock(context.Background(), txID)
 				require.Error(t, err)
 				require.True(t, dockertestframework.IsStatusCode(err, http.StatusNotFound))
 				require.Nil(t, resp)
@@ -838,10 +838,10 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 		},
 		{
 			name: "Test_TransactionsIncludedBlockMetadata_Failure",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				txID := tpkg.RandTransactionID()
 
-				resp, err := d.Client(nodeAlias).TransactionIncludedBlockMetadata(context.Background(), txID)
+				resp, err := client.TransactionIncludedBlockMetadata(context.Background(), txID)
 				require.Error(t, err)
 				require.True(t, dockertestframework.IsStatusCode(err, http.StatusNotFound))
 				require.Nil(t, resp)
@@ -849,10 +849,10 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 		},
 		{
 			name: "Test_TransactionsMetadata_Failure",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				txID := tpkg.RandTransactionID()
 
-				resp, err := d.Client(nodeAlias).TransactionMetadata(context.Background(), txID)
+				resp, err := client.TransactionMetadata(context.Background(), txID)
 				require.Error(t, err)
 				require.True(t, dockertestframework.IsStatusCode(err, http.StatusNotFound))
 				require.Nil(t, resp)
@@ -860,10 +860,10 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 		},
 		{
 			name: "Test_Congestion_Failure",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				accountAddress := tpkg.RandAccountAddress()
 				commitmentID := tpkg.RandCommitmentID()
-				resp, err := d.Client(nodeAlias).Congestion(context.Background(), accountAddress, 0, commitmentID)
+				resp, err := client.Congestion(context.Background(), accountAddress, 0, commitmentID)
 				require.Error(t, err)
 				require.True(t, dockertestframework.IsStatusCode(err, http.StatusNotFound))
 				require.Nil(t, resp)
@@ -871,8 +871,8 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 		},
 		{
 			name: "Test_Committee_Failure",
-			testFunc: func(t *testing.T, nodeAlias string) {
-				resp, err := d.Client(nodeAlias).Committee(context.Background(), 4)
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
+				resp, err := client.Committee(context.Background(), 4)
 				require.Error(t, err)
 				require.True(t, dockertestframework.IsStatusCode(err, http.StatusBadRequest))
 				require.Nil(t, resp)
@@ -880,9 +880,9 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 		},
 		{
 			name: "Test_Rewards_Failure",
-			testFunc: func(t *testing.T, nodeAlias string) {
+			testFunc: func(t *testing.T, node *dockertestframework.Node, client mock.Client) {
 				outputID := tpkg.RandOutputID(0)
-				resp, err := d.Client(nodeAlias).Rewards(context.Background(), outputID)
+				resp, err := client.Rewards(context.Background(), outputID)
 				require.Error(t, err)
 				require.True(t, dockertestframework.IsStatusCode(err, http.StatusNotFound))
 				require.Nil(t, resp)
@@ -892,7 +892,9 @@ func Test_CoreAPI_BadRequests(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			d.RequestFromNodes(test.testFunc)
+			for _, node := range d.Nodes() {
+				test.testFunc(d.Testing, node, d.Client(node.Name))
+			}
 		})
 	}
 }

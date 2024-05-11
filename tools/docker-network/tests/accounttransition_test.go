@@ -32,7 +32,7 @@ func Test_AccountTransitions(t *testing.T) {
 	d.AddValidatorNode("V2", "docker-network-inx-validator-2-1", "http://localhost:8060", "rms1pqm4xk8e9ny5w5rxjkvtp249tfhlwvcshyr3pc0665jvp7g3hc875k538hl")
 	d.AddValidatorNode("V3", "docker-network-inx-validator-3-1", "http://localhost:8070", "rms1pp4wuuz0y42caz48vv876qfpmffswsvg40zz8v79sy8cp0jfxm4kunflcgt")
 	d.AddValidatorNode("V4", "docker-network-inx-validator-4-1", "http://localhost:8040", "rms1pr8cxs3dzu9xh4cduff4dd4cxdthpjkpwmz2244f75m0urslrsvtsshrrjw")
-	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8090")
+	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8080")
 
 	err := d.Run()
 	require.NoError(t, err)

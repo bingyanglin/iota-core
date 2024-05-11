@@ -63,9 +63,9 @@ func (d *DockerTestFramework) AwaitTransactionFailure(ctx context.Context, txID 
 
 		if expectedReason == resp.TransactionFailureReason {
 			return nil
-		} else {
-			return ierrors.Errorf("expected transaction %s to have failure reason '%s', got '%s' instead, failure details: %s", txID, expectedReason, resp.TransactionFailureReason, resp.TransactionFailureDetails)
 		}
+
+		return ierrors.Errorf("expected transaction %s to have failure reason '%s', got '%s' instead, failure details: %s", txID, expectedReason, resp.TransactionFailureReason, resp.TransactionFailureDetails)
 	})
 }
 
@@ -92,17 +92,28 @@ func (d *DockerTestFramework) AwaitCommitment(targetSlot iotago.SlotIndex) {
 }
 
 func (d *DockerTestFramework) AwaitFinalization(targetSlot iotago.SlotIndex) {
-	d.Eventually(func() error {
+	currentFinalizedSlot := d.NodeStatus("V1").LatestFinalizedSlot
+
+	// we wait at max "targetSlot - currentFinalizedSlot" times * slot duration
+	deadline := time.Duration(d.defaultWallet.Client.CommittedAPI().ProtocolParameters().SlotDurationInSeconds()) * time.Second
+	if currentFinalizedSlot < targetSlot {
+		deadline *= time.Duration(targetSlot - currentFinalizedSlot)
+	}
+
+	// give some extra time for peering etc
+	deadline += 30 * time.Second
+
+	d.EventuallyWithDurations(func() error {
 		currentFinalisedSlot := d.NodeStatus("V1").LatestFinalizedSlot
 		if targetSlot > currentFinalisedSlot {
 			return ierrors.Errorf("finalized slot %d is not reached yet", targetSlot)
 		}
 
 		return nil
-	})
+	}, deadline, 1*time.Second)
 }
 
-func (d *DockerTestFramework) AwaitNextEpoch() {
+func (d *DockerTestFramework) AwaitEpochFinalized() {
 	//nolint:lostcancel
 	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
 

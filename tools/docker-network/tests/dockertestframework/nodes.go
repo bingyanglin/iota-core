@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -49,18 +50,22 @@ func (d *DockerTestFramework) NodeStatus(name string) *api.InfoResNodeStatus {
 	return info.Status
 }
 
-func (d *DockerTestFramework) waitForNodesAndGetClients() error {
-	nodes := d.Nodes()
-
+func (d *DockerTestFramework) waitForNodesOnlineAndInitClients(ts time.Time) error {
 	d.nodesLock.Lock()
 	defer d.nodesLock.Unlock()
 
-	for _, node := range nodes {
+	for _, node := range d.nodesWithoutLocking() {
+		// check if the node is online and initialize the client
 		client, err := nodeclient.New(node.ClientURL)
 		if err != nil {
+			delete(d.clients, node.Name)
 			return ierrors.Wrapf(err, "failed to create node client for node %s", node.Name)
 		}
-		d.nodes[node.Name] = node
+
+		if _, exist := d.clients[node.Name]; !exist {
+			fmt.Println(fmt.Sprintf("Node %s became available after %v!", node.Name, time.Since(ts).Truncate(time.Millisecond)))
+		}
+
 		d.clients[node.Name] = client
 	}
 
@@ -84,22 +89,65 @@ func (d *DockerTestFramework) WaitUntilNetworkReady() {
 	d.DumpContainerLogsToFiles()
 }
 
-func (d *DockerTestFramework) WaitUntilNetworkHealthy() {
-	fmt.Println("Wait until the network is healthy...")
-	defer fmt.Println("Wait until the network is healthy......done")
+func (d *DockerTestFramework) WaitUntilNodesHealthy() {
+	fmt.Println("Wait until all the nodes are healthy...")
+	defer fmt.Println("Wait until all the nodes are healthy... done!")
+
+	// remember a map of nodes that were synced so we don't print the same node multiple times
+	healthyNodes := make(map[string]struct{})
+
+	ts := time.Now()
 
 	d.Eventually(func() error {
 		for _, node := range d.Nodes() {
-			for {
-				info, err := d.Client(node.Name).Info(context.TODO())
-				if err != nil {
-					return err
-				}
+			info, err := d.Client(node.Name).Info(context.TODO())
+			if err != nil {
+				delete(healthyNodes, node.Name)
+				return ierrors.Errorf("failed to get node %s's info: %w", node.Name, err)
+			}
 
-				if info.Status.IsNetworkHealthy {
-					fmt.Println("Node", node.Name, "is synced")
-					break
-				}
+			if !info.Status.IsHealthy {
+				delete(healthyNodes, node.Name)
+				return ierrors.Errorf("node %s's network is not healthy", node.Name)
+			}
+
+			if _, exist := healthyNodes[node.Name]; !exist {
+				healthyNodes[node.Name] = struct{}{}
+
+				fmt.Println(fmt.Sprintf("Node %s became healthy after %v!", node.Name, time.Since(ts).Truncate(time.Millisecond)))
+			}
+		}
+
+		return nil
+	}, true)
+}
+
+func (d *DockerTestFramework) WaitUntilNetworkHealthy() {
+	fmt.Println("Wait until the network is healthy...")
+	defer fmt.Println("Wait until the network is healthy... done!")
+
+	// remember a map of nodes that were synced so we don't print the same node multiple times
+	syncedNodes := make(map[string]struct{})
+
+	ts := time.Now()
+
+	d.Eventually(func() error {
+		for _, node := range d.Nodes() {
+			info, err := d.Client(node.Name).Info(context.TODO())
+			if err != nil {
+				delete(syncedNodes, node.Name)
+				return ierrors.Errorf("failed to get node %s's info: %w", node.Name, err)
+			}
+
+			if !info.Status.IsNetworkHealthy {
+				delete(syncedNodes, node.Name)
+				return ierrors.Errorf("node %s's network is not healthy", node.Name)
+			}
+
+			if _, exist := syncedNodes[node.Name]; !exist {
+				syncedNodes[node.Name] = struct{}{}
+
+				fmt.Println(fmt.Sprintf("Node %s's network is healthy after %v!", node.Name, time.Since(ts).Truncate(time.Millisecond)))
 			}
 		}
 
@@ -136,10 +184,7 @@ func (d *DockerTestFramework) AddNode(name string, containerName string, clientU
 	}
 }
 
-func (d *DockerTestFramework) Nodes(names ...string) []*Node {
-	d.nodesLock.RLock()
-	defer d.nodesLock.RUnlock()
-
+func (d *DockerTestFramework) nodesWithoutLocking(names ...string) []*Node {
 	if len(names) == 0 {
 		nodes := make([]*Node, 0, len(d.nodes))
 		for _, node := range d.nodes {
@@ -155,6 +200,13 @@ func (d *DockerTestFramework) Nodes(names ...string) []*Node {
 	}
 
 	return nodes
+}
+
+func (d *DockerTestFramework) Nodes(names ...string) []*Node {
+	d.nodesLock.RLock()
+	defer d.nodesLock.RUnlock()
+
+	return d.nodesWithoutLocking(names...)
 }
 
 func (d *DockerTestFramework) Node(name string) *Node {
@@ -189,10 +241,4 @@ func (d *DockerTestFramework) ResetNode(alias string, newSnapshotPath string) {
 	d.DockerComposeUp(true)
 	d.DumpContainerLog(d.Node(alias).ContainerName, "reset1")
 	d.WaitUntilNetworkHealthy()
-}
-
-func (d *DockerTestFramework) RequestFromNodes(testFunc func(*testing.T, string)) {
-	for nodeAlias := range d.nodes {
-		testFunc(d.Testing, nodeAlias)
-	}
 }

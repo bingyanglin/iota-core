@@ -202,7 +202,7 @@ services:
   prometheus:
     image: prom/prometheus:latest
     stop_grace_period: 1m
-    restart: no
+    restart: unless-stopped
     depends_on:
       node-1-validator:
         condition: service_started
@@ -219,7 +219,7 @@ services:
 
   grafana:
     image: grafana/grafana:9.5.6
-    restart: no
+    restart: unless-stopped
     networks:
       - iota-core
     ports:
@@ -259,7 +259,7 @@ services:
   inx-mqtt:
     image: iotaledger/inx-mqtt:2.0-alpha
     stop_grace_period: 1m
-    restart: no
+    restart: unless-stopped
     depends_on:
       node-1-validator:
         condition: service_healthy
@@ -370,7 +370,7 @@ services:
   inx-validator-4:
     image: iotaledger/inx-validator:1.0-alpha
     stop_grace_period: 1m
-    restart: unless-stopped
+    restart: no
     depends_on:
       node-4-validator:
         condition: service_started

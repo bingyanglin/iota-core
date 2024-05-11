@@ -34,8 +34,8 @@ func (d *DockerTestFramework) EventuallyWithDurations(condition func() error, de
 			tick = nil
 			go func() { ch <- condition() }()
 		case lastErr = <-ch:
-			// The condition is satisfied, we can exit.
 			if lastErr == nil {
+				// The condition is satisfied, we can exit.
 				return
 			}
 			tick = ticker.C

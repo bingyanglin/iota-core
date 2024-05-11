@@ -34,7 +34,7 @@ func Test_ValidatorRewards(t *testing.T) {
 	d.AddValidatorNode("V2", "docker-network-inx-validator-2-1", "http://localhost:8060", "rms1pqm4xk8e9ny5w5rxjkvtp249tfhlwvcshyr3pc0665jvp7g3hc875k538hl")
 	d.AddValidatorNode("V3", "docker-network-inx-validator-3-1", "http://localhost:8070", "rms1pp4wuuz0y42caz48vv876qfpmffswsvg40zz8v79sy8cp0jfxm4kunflcgt")
 	d.AddValidatorNode("V4", "docker-network-inx-validator-4-1", "http://localhost:8040", "rms1pr8cxs3dzu9xh4cduff4dd4cxdthpjkpwmz2244f75m0urslrsvtsshrrjw")
-	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8090")
+	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8080")
 
 	err := d.Run()
 	require.NoError(t, err)
@@ -73,8 +73,7 @@ func Test_ValidatorRewards(t *testing.T) {
 		d,
 		goodWallet,
 		clt.CommittedAPI().TimeProvider().CurrentSlot(),
-		goodClaimingSlot,
-		slotsDuration)
+		goodClaimingSlot)
 
 	// create lazy account
 	lazyWallet, lazyAccountOutputData := d.CreateImplicitAccount(ctx)
@@ -98,8 +97,7 @@ func Test_ValidatorRewards(t *testing.T) {
 		d,
 		lazyWallet,
 		clt.CommittedAPI().TimeProvider().CurrentSlot(),
-		lazyClaimingSlot,
-		slotsDuration)
+		lazyClaimingSlot)
 
 	// make sure the account is in the committee, so it can issue validation blocks
 	goodAccountAddrBech32 := goodAccountData.Address.Bech32(clt.CommittedAPI().ProtocolParameters().Bech32HRP())
@@ -151,7 +149,7 @@ func Test_DelegatorRewards(t *testing.T) {
 	d.AddValidatorNode("V2", "docker-network-inx-validator-2-1", "http://localhost:8060", "rms1pqm4xk8e9ny5w5rxjkvtp249tfhlwvcshyr3pc0665jvp7g3hc875k538hl")
 	d.AddValidatorNode("V3", "docker-network-inx-validator-3-1", "http://localhost:8070", "rms1pp4wuuz0y42caz48vv876qfpmffswsvg40zz8v79sy8cp0jfxm4kunflcgt")
 	d.AddValidatorNode("V4", "docker-network-inx-validator-4-1", "http://localhost:8040", "rms1pr8cxs3dzu9xh4cduff4dd4cxdthpjkpwmz2244f75m0urslrsvtsshrrjw")
-	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8090")
+	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8080")
 
 	err := d.Run()
 	require.NoError(t, err)
@@ -209,7 +207,7 @@ func Test_DelayedClaimingRewards(t *testing.T) {
 	d.AddValidatorNode("V2", "docker-network-inx-validator-2-1", "http://localhost:8060", "rms1pqm4xk8e9ny5w5rxjkvtp249tfhlwvcshyr3pc0665jvp7g3hc875k538hl")
 	d.AddValidatorNode("V3", "docker-network-inx-validator-3-1", "http://localhost:8070", "rms1pp4wuuz0y42caz48vv876qfpmffswsvg40zz8v79sy8cp0jfxm4kunflcgt")
 	d.AddValidatorNode("V4", "docker-network-inx-validator-4-1", "http://localhost:8040", "rms1pr8cxs3dzu9xh4cduff4dd4cxdthpjkpwmz2244f75m0urslrsvtsshrrjw")
-	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8090")
+	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8080")
 
 	err := d.Run()
 	require.NoError(t, err)
@@ -273,19 +271,26 @@ func Test_DelayedClaimingRewards(t *testing.T) {
 	}
 }
 
-func issueCandidacyPayloadInBackground(ctx context.Context, d *dockertestframework.DockerTestFramework, wallet *mock.Wallet, startSlot, endSlot iotago.SlotIndex, slotDuration uint8) {
+func issueCandidacyPayloadInBackground(ctx context.Context, d *dockertestframework.DockerTestFramework, wallet *mock.Wallet, startSlot, endSlot iotago.SlotIndex) {
 	go func() {
 		fmt.Println("Issuing candidacy payloads for account", wallet.BlockIssuer.AccountData.ID, "in the background...")
 		defer fmt.Println("Issuing candidacy payloads for account", wallet.BlockIssuer.AccountData.ID, "in the background......done")
 
 		for i := startSlot; i < endSlot; i++ {
-			if ctx.Err() != nil {
-				// context is canceled
-				return
+			// wait until the slot is reached
+			for {
+				if ctx.Err() != nil {
+					// context is canceled
+					return
+				}
+
+				if wallet.CurrentSlot() == i {
+					break
+				}
+				time.Sleep(2 * time.Second)
 			}
 
-			d.IssueCandidacyPayloadFromAccount(wallet)
-			time.Sleep(time.Duration(slotDuration) * time.Second)
+			d.IssueCandidacyPayloadFromAccount(ctx, wallet)
 		}
 	}()
 }
@@ -318,7 +323,7 @@ func issueValidationBlockInBackground(ctx context.Context, wg *sync.WaitGroup, w
 					return
 				}
 
-				wallet.CreateAndSubmitValidationBlock(context.Background(), "", nil)
+				wallet.CreateAndSubmitValidationBlock(ctx, "", nil)
 				time.Sleep(1 * time.Second)
 			}
 		}

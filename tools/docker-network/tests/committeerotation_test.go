@@ -36,7 +36,7 @@ func Test_SmallerCommittee(t *testing.T) {
 	d.AddValidatorNode("V2", "docker-network-inx-validator-2-1", "http://localhost:8060", "rms1pqm4xk8e9ny5w5rxjkvtp249tfhlwvcshyr3pc0665jvp7g3hc875k538hl")
 	d.AddValidatorNode("V3", "docker-network-inx-validator-3-1", "http://localhost:8070", "rms1pp4wuuz0y42caz48vv876qfpmffswsvg40zz8v79sy8cp0jfxm4kunflcgt")
 	d.AddValidatorNode("V4", "docker-network-inx-validator-4-1", "http://localhost:8040", "rms1pr8cxs3dzu9xh4cduff4dd4cxdthpjkpwmz2244f75m0urslrsvtsshrrjw")
-	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8090")
+	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8080")
 
 	err := d.Run()
 	require.NoError(t, err)
@@ -81,7 +81,7 @@ func Test_ReuseDueToNoFinalization(t *testing.T) {
 	d.AddValidatorNode("V2", "docker-network-inx-validator-2-1", "http://localhost:8060", "rms1pqm4xk8e9ny5w5rxjkvtp249tfhlwvcshyr3pc0665jvp7g3hc875k538hl")
 	d.AddValidatorNode("V3", "docker-network-inx-validator-3-1", "http://localhost:8070", "rms1pp4wuuz0y42caz48vv876qfpmffswsvg40zz8v79sy8cp0jfxm4kunflcgt")
 	d.AddValidatorNode("V4", "docker-network-inx-validator-4-1", "http://localhost:8040", "rms1pr8cxs3dzu9xh4cduff4dd4cxdthpjkpwmz2244f75m0urslrsvtsshrrjw")
-	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8090")
+	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8080")
 
 	err := d.Run()
 	require.NoError(t, err)
@@ -150,7 +150,7 @@ func Test_NoCandidacyPayload(t *testing.T) {
 	d.AddValidatorNode("V2", "docker-network-inx-validator-2-1", "http://localhost:8060", "rms1pqm4xk8e9ny5w5rxjkvtp249tfhlwvcshyr3pc0665jvp7g3hc875k538hl", false)
 	d.AddValidatorNode("V3", "docker-network-inx-validator-3-1", "http://localhost:8070", "rms1pp4wuuz0y42caz48vv876qfpmffswsvg40zz8v79sy8cp0jfxm4kunflcgt", false)
 	d.AddValidatorNode("V4", "docker-network-inx-validator-4-1", "http://localhost:8040", "rms1pr8cxs3dzu9xh4cduff4dd4cxdthpjkpwmz2244f75m0urslrsvtsshrrjw", false)
-	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8090")
+	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8080")
 
 	err := d.Run()
 	require.NoError(t, err)
@@ -200,7 +200,7 @@ func Test_Staking(t *testing.T) {
 	d.AddValidatorNode("V2", "docker-network-inx-validator-2-1", "http://localhost:8060", "rms1pqm4xk8e9ny5w5rxjkvtp249tfhlwvcshyr3pc0665jvp7g3hc875k538hl")
 	d.AddValidatorNode("V3", "docker-network-inx-validator-3-1", "http://localhost:8070", "rms1pp4wuuz0y42caz48vv876qfpmffswsvg40zz8v79sy8cp0jfxm4kunflcgt")
 	d.AddValidatorNode("V4", "docker-network-inx-validator-4-1", "http://localhost:8040", "rms1pr8cxs3dzu9xh4cduff4dd4cxdthpjkpwmz2244f75m0urslrsvtsshrrjw")
-	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8090")
+	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8080")
 
 	err := d.Run()
 	require.NoError(t, err)
@@ -247,7 +247,7 @@ func Test_Delegation(t *testing.T) {
 	d.AddValidatorNode("V3", "docker-network-inx-validator-3-1", "http://localhost:8070", "rms1pp4wuuz0y42caz48vv876qfpmffswsvg40zz8v79sy8cp0jfxm4kunflcgt")
 	// V4 pubKey in hex: 0xc9ceac37d293155a578381aa313ee74edfa3ac73ee930d045564aae7771e8ffe
 	d.AddValidatorNode("V4", "docker-network-inx-validator-4-1", "http://localhost:8040", "rms1pr8cxs3dzu9xh4cduff4dd4cxdthpjkpwmz2244f75m0urslrsvtsshrrjw")
-	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8090")
+	d.AddNode("node5", "docker-network-node-5-1", "http://localhost:8080")
 
 	err := d.Run()
 	require.NoError(t, err)
