@@ -7,6 +7,7 @@ import (
 	"golang.org/x/crypto/blake2b"
 
 	"github.com/iotaledger/hive.go/crypto/ed25519"
+	"github.com/iotaledger/hive.go/ierrors"
 	"github.com/iotaledger/hive.go/lo"
 	"github.com/iotaledger/hive.go/runtime/ioutils"
 	"github.com/iotaledger/hive.go/runtime/options"
@@ -41,8 +42,10 @@ type BasicOutputYaml struct {
 }
 
 type ConfigYaml struct {
-	NetworkName string `yaml:"networkName"`
-	Bech32HRP   string `yaml:"bech32Hrp"`
+	NetworkName           string `yaml:"networkName"`
+	Bech32HRP             string `yaml:"bech32Hrp"`
+	TargetCommitteeSize   uint8  `yaml:"targetCommitteeSize"`
+	SlotsPerEpochExponent uint8  `yaml:"slotsPerEpochExponent"`
 
 	FilePath string `yaml:"filepath"`
 
@@ -51,19 +54,19 @@ type ConfigYaml struct {
 	BasicOutputs []BasicOutputYaml `yaml:"basicOutputs"`
 }
 
-func TestnetProtocolParameters(networkName string, bech32HRP iotago.NetworkPrefix) iotago.ProtocolParameters {
+func TestnetProtocolParameters(networkName string, bech32HRP iotago.NetworkPrefix, targetCommitteeSize uint8, slotsPerEpochExponent uint8) iotago.ProtocolParameters {
 	return iotago.NewV3SnapshotProtocolParameters(
 		iotago.WithNetworkOptions(networkName, bech32HRP),
 		iotago.WithStorageOptions(100, 1, 100, 1000, 1000, 1000),
 		iotago.WithWorkScoreOptions(500, 110_000, 7_500, 40_000, 90_000, 50_000, 40_000, 70_000, 5_000, 15_000),
-		iotago.WithTimeProviderOptions(0, time.Now().Unix(), 10, 8),
+		iotago.WithTimeProviderOptions(0, time.Now().Unix(), 10, slotsPerEpochExponent),
 		iotago.WithLivenessOptions(10, 15, 4, 7, 100),
 		iotago.WithSupplyOptions(4600000000000000, 63, 1, 17, 32, 21, 70),
 		iotago.WithCongestionControlOptions(1, 1, 1, 400_000_000, 250_000_000, 50_000_000, 1000, 100),
 		iotago.WithStakingOptions(3, 10, 10),
 		iotago.WithVersionSignalingOptions(7, 5, 7),
 		iotago.WithRewardsOptions(8, 11, 2, 384),
-		iotago.WithTargetCommitteeSize(16),
+		iotago.WithTargetCommitteeSize(targetCommitteeSize),
 		iotago.WithChainSwitchingThreshold(10),
 	)
 }
@@ -74,8 +77,16 @@ func GenerateFromYaml(hostsFile string) ([]options.Option[snapshotcreator.Option
 		return nil, err
 	}
 
-	fmt.Printf("generating protocol parameters for network %s with bech32HRP %s\n", configYaml.NetworkName, configYaml.Bech32HRP)
-	protocolParams := TestnetProtocolParameters(configYaml.NetworkName, iotago.NetworkPrefix(configYaml.Bech32HRP))
+	if configYaml.TargetCommitteeSize == 0 {
+		return nil, ierrors.Errorf("targetCommitteeSize must be greater than 0")
+	}
+
+	if configYaml.SlotsPerEpochExponent == 0 {
+		return nil, ierrors.Errorf("slotsPerEpochExponent must be greater than 0")
+	}
+
+	fmt.Printf("generating protocol parameters for network: %s, bech32HRP: %s, targetCommitteeSize: %d, slotsPerEpochExponent: %d\n", configYaml.NetworkName, configYaml.Bech32HRP, configYaml.TargetCommitteeSize, configYaml.SlotsPerEpochExponent)
+	protocolParams := TestnetProtocolParameters(configYaml.NetworkName, iotago.NetworkPrefix(configYaml.Bech32HRP), configYaml.TargetCommitteeSize, configYaml.SlotsPerEpochExponent)
 
 	accounts := make([]snapshotcreator.AccountDetails, 0, len(configYaml.Validators)+len(configYaml.BlockIssuers))
 	for _, validator := range configYaml.Validators {
