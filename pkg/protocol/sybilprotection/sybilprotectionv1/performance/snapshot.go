@@ -293,9 +293,9 @@ func (t *Tracker) exportPoolRewards(writer io.WriteSeeker, targetEpoch iotago.Ep
 
 	if err := stream.WriteCollection(writer, serializer.SeriLengthPrefixTypeAsUint32, func() (int, error) {
 		var epochCount int
-		// Here underflow will not happen because we will stop iterating for epoch 0, because 0 is not greater than zero.
-		// Use safemath here anyway to avoid hard to trace problems stemming from an accidental underflow.
-		for epoch := targetEpoch; epoch > earliestRewardEpoch; epoch = lo.PanicOnErr(safemath.SafeSub(epoch, 1)) {
+		// Start at the targest epoch and go back in time until earliestRewardEpoch or epoch 0 (included)
+		epoch := targetEpoch
+		for {
 			rewardsMap, err := t.rewardsMap(epoch)
 			if err != nil {
 				return 0, ierrors.Wrapf(err, "unable to get rewards tree for epoch %d", epoch)
@@ -339,6 +339,12 @@ func (t *Tracker) exportPoolRewards(writer io.WriteSeeker, targetEpoch iotago.Ep
 			}
 
 			epochCount++
+
+			if epoch <= earliestRewardEpoch {
+				// Every reward before earliestRewardEpoch is already exported, so stop here
+				break
+			}
+			epoch = lo.PanicOnErr(safemath.SafeSub(epoch, 1))
 		}
 
 		return epochCount, nil
