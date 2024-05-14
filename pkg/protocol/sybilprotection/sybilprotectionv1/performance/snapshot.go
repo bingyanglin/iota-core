@@ -300,45 +300,45 @@ func (t *Tracker) exportPoolRewards(writer io.WriteSeeker, targetEpoch iotago.Ep
 			if err != nil {
 				return 0, ierrors.Wrapf(err, "unable to get rewards tree for epoch %d", epoch)
 			}
-			// if the map was not present in storage we can skip this epoch
-			if !rewardsMap.WasRestoredFromStorage() {
-				t.LogDebug("Skipping epoch", "epoch", epoch, "reason", "not restored from storage")
-				continue
-			}
 
-			t.LogDebug("Exporting Pool Rewards", "epoch", epoch)
+			if rewardsMap.WasRestoredFromStorage() {
+				t.LogDebug("Exporting Pool Rewards", "epoch", epoch)
 
-			if err := stream.Write(writer, epoch); err != nil {
-				return 0, ierrors.Wrapf(err, "unable to write epoch index for epoch index %d", epoch)
-			}
-
-			if err := stream.WriteCollection(writer, serializer.SeriLengthPrefixTypeAsUint64, func() (int, error) {
-				var accountCount int
-
-				if err = rewardsMap.Stream(func(key iotago.AccountID, value *model.PoolRewards) error {
-					if err := stream.Write(writer, key); err != nil {
-						return ierrors.Wrapf(err, "unable to write account id for epoch %d and accountID %s", epoch, key)
-					}
-
-					if err := stream.WriteObject(writer, value, (*model.PoolRewards).Bytes); err != nil {
-						return ierrors.Wrapf(err, "unable to write account rewards for epoch index %d and accountID %s", epoch, key)
-					}
-
-					t.LogDebug("Exporting Pool Reward", "epoch", epoch, "accountID", key, "rewards", value)
-
-					accountCount++
-
-					return nil
-				}); err != nil {
-					return 0, ierrors.Wrapf(err, "unable to stream rewards for epoch index %d", epoch)
+				if err := stream.Write(writer, epoch); err != nil {
+					return 0, ierrors.Wrapf(err, "unable to write epoch index for epoch index %d", epoch)
 				}
 
-				return accountCount, nil
-			}); err != nil {
-				return 0, ierrors.Wrapf(err, "unable to write rewards for epoch index %d", epoch)
-			}
+				if err := stream.WriteCollection(writer, serializer.SeriLengthPrefixTypeAsUint64, func() (int, error) {
+					var accountCount int
 
-			epochCount++
+					if err = rewardsMap.Stream(func(key iotago.AccountID, value *model.PoolRewards) error {
+						if err := stream.Write(writer, key); err != nil {
+							return ierrors.Wrapf(err, "unable to write account id for epoch %d and accountID %s", epoch, key)
+						}
+
+						if err := stream.WriteObject(writer, value, (*model.PoolRewards).Bytes); err != nil {
+							return ierrors.Wrapf(err, "unable to write account rewards for epoch index %d and accountID %s", epoch, key)
+						}
+
+						t.LogDebug("Exporting Pool Reward", "epoch", epoch, "accountID", key, "rewards", value)
+
+						accountCount++
+
+						return nil
+					}); err != nil {
+						return 0, ierrors.Wrapf(err, "unable to stream rewards for epoch index %d", epoch)
+					}
+
+					return accountCount, nil
+				}); err != nil {
+					return 0, ierrors.Wrapf(err, "unable to write rewards for epoch index %d", epoch)
+				}
+
+				epochCount++
+			} else {
+				// if the map was not present in storage we can skip this epoch
+				t.LogDebug("Skipping epoch", "epoch", epoch, "reason", "not restored from storage")
+			}
 
 			if epoch <= earliestRewardEpoch {
 				// Every reward before earliestRewardEpoch is already exported, so stop here
