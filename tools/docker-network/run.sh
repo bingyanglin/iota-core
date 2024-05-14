@@ -46,6 +46,7 @@ mkdir -p docker-network-snapshots/
 chmod o+w docker-network-snapshots/
 
 # Allow docker compose to build and cache an image
+echo "Building docker image"
 echo $DOCKER_BUILD_CONTEXT $DOCKERFILE_PATH
 docker compose build --build-arg WITH_GO_WORK=${WITH_GO_WORK:-0} --build-arg DOCKER_BUILD_CONTEXT=${DOCKER_BUILD_CONTEXT} --build-arg DOCKERFILE_PATH=${DOCKERFILE_PATH}
 
