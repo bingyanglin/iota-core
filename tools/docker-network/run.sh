@@ -3,13 +3,30 @@
 # Create a function to join an array of strings by a given character
 function join { local IFS="$1"; shift; echo "$*"; }
 
-# All parameters can be optional now, just make sure we don't have too many
-if [[ $# -gt 2 ]] ; then
-  echo 'Call with ./run.sh [monitoring=0|1]'
-  exit 0
-fi
+# Initialize variables
+MONITORING=0
+MINIMAL=0
 
-MONITORING=${1:-0}
+# Loop over all arguments
+for arg in "$@"
+do
+    case $arg in
+        monitoring=*)
+        MONITORING="${arg#*=}"
+        shift
+        ;;
+        minimal=*)
+        MINIMAL="${arg#*=}"
+        shift
+        ;;
+        *)
+        # Unknown option
+        echo "Unknown argument: $arg"
+        echo 'Call with ./run.sh [monitoring=0|1] [minimal=0|1]'
+        exit 1
+        ;;
+    esac
+done
 
 export DOCKER_BUILDKIT=1
 export COMPOSE_DOCKER_CLI_BUILD=1
@@ -66,13 +83,21 @@ fi
 chmod o+r docker-network-snapshots/snapshot.bin
 
 echo "Run iota-core network"
-# IOTA_CORE_PEER_REPLICAS is used in docker-compose.yml to determine how many replicas to create
-export IOTA_CORE_PEER_REPLICAS=$REPLICAS
+
 # Profiles is created to set which docker profiles to run
 # https://docs.docker.com/compose/profiles/
 PROFILES=()
 if [ $MONITORING -ne 0 ]; then
   PROFILES+=("monitoring")
+  echo "Monitoring profile active"
+fi
+
+if [ $MINIMAL -ne 0 ]; then
+  PROFILES+=("minimal")
+  echo "Minimal profile active"
+else
+  PROFILES+=("full")
+  echo "Full profile active"
 fi
 
 export COMPOSE_PROFILES=$(join , ${PROFILES[@]})
