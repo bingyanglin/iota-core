@@ -212,6 +212,40 @@ func (b *BasicBuffer) Next() *IssuerQueue {
 	return nil
 }
 
+// ForEach applies a consumer function to each IssuerQueue in the BasicBuffer.
+func (b *BasicBuffer) ForEach(consumer func(*IssuerQueue) bool) {
+	if b.ring == nil {
+		return
+	}
+
+	// Create a temporary slice to hold the IssuerQueues
+	var queues []*IssuerQueue
+
+	// Start at the current ring position
+	start := b.ring
+
+	for {
+		if issuerQueue, isIQ := b.ring.Value.(*IssuerQueue); isIQ {
+			queues = append(queues, issuerQueue)
+		}
+
+		// Move to the next position in the ring
+		b.ring = b.ring.Next()
+
+		// If we've looped back to the start, break out of the loop
+		if b.ring == start {
+			break
+		}
+	}
+
+	// Apply the consumer function to each IssuerQueue
+	for _, queue := range queues {
+		if !consumer(queue) {
+			return
+		}
+	}
+}
+
 // Current returns the current IssuerQueue in round-robin order.
 func (b *BasicBuffer) Current() *IssuerQueue {
 	if b.ring == nil {

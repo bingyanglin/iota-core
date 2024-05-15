@@ -466,6 +466,17 @@ func (b *Block) IsAccepted() bool {
 	return b.accepted.Get()
 }
 
+// IsCommitted returns true if the Block was accepted and the max committable age has passed.
+func (b *Block) IsCommitted() bool {
+	if !b.IsAccepted() {
+		return false
+	}
+
+	maxCommittableAgeDuration := time.Second * time.Duration(int64(b.ProtocolBlock().API.ProtocolParameters().MaxCommittableAge())*b.ProtocolBlock().API.TimeProvider().SlotDurationSeconds())
+
+	return time.Since(b.IssuingTime()) > maxCommittableAgeDuration
+}
+
 // SetAccepted sets the Block as accepted.
 func (b *Block) SetAccepted() (wasUpdated bool) {
 	return !b.accepted.Set(true)

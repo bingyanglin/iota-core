@@ -402,13 +402,8 @@ func (s *Scheduler) selectBasicBlockWithoutLocking() {
 	if len(s.basicBuffer.blockChan) > 0 {
 		return
 	}
-	start := s.basicBuffer.Current()
-	// no blocks submitted
-	if start == nil {
-		return
-	}
 
-	rounds, schedulingIssuer := s.selectIssuer(start, slot)
+	rounds, schedulingIssuer := s.selectIssuer(slot)
 
 	// if there is no issuer with a ready block, we cannot schedule anything
 	if schedulingIssuer == nil {
@@ -417,26 +412,20 @@ func (s *Scheduler) selectBasicBlockWithoutLocking() {
 
 	if rounds > 0 {
 		// increment every issuer's deficit for the required number of rounds
-		for q := start; ; {
-			issuerID := q.IssuerID()
+		s.basicBuffer.ForEach(func(queue *IssuerQueue) bool {
+			issuerID := queue.IssuerID()
+
 			if _, err := s.incrementDeficit(issuerID, rounds, slot); err != nil {
 				s.errorHandler(ierrors.Wrapf(err, "failed to increment deficit for issuerID %s in slot %d", issuerID, slot))
 				s.removeIssuer(issuerID, err)
+			}
 
-				q = s.basicBuffer.Current()
-			} else {
-				q = s.basicBuffer.Next()
-			}
-			if q == nil {
-				return
-			}
-			if q == start {
-				break
-			}
-		}
+			return true
+		})
 	}
+
 	// increment the deficit for all issuers before schedulingIssuer one more time
-	for q := start; q != schedulingIssuer; q = s.basicBuffer.Next() {
+	for q := s.basicBuffer.Current(); q != schedulingIssuer; q = s.basicBuffer.Next() {
 		issuerID := q.IssuerID()
 		newDeficit, err := s.incrementDeficit(issuerID, 1, slot)
 		if err != nil {
@@ -462,29 +451,34 @@ func (s *Scheduler) selectBasicBlockWithoutLocking() {
 
 		return
 	}
+
+	// schedule the block
 	s.basicBuffer.blockChan <- block
 }
 
-func (s *Scheduler) selectIssuer(start *IssuerQueue, slot iotago.SlotIndex) (Deficit, *IssuerQueue) {
-	rounds := Deficit(math.MaxInt64)
+func (s *Scheduler) selectIssuer(slot iotago.SlotIndex) (Deficit, *IssuerQueue) {
+	minRounds := Deficit(math.MaxInt64)
 	var schedulingIssuer *IssuerQueue
 
-	for q := start; ; {
-		block := q.Front()
-		var issuerRemoved bool
+	s.basicBuffer.ForEach(func(queue *IssuerQueue) bool {
+		block := queue.Front()
 
 		for block != nil && time.Now().After(block.IssuingTime()) {
-			currentAPI := s.apiProvider.CommittedAPI()
-			if block.IsAccepted() && time.Since(block.IssuingTime()) > time.Duration(currentAPI.TimeProvider().SlotDurationSeconds()*int64(currentAPI.ProtocolParameters().MaxCommittableAge())) {
+			// if the block is already committed, we can skip it.
+			if block.IsCommitted() {
 				if block.SetSkipped() {
+					// the block was accepted and therefore committed already, so we can mark the children as ready.
 					s.updateChildrenWithoutLocking(block)
 					s.events.BlockSkipped.Trigger(block)
 				}
 
-				s.basicBuffer.PopFront()
+				// remove the skipped block from the queue
+				_ = queue.PopFront()
 
-				block = q.Front()
+				// take the next block in the queue
+				block = queue.Front()
 
+				// continue to check the next block in the queue
 				continue
 			}
 
@@ -497,13 +491,14 @@ func (s *Scheduler) selectIssuer(start *IssuerQueue, slot iotago.SlotIndex) (Def
 			}
 
 			remainingDeficit := s.deficitFromWork(block.WorkScore()) - deficit
+
 			// calculate how many rounds we need to skip to accumulate enough deficit.
 			quantum, err := s.quantumFunc(issuerID, slot)
 			if err != nil {
 				s.errorHandler(ierrors.Wrapf(err, "failed to retrieve quantum for issuerID %s in slot %d during issuer selection", issuerID, slot))
+
 				// if quantum, can't be retrieved, we need to remove this issuer.
 				s.removeIssuer(issuerID, err)
-				issuerRemoved = true
 
 				break
 			}
@@ -513,31 +508,25 @@ func (s *Scheduler) selectIssuer(start *IssuerQueue, slot iotago.SlotIndex) (Def
 				numerator = math.MaxInt64
 			}
 
-			r, err := safemath.SafeDiv(numerator, quantum)
+			rounds, err := safemath.SafeDiv(numerator, quantum)
 			if err != nil {
 				panic(err)
 			}
 
 			// find the first issuer that will be allowed to schedule a block
-			if r < rounds {
-				rounds = r
-				schedulingIssuer = q
+			if rounds < minRounds {
+				minRounds = rounds
+				schedulingIssuer = queue
 			}
 
 			break
 		}
 
-		if issuerRemoved {
-			q = s.basicBuffer.Current()
-		} else {
-			q = s.basicBuffer.Next()
-		}
-		if q == start || q == nil {
-			break
-		}
-	}
+		// we need to go through all issuers once
+		return true
+	})
 
-	return rounds, schedulingIssuer
+	return minRounds, schedulingIssuer
 }
 
 func (s *Scheduler) removeIssuer(issuerID iotago.AccountID, err error) {
