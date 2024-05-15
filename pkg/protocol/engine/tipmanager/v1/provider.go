@@ -20,6 +20,8 @@ func NewProvider() module.Provider[*engine.Engine, tipmanager.TipManager] {
 			tipWorker := e.Workers.CreatePool("AddTip", workerpool.WithWorkerCount(2))
 
 			e.Events.Scheduler.BlockScheduled.Hook(lo.Void(t.AddBlock), event.WithWorkerPool(tipWorker))
+
+			// the tipmanager needs to know about all the blocks that passed the scheduler
 			e.Events.Scheduler.BlockSkipped.Hook(lo.Void(t.AddBlock), event.WithWorkerPool(tipWorker))
 			e.Events.Evict.Hook(t.Evict)
 

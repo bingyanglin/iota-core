@@ -69,6 +69,8 @@ func newBlocks(protocol *Protocol) *Blocks {
 						b.SendResponse(block.ModelBlock())
 					}
 				}).Unhook,
+				// TODO: do we need to send the block to peers when we skip it?
+				// It should have been accepted already anyway.
 				engine.Events.Scheduler.BlockSkipped.Hook(func(block *blocks.Block) {
 					if !chain.WarpSyncMode.Get() {
 						b.SendResponse(block.ModelBlock())
