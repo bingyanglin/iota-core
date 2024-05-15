@@ -388,6 +388,9 @@ loop:
 	for {
 		select {
 		// on close, exit the loop
+		case <-s.shutdownSignal:
+			break loop
+		// on close, exit the loop
 		case <-validatorQueue.shutdownSignal:
 			break loop
 		// when a block is pushed by this validator queue.
