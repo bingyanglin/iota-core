@@ -35,6 +35,9 @@ services:
       --prometheus.goMetrics=true
       --prometheus.processMetrics=true
       --debugAPI.enabled=true
+    profiles:
+      - minimal
+      - full
 
   node-2-validator:
     image: docker-network-node-1-validator:latest
@@ -67,8 +70,8 @@ services:
       --inx.bindAddress=0.0.0.0:9029
       --prometheus.goMetrics=true
       --prometheus.processMetrics=true
-      --remotelog.enabled=false
-      --remotemetrics.enabled=false
+    profiles:
+      - full
 
   node-3-validator:
     image: docker-network-node-1-validator:latest
@@ -101,8 +104,8 @@ services:
       --inx.bindAddress=0.0.0.0:9029
       --prometheus.goMetrics=true
       --prometheus.processMetrics=true
-      --remotelog.enabled=false
-      --remotemetrics.enabled=false
+    profiles:
+      - full
 
   node-4-validator:
     image: docker-network-node-1-validator:latest
@@ -133,8 +136,8 @@ services:
       --node.alias=node-4-validator
       --inx.enabled=true
       --inx.bindAddress=0.0.0.0:9029
-      --remotelog.enabled=false
-      --remotemetrics.enabled=false
+    profiles:
+      - full
 
   node-5:
     image: docker-network-node-1-validator:latest
@@ -167,8 +170,8 @@ services:
       --inx.bindAddress=0.0.0.0:9029
       --prometheus.goMetrics=true
       --prometheus.processMetrics=true
-      --remotelog.enabled=false
-      --remotemetrics.enabled=false
+    profiles:
+      - full
 
   node-6:
     image: docker-network-node-1-validator:latest
@@ -201,8 +204,8 @@ services:
       --inx.bindAddress=0.0.0.0:9029
       --prometheus.goMetrics=true
       --prometheus.processMetrics=true
-      --remotelog.enabled=false
-      --remotemetrics.enabled=false
+    profiles:
+      - full
 
   ##################################################################
   #  Monitoring                                                    #
@@ -211,7 +214,7 @@ services:
   prometheus:
     image: prom/prometheus:latest
     stop_grace_period: 1m
-    restart: no
+    restart: unless-stopped
     depends_on:
       node-1-validator:
         condition: service_started
@@ -228,7 +231,7 @@ services:
 
   grafana:
     image: grafana/grafana:9.5.6
-    restart: no
+    restart: unless-stopped
     networks:
       - iota-core
     ports:
@@ -263,12 +266,15 @@ services:
     command: >
       --inx.address=node-1-validator:9029
       --restAPI.bindAddress=0.0.0.0:9091
-      --restAPI.advertiseAddress=inx-indexer-1:9091
+      --restAPI.advertiseAddress=inx-indexer:9091
+    profiles:
+      - minimal
+      - full
 
   inx-indexer-2:
     image: iotaledger/inx-indexer:2.0-alpha
     stop_grace_period: 1m
-    restart: no
+    restart: unless-stopped
     depends_on:
       node-2-validator:
         condition: service_healthy
@@ -279,76 +285,11 @@ services:
     networks:
       - iota-core
     command: >
-      --inx.address=node-2-validator:9029
-      --restAPI.bindAddress=inx-indexer-2:9011
-
-  inx-indexer-3:
-    image: iotaledger/inx-indexer:2.0-alpha
-    stop_grace_period: 1m
-    restart: no
-    depends_on:
-      node-3-validator:
-        condition: service_healthy
-    ulimits:
-      nofile:
-        soft: 16384
-        hard: 16384
-    networks:
-      - iota-core
-    command: >
-      --inx.address=node-3-validator:9029
-      --restAPI.bindAddress=inx-indexer-3:9011
-
-  inx-indexer-4:
-    image: iotaledger/inx-indexer:2.0-alpha
-    stop_grace_period: 1m
-    restart: no
-    depends_on:
-      node-4-validator:
-        condition: service_healthy
-    ulimits:
-      nofile:
-        soft: 16384
-        hard: 16384
-    networks:
-      - iota-core
-    command: >
-      --inx.address=node-4-validator:9029
-      --restAPI.bindAddress=inx-indexer-4:9011
-
-  inx-indexer-5:
-    image: iotaledger/inx-indexer:2.0-alpha
-    stop_grace_period: 1m
-    restart: no
-    depends_on:
-      node-4:
-        condition: service_healthy
-    ulimits:
-      nofile:
-        soft: 16384
-        hard: 16384
-    networks:
-      - iota-core
-    command: >
-      --inx.address=node-4:9029
-      --restAPI.bindAddress=inx-indexer-5:9011
-
-  inx-indexer-6:
-    image: iotaledger/inx-indexer:2.0-alpha
-    stop_grace_period: 1m
-    restart: no
-    depends_on:
-      node-5:
-        condition: service_healthy
-    ulimits:
-      nofile:
-        soft: 16384
-        hard: 16384
-    networks:
-      - iota-core
-    command: >
-      --inx.address=node-5:9029
-      --restAPI.bindAddress=inx-indexer-6:9011
+      --inx.address=node-1-validator:9029
+      --mqtt.websocket.bindAddress=inx-mqtt:1888
+    profiles:
+      - minimal
+      - full
 
   inx-blockissuer:
     image: iotaledger/inx-blockissuer:1.0-alpha
@@ -368,6 +309,9 @@ services:
       --restAPI.bindAddress=inx-blockissuer:9086
       --blockIssuer.accountAddress=rms1prkursay9fs2qjmfctamd6yxg9x8r3ry47786x0mvwek4qr9xd9d5c6gkun
       --blockIssuer.proofOfWork.targetTrailingZeros=5
+    profiles:
+      - minimal
+      - full
 
   inx-faucet:
     image: iotaledger/inx-faucet:2.0-alpha
@@ -395,6 +339,9 @@ services:
       --faucet.baseTokenAmountMaxTarget=5000000000
       --faucet.manaAmount=100000000
       --faucet.manaAmountMinFaucet=1000000000
+    profiles:
+      - minimal
+      - full
 
   inx-validator-1:
     image: iotaledger/inx-validator:1.0-alpha
@@ -413,6 +360,9 @@ services:
       --validator.ignoreBootstrapped=true
       --validator.accountAddress=rms1pzg8cqhfxqhq7pt37y8cs4v5u4kcc48lquy2k73ehsdhf5ukhya3y5rx2w6
       --validator.issueCandidacyPayload=${ISSUE_CANDIDACY_PAYLOAD_V1:-true}
+    profiles:
+      - minimal
+      - full
 
   inx-validator-2:
     image: iotaledger/inx-validator:1.0-alpha
@@ -430,6 +380,8 @@ services:
       --inx.address=node-2-validator:9029
       --validator.accountAddress=rms1pqm4xk8e9ny5w5rxjkvtp249tfhlwvcshyr3pc0665jvp7g3hc875k538hl
       --validator.issueCandidacyPayload=${ISSUE_CANDIDACY_PAYLOAD_V2:-true}
+    profiles:
+      - full
 
   inx-validator-3:
     image: iotaledger/inx-validator:1.0-alpha
@@ -447,11 +399,13 @@ services:
       --inx.address=node-3-validator:9029
       --validator.accountAddress=rms1pp4wuuz0y42caz48vv876qfpmffswsvg40zz8v79sy8cp0jfxm4kunflcgt
       --validator.issueCandidacyPayload=${ISSUE_CANDIDACY_PAYLOAD_V3:-true}
+    profiles:
+      - full
 
   inx-validator-4:
     image: iotaledger/inx-validator:1.0-alpha
     stop_grace_period: 1m
-    restart: unless-stopped
+    restart: no
     depends_on:
       node-4-validator:
         condition: service_started
@@ -464,6 +418,8 @@ services:
       --inx.address=node-4-validator:9029
       --validator.accountAddress=rms1pr8cxs3dzu9xh4cduff4dd4cxdthpjkpwmz2244f75m0urslrsvtsshrrjw
       --validator.issueCandidacyPayload=${ISSUE_CANDIDACY_PAYLOAD_V4:-true}
+    profiles:
+      - full
 
   inx-dashboard-1:
     container_name: inx-dashboard-1
@@ -483,6 +439,9 @@ services:
       - "--dashboard.auth.username=${DASHBOARD_USERNAME:-admin}"
       - "--dashboard.auth.passwordHash=${DASHBOARD_PASSWORD:-0000000000000000000000000000000000000000000000000000000000000000}"
       - "--dashboard.auth.passwordSalt=${DASHBOARD_SALT:-0000000000000000000000000000000000000000000000000000000000000000}"
+    profiles:
+      - minimal
+      - full
 
   inx-dashboard-2:
     container_name: inx-dashboard-2
@@ -502,6 +461,8 @@ services:
       - "--dashboard.auth.username=${DASHBOARD_USERNAME:-admin}"
       - "--dashboard.auth.passwordHash=${DASHBOARD_PASSWORD:-0000000000000000000000000000000000000000000000000000000000000000}"
       - "--dashboard.auth.passwordSalt=${DASHBOARD_SALT:-0000000000000000000000000000000000000000000000000000000000000000}"
+    profiles:
+      - full
 
   inx-dashboard-3:
     container_name: inx-dashboard-3
@@ -521,6 +482,8 @@ services:
       - "--dashboard.auth.username=${DASHBOARD_USERNAME:-admin}"
       - "--dashboard.auth.passwordHash=${DASHBOARD_PASSWORD:-0000000000000000000000000000000000000000000000000000000000000000}"
       - "--dashboard.auth.passwordSalt=${DASHBOARD_SALT:-0000000000000000000000000000000000000000000000000000000000000000}"
+    profiles:
+      - full
 
   inx-dashboard-4:
     container_name: inx-dashboard-4
@@ -540,6 +503,8 @@ services:
       - "--dashboard.auth.username=${DASHBOARD_USERNAME:-admin}"
       - "--dashboard.auth.passwordHash=${DASHBOARD_PASSWORD:-0000000000000000000000000000000000000000000000000000000000000000}"
       - "--dashboard.auth.passwordSalt=${DASHBOARD_SALT:-0000000000000000000000000000000000000000000000000000000000000000}"
+    profiles:
+      - full
 
   inx-dashboard-5:
     container_name: inx-dashboard-5
@@ -559,6 +524,8 @@ services:
       - "--dashboard.auth.username=${DASHBOARD_USERNAME:-admin}"
       - "--dashboard.auth.passwordHash=${DASHBOARD_PASSWORD:-0000000000000000000000000000000000000000000000000000000000000000}"
       - "--dashboard.auth.passwordSalt=${DASHBOARD_SALT:-0000000000000000000000000000000000000000000000000000000000000000}"
+    profiles:
+      - full
 
   inx-dashboard-6:
     container_name: inx-dashboard-6
@@ -578,6 +545,8 @@ services:
       - "--dashboard.auth.username=${DASHBOARD_USERNAME:-admin}"
       - "--dashboard.auth.passwordHash=${DASHBOARD_PASSWORD:-0000000000000000000000000000000000000000000000000000000000000000}"
       - "--dashboard.auth.passwordSalt=${DASHBOARD_SALT:-0000000000000000000000000000000000000000000000000000000000000000}"
+    profiles:
+      - full
 
 # Create our own network
 networks:

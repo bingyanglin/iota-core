@@ -76,7 +76,6 @@ func (d *DockerTestFramework) AssertCommittee(expectedEpoch iotago.EpochIndex, e
 	status := d.NodeStatus("V1")
 	testAPI := d.defaultWallet.Client.CommittedAPI()
 	expectedSlotStart := testAPI.TimeProvider().EpochStart(expectedEpoch)
-	require.Greater(d.Testing, expectedSlotStart, status.LatestAcceptedBlockSlot)
 
 	if status.LatestAcceptedBlockSlot < expectedSlotStart {
 		slotToWait := expectedSlotStart - status.LatestAcceptedBlockSlot
@@ -87,22 +86,22 @@ func (d *DockerTestFramework) AssertCommittee(expectedEpoch iotago.EpochIndex, e
 
 	d.Eventually(func() error {
 		for _, node := range d.Nodes() {
-			resp, err := d.Client(node.Name).Committee(context.TODO())
+			resp, err := d.Client(node.Name).Committee(context.TODO(), expectedEpoch)
 			if err != nil {
 				return err
 			}
 
-			if resp.Epoch == expectedEpoch {
-				members := make([]string, len(resp.Committee))
-				for i, member := range resp.Committee {
-					members[i] = member.AddressBech32
-				}
+			if resp.Epoch != expectedEpoch {
+				return ierrors.Errorf("expected epoch %d, but got %d", expectedEpoch, resp.Epoch)
+			}
 
-				sort.Strings(members)
-				if match := lo.Equal(expectedCommitteeMember, members); match {
-					return nil
-				}
+			members := make([]string, len(resp.Committee))
+			for i, member := range resp.Committee {
+				members[i] = member.AddressBech32
+			}
 
+			sort.Strings(members)
+			if !lo.Equal(expectedCommitteeMember, members) {
 				return ierrors.Errorf("committee members does not match as expected, expected: %v, actual: %v", expectedCommitteeMember, members)
 			}
 		}

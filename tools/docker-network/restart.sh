@@ -2,4 +2,4 @@
 
 docker compose kill
 docker compose down
-./run.sh 0
+./run.sh

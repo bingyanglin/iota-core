@@ -272,7 +272,7 @@ func (m *Manager) createCommitment(slot iotago.SlotIndex) (*model.Commitment, er
 		rmc,
 	)
 
-	m.LogDebug("Committing", "commitment", newCommitment, "roots ", roots)
+	m.LogInfo("Committing", "commitment", newCommitment, "roots ", roots)
 
 	newModelCommitment, err := model.CommitmentFromCommitment(newCommitment, apiForSlot, serix.WithValidation())
 	if err != nil {

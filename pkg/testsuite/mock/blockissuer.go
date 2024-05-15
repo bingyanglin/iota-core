@@ -94,15 +94,21 @@ func (i *BlockIssuer) Address() iotago.Address {
 func (i *BlockIssuer) CreateValidationBlock(ctx context.Context, alias string, node *Node, opts ...options.Option[ValidationBlockParams]) (*blocks.Block, error) {
 	blockParams := options.Apply(NewValidationBlockParams(), opts)
 
+	blockIssuanceInfo, err := i.Client.BlockIssuance(ctx)
+	require.NoError(i.Testing, err)
+
 	if blockParams.BlockHeader.IssuingTime == nil {
 		issuingTime := time.Now().UTC()
+		if issuingTime.Before(blockIssuanceInfo.LatestParentBlockIssuingTime) {
+			issuingTime = blockIssuanceInfo.LatestParentBlockIssuingTime.Add(time.Nanosecond)
+		}
+
 		blockParams.BlockHeader.IssuingTime = &issuingTime
 	}
 
 	apiForBlock := i.retrieveAPI(blockParams.BlockHeader)
 	protoParams := apiForBlock.ProtocolParameters()
-	blockIssuanceInfo, err := i.Client.BlockIssuance(ctx)
-	require.NoError(i.Testing, err)
+
 	if blockParams.BlockHeader.SlotCommitment == nil {
 		commitment := blockIssuanceInfo.LatestCommitment
 		blockSlot := apiForBlock.TimeProvider().SlotFromTime(*blockParams.BlockHeader.IssuingTime)
@@ -133,7 +139,7 @@ func (i *BlockIssuer) CreateValidationBlock(ctx context.Context, alias string, n
 	}
 
 	if blockParams.BlockHeader.References == nil {
-		blockParams.BlockHeader.References = referencesFromBlockIssuanceResponse(i.latestBlockIssuanceResponse(ctx))
+		blockParams.BlockHeader.References = referencesFromBlockIssuanceResponse(blockIssuanceInfo)
 	}
 
 	err = i.setDefaultBlockParams(ctx, blockParams.BlockHeader)
@@ -244,6 +250,10 @@ func (i *BlockIssuer) CreateBasicBlock(ctx context.Context, alias string, opts .
 	// set the issuing time last to ensure the timestamp is greater than that of the parents selected.
 	if blockParams.BlockHeader.IssuingTime == nil {
 		issuingTime := time.Now().UTC()
+		if issuingTime.Before(blockIssuanceInfo.LatestParentBlockIssuingTime) {
+			issuingTime = blockIssuanceInfo.LatestParentBlockIssuingTime.Add(time.Nanosecond)
+		}
+
 		blockParams.BlockHeader.IssuingTime = &issuingTime
 	}
 	blockBuilder.IssuingTime(*blockParams.BlockHeader.IssuingTime)

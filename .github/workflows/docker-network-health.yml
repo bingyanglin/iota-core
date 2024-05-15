@@ -31,7 +31,7 @@ jobs:
 
         # Run network
         cd ./tools/docker-network
-        timeout 10m ./run.sh 0 0 &
+        timeout 10m ./run.sh &
         RUN_PID=$!
         
         # Wait for node-4 to be created before querying it

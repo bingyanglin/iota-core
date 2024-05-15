@@ -3,6 +3,7 @@
 package dockertestframework
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/iotaledger/hive.go/runtime/options"
@@ -13,7 +14,7 @@ import (
 )
 
 var DefaultProtocolParametersOptions = []options.Option[iotago.V3ProtocolParameters]{
-	iotago.WithNetworkOptions("docker", iotago.PrefixTestnet),
+	iotago.WithNetworkOptions(fmt.Sprintf("docker-tests-%d", time.Now().Unix()), iotago.PrefixTestnet),
 }
 
 // DefaultAccountOptions are the default snapshot options for the docker network.

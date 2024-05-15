@@ -6,7 +6,8 @@ type NodeInfoExtended struct {
 	LatestVersion string `serix:",lenPrefix=uint8"`
 	Uptime        int64  `serix:""`
 	NodeID        string `serix:",lenPrefix=uint8"`
-	NodeAlias     string `serix:",lenPrefix=uint8"`
+	MultiAddress  string `serix:",lenPrefix=uint8"`
+	Alias         string `serix:",lenPrefix=uint8"`
 	MemoryUsage   int64  `serix:""`
 }
 
